@@ -402,11 +402,11 @@ int qemu_can_send_packet(VLANClientState *sender)
         }
 
         /* no can_receive() handler, they can always receive */
-        if (!vc->can_receive || vc->can_receive(vc)) {
-            return 1;
+        if (vc->can_receive && !vc->can_receive(vc)) {
+            return 0;
         }
     }
-    return 0;
+    return 1;
 }
 
 static int
