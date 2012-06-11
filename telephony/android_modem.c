@@ -1479,6 +1479,7 @@ handleOperatorSelection( const char*  cmd, AModem  modem )
         switch (cmd[1]) {
             case '0':
                 modem->oper_selection_mode = A_SELECTION_AUTOMATIC;
+                amodem_set_voice_registration(modem, A_REGISTRATION_HOME);
                 return NULL;
 
             case '1':
@@ -1518,17 +1519,18 @@ handleOperatorSelection( const char*  cmd, AModem  modem )
                         /* network not allowed */
                         return "+CME ERROR: 32";
                     }
+                    modem->oper_selection_mode = A_SELECTION_MANUAL;
                     modem->oper_index = found;
 
                     /* set the voice and data registration states to home or roaming
                      * depending on the operator index
                      */
                     if (found == OPERATOR_HOME_INDEX) {
-                        modem->voice_state = A_REGISTRATION_HOME;
-                        modem->data_state  = A_REGISTRATION_HOME;
+                        modem->data_state = A_REGISTRATION_HOME;
+                        amodem_set_voice_registration(modem, A_REGISTRATION_HOME);
                     } else if (found == OPERATOR_ROAMING_INDEX) {
-                        modem->voice_state = A_REGISTRATION_ROAMING;
-                        modem->data_state  = A_REGISTRATION_ROAMING;
+                        modem->data_state = A_REGISTRATION_ROAMING;
+                        amodem_set_voice_registration(modem, A_REGISTRATION_ROAMING);
                     }
                     return NULL;
                 }
