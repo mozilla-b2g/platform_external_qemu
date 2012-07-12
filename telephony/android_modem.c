@@ -1871,6 +1871,15 @@ handleListCurrentCalls( const char*  cmd, AModem  modem )
     return amodem_end_line( modem );
 }
 
+
+static const char*
+handleLastCallFailCause( const char* cmd, AModem modem )
+{
+#define  CALL_FAIL_NORMAL  16
+    amodem_add_line( modem, "+CEER: %d\n", CALL_FAIL_NORMAL );
+    return amodem_end_line( modem );
+}
+
 /* Add a(n unsolicited) time response.
  *
  * retrieve the current time and zone in a format suitable
@@ -2444,6 +2453,7 @@ static const struct {
     { "+COPS=0", NULL, handleOperatorSelection }, /* set network selection to automatic */
     { "!+CMGD=", NULL, handleDeleteSMSonSIM }, /* delete SMS on SIM */
     { "!+CPIN=", NULL, handleChangeOrEnterPIN },
+    { "+CEER", NULL, handleLastCallFailCause },
 
     /* see getSIMStatus() */
     { "+CPIN?", NULL, handleSIMStatusReq },
