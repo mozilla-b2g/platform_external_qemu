@@ -164,6 +164,12 @@ extern int    amodem_add_inbound_call( AModem  modem, const char*  number );
 extern int    amodem_update_call( AModem  modem, const char*  number, ACallState  state );
 extern int    amodem_disconnect_call( AModem  modem, const char*  number );
 
+/** Cell Location
+ **/
+
+extern void amodem_get_gsm_location( AModem modem, int* lac, int* ci );
+extern void amodem_set_gsm_location( AModem modem, int lac, int ci );
+
 /**/
 
 #endif /* _android_modem_h_ */
