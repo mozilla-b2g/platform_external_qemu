@@ -669,9 +669,9 @@ amodem_set_voice_registration( AModem  modem, ARegistrationState  state )
             break;
 
         case A_REGISTRATION_UNSOL_ENABLED_FULL:
-            amodem_unsol( modem, "+CREG: %d,%d, \"%04x\", \"%04x\"\r",
+            amodem_unsol( modem, "+CREG: %d,%d, \"%04x\", \"%07x\"\r",
                           modem->voice_mode, modem->voice_state,
-                          modem->area_code & 0xffff, modem->cell_id & 0xffff);
+                          modem->area_code & 0xffff, modem->cell_id & 0xfffffff);
             break;
         default:
             ;
@@ -697,14 +697,14 @@ amodem_set_data_registration( AModem  modem, ARegistrationState  state )
 
         case A_REGISTRATION_UNSOL_ENABLED_FULL:
             if (modem->supportsNetworkDataType)
-                amodem_unsol( modem, "+CGREG: %d,%d,\"%04x\",\"%04x\",\"%04x\"\r",
+                amodem_unsol( modem, "+CGREG: %d,%d,\"%04x\",\"%07x\",\"%08x\"\r",
                             modem->data_mode, modem->data_state,
-                            modem->area_code & 0xffff, modem->cell_id & 0xffff,
+                            modem->area_code & 0xffff, modem->cell_id & 0xfffffff,
                             modem->data_network );
             else
-                amodem_unsol( modem, "+CGREG: %d,%d,\"%04x\",\"%04x\"\r",
+                amodem_unsol( modem, "+CGREG: %d,%d,\"%04x\",\"%07x\"\r",
                             modem->data_mode, modem->data_state,
-                            modem->area_code & 0xffff, modem->cell_id & 0xffff );
+                            modem->area_code & 0xffff, modem->cell_id & 0xffffff );
             break;
 
         default:
@@ -1000,6 +1000,30 @@ amodem_disconnect_call( AModem  modem, const char*  number )
     amodem_free_call( modem, vcall );
     amodem_send_calls_update(modem);
     return 0;
+}
+
+/** Cell Location
+ **/
+
+void
+amodem_get_gsm_location( AModem modem, int* lac, int* ci )
+{
+    *lac = modem->area_code;
+    *ci = modem->cell_id;
+}
+
+void
+amodem_set_gsm_location( AModem modem, int lac, int ci )
+{
+    if ((modem->area_code == lac) && (modem->cell_id == ci)) {
+        return;
+    }
+
+    modem->area_code = lac;
+    modem->cell_id = ci;
+
+    // Notify device through amodem_unsol(...)
+    amodem_set_voice_registration( modem, modem->voice_state );
 }
 
 /** COMMAND HANDLERS
@@ -1344,9 +1368,9 @@ handleNetworkRegistration( const char*  cmd, AModem  modem )
         cmd += 5;
         if (cmd[0] == '?') {
             if (modem->voice_mode == A_REGISTRATION_UNSOL_ENABLED_FULL)
-                return amodem_printf( modem, "+CREG: %d,%d, \"%04x\", \"%04x\"",
+                return amodem_printf( modem, "+CREG: %d,%d, \"%04x\", \"%07x\"",
                                        modem->voice_mode, modem->voice_state,
-                                       modem->area_code, modem->cell_id );
+                                       modem->area_code & 0xffff, modem->cell_id & 0xfffffff );
             else
                 return amodem_printf( modem, "+CREG: %d,%d",
                                        modem->voice_mode, modem->voice_state );
@@ -1377,14 +1401,14 @@ handleNetworkRegistration( const char*  cmd, AModem  modem )
         cmd += 6;
         if (cmd[0] == '?') {
             if (modem->supportsNetworkDataType)
-                return amodem_printf( modem, "+CGREG: %d,%d,\"%04x\",\"%04x\",\"%04x\"",
+                return amodem_printf( modem, "+CGREG: %d,%d,\"%04x\",\"%07x\",\"%04x\"",
                                     modem->data_mode, modem->data_state,
-                                    modem->area_code, modem->cell_id,
+                                    modem->area_code & 0xffff, modem->cell_id & 0xfffffff,
                                     modem->data_network );
             else
-                return amodem_printf( modem, "+CGREG: %d,%d,\"%04x\",\"%04x\"",
+                return amodem_printf( modem, "+CGREG: %d,%d,\"%04x\",\"%07x\"",
                                     modem->data_mode, modem->data_state,
-                                    modem->area_code, modem->cell_id );
+                                    modem->area_code & 0xffff, modem->cell_id & 0xfffffff );
         } else if (cmd[0] == '=') {
             switch (cmd[1]) {
                 case '0':

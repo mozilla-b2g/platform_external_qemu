@@ -1259,6 +1259,35 @@ do_gsm_voice( ControlClient  client, char*  args )
     return -1;
 }
 
+static int
+do_gsm_location( ControlClient  client, char*  args )
+{
+    int lac, ci;
+
+    if (!android_modem) {
+        control_write( client, "KO: modem emulation not running\r\n" );
+        return -1;
+    }
+
+    if (!args) {
+        amodem_get_gsm_location( android_modem, &lac, &ci );
+        control_write( client, "lac: %d\r\nci: %d\r\n", lac, ci );
+        return 0;
+    }
+
+    if (sscanf(args, "%u %u", &lac, &ci) != 2) {
+        control_write( client, "KO: missing argument, try 'gsm location <lac> <ci>'\r\n" );
+        return -1;
+    }
+
+    if ((lac > 0xFFFF) || (ci > 0xFFFFFFF)) {
+        control_write( client, "KO: invalid value\r\n" );
+        return -1;
+    }
+
+    amodem_set_gsm_location( android_modem, lac, ci );
+    return 0;
+}
 
 static int
 gsm_check_number( char*  args )
@@ -1560,6 +1589,11 @@ static const CommandDefRec  gsm_commands[] =
     "rssi range is 0..31 and 99 for unknown\r\n"
     "ber range is 0..7 percent and 99 for unknown\r\n",
     NULL, do_gsm_signal, NULL },
+
+    { "location", "set lac/ci",
+    "'gsm location [<lac> <ci>]' sets or gets the location area code and cell identification.\r\n"
+    "lac range is 0..65535 and ci range is 0..268435455\r\n",
+    NULL, do_gsm_location, NULL},
 
     { NULL, NULL, NULL, NULL, NULL, NULL }
 };
