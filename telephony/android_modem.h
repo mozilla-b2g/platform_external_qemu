@@ -107,6 +107,14 @@ extern void                amodem_set_cdma_subscription_source( AModem modem, AC
 extern void                amodem_set_cdma_prl_version( AModem modem, int prlVersion);
 
 
+/** OPERATOR TYPES
+ **/
+typedef enum {
+    A_OPERATOR_HOME = 0,
+    A_OPERATOR_ROAMING,
+    A_OPERATOR_MAX  /* don't remove */
+} AOperatorIndex;
+
 /** OPERATOR NAMES
  **/
 typedef enum {
@@ -116,11 +124,15 @@ typedef enum {
     A_NAME_MAX  /* don't remove */
 } ANameIndex;
 
-/* retrieve operator name into user-provided buffer. returns number of writes written, including terminating zero */
+/* retrieve current operator name into user-provided buffer. returns number of writes written, including terminating zero */
 extern int   amodem_get_operator_name ( AModem  modem, ANameIndex  index, char*  buffer, int  buffer_size );
+/* retrieve specified operator name into user-provided buffer. returns number of writes written, including terminating zero */
+extern int   amodem_get_operator_name_ex ( AModem  modem, AOperatorIndex, ANameIndex  index, char*  buffer, int  buffer_size );
 
-/* reset one operator name from a user-provided buffer, set buffer_size to -1 for zero-terminated strings */
+/* reset one current operator name from a user-provided buffer, set buffer_size to -1 for zero-terminated strings */
 extern void  amodem_set_operator_name( AModem  modem, ANameIndex  index, const char*  buffer, int  buffer_size );
+/* reset one specified operator name from a user-provided buffer, set buffer_size to -1 for zero-terminated strings */
+extern void  amodem_set_operator_name_ex( AModem  modem, AOperatorIndex, ANameIndex  index, const char*  buffer, int  buffer_size );
 
 /** CALL STATES
  **/
