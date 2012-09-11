@@ -753,48 +753,65 @@ amodem_set_data_network_type( AModem  modem, ADataNetworkType   type )
 }
 
 int
-amodem_get_operator_name ( AModem  modem, ANameIndex  index, char*  buffer, int  buffer_size )
+amodem_get_operator_name_ex ( AModem  modem, AOperatorIndex  oper_index, ANameIndex  name_index, char*  buffer, int  buffer_size )
 {
     AOperator  oper;
     int        len;
 
-    if ( (unsigned)modem->oper_index >= (unsigned)modem->oper_count ||
-         (unsigned)index > 2 )
+    if ( (unsigned)oper_index >= A_OPERATOR_MAX ||
+         (unsigned)name_index >= A_NAME_MAX )
         return 0;
 
-    oper = modem->operators + modem->oper_index;
-    len  = strlen(oper->name[index]) + 1;
+    oper = modem->operators + oper_index;
+    len  = strlen(oper->name[name_index]) + 1;
 
     if (buffer_size > len)
         buffer_size = len;
 
     if (buffer_size > 0) {
-        memcpy( buffer, oper->name[index], buffer_size-1 );
+        memcpy( buffer, oper->name[name_index], buffer_size-1 );
         buffer[buffer_size] = 0;
     }
     return len;
 }
 
-/* reset one operator name from a user-provided buffer, set buffer_size to -1 for zero-terminated strings */
+int
+amodem_get_operator_name ( AModem  modem, ANameIndex  index, char*  buffer, int  buffer_size )
+{
+    if ( (unsigned)modem->oper_index >= (unsigned)modem->oper_count )
+        return 0;
+
+    return amodem_get_operator_name_ex(modem, modem->oper_index, index, buffer, buffer_size);
+}
+
 void
-amodem_set_operator_name( AModem  modem, ANameIndex  index, const char*  buffer, int  buffer_size )
+amodem_set_operator_name_ex( AModem  modem, AOperatorIndex  oper_index, ANameIndex  name_index, const char*  buffer, int  buffer_size )
 {
     AOperator  oper;
     int        avail;
 
-    if ( (unsigned)modem->oper_index >= (unsigned)modem->oper_count ||
-         (unsigned)index > 2 )
+    if ( (unsigned)oper_index >= A_OPERATOR_MAX ||
+         (unsigned)name_index >= A_NAME_MAX )
         return;
 
-    oper = modem->operators + modem->oper_index;
+    oper = modem->operators + oper_index;
 
     avail = sizeof(oper->name[0]);
     if (buffer_size < 0)
         buffer_size = strlen(buffer);
     if (buffer_size > avail-1)
         buffer_size = avail-1;
-    memcpy( oper->name[index], buffer, buffer_size );
-    oper->name[index][buffer_size] = 0;
+    memcpy( oper->name[name_index], buffer, buffer_size );
+    oper->name[name_index][buffer_size] = 0;
+}
+
+void
+amodem_set_operator_name( AModem  modem, ANameIndex  index, const char*  buffer, int  buffer_size )
+{
+    if ( (unsigned)modem->oper_index >= (unsigned)modem->oper_count )
+        return;
+
+    amodem_set_operator_name_ex(modem, modem->oper_index, index, buffer, buffer_size);
 }
 
 /** CALLS

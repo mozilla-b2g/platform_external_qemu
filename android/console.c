@@ -2639,6 +2639,164 @@ static const CommandDefRec sensor_commands[] =
 /********************************************************************************************/
 /********************************************************************************************/
 /*****                                                                                 ******/
+/*****             T E L E P H O N Y   O P E R A T O R   C O M M A N D S               ******/
+/*****                                                                                 ******/
+/********************************************************************************************/
+/********************************************************************************************/
+
+static int
+do_operator_dumpall( ControlClient client, char* args )
+{
+    int oper_index = 0, name_index, pos = 0, n;
+    char replybuf[64];
+    for (; oper_index < A_OPERATOR_MAX; oper_index++) {
+        for (name_index = 0; name_index < A_NAME_MAX; name_index++) {
+            n = amodem_get_operator_name_ex(android_modem,
+                                            oper_index, name_index,
+                                            replybuf + pos, sizeof(replybuf) - pos);
+            if (n) {
+                --n;
+            }
+            pos += n;
+            replybuf[pos++] = ',';
+        }
+        replybuf[pos - 1] = '\n';
+    }
+    replybuf[pos] = '\0';
+
+    control_write(client, replybuf);
+
+    return 0;
+}
+
+static int
+do_operator_get( ControlClient client, char* args )
+{
+    if (!args) {
+        control_write(client, "KO: Usage: operator get <operator index>\n");
+        return -1;
+    }
+
+    int oper_index = A_OPERATOR_MAX;
+    if ((sscanf(args, "%u", &oper_index) != 1) ||
+        (oper_index >= A_OPERATOR_MAX)) {
+        control_write(client, "KO: invalid operator index\n");
+        return -1;
+    }
+
+    int name_index = 0, pos = 0, n;
+    char replybuf[64];
+    for (; name_index < A_NAME_MAX; name_index++) {
+        n = amodem_get_operator_name_ex(android_modem,
+                                        oper_index, name_index,
+                                        replybuf + pos, sizeof(replybuf) - pos);
+        if (n) {
+            --n;
+        }
+        pos += n;
+        replybuf[pos++] = ',';
+    }
+    replybuf[pos - 1] = '\n';
+    replybuf[pos] = '\0';
+
+    control_write(client, replybuf);
+
+    return 0;
+}
+
+static int
+do_operator_set( ControlClient client, char* args )
+{
+    char* args_dup = NULL;
+
+    if (!args) {
+USAGE:
+        control_write(client, "Usage: operator set <operator index> <long name>[,<short name>[,<mcc mnc>]]\n");
+FREE_BUF:
+        if (args_dup) free(args_dup);
+        return -1;
+    }
+
+    args_dup = strdup(args);
+    if (args_dup == NULL) {
+        control_write( client, "KO: Memory allocation failed.\n" );
+        return -1;
+    }
+
+    char* p = args_dup;
+    /* Skip leading white spaces. */
+    while (*p && isspace(*p)) p++;
+    if (!*p) goto USAGE;
+
+    int oper_index = 0;
+    if ((sscanf(args, "%u", &oper_index) != 1)
+        || (oper_index >= A_OPERATOR_MAX)) {
+        control_write(client, "KO: invalid operator index\n");
+        goto FREE_BUF;
+    }
+
+    /* Skip operator index. */
+    while (*p && !isspace(*p)) p++;
+    if (!*p) goto USAGE;
+    /* Skip white spaces. */
+    while (*p && isspace(*p)) p++;
+    if (!*p) goto USAGE;
+
+    char* longName = p;
+    char* shortName = NULL;
+    char* mccMnc = NULL;
+
+    p = strchr(p, ',');
+    if (p) {
+      *p = '\0';
+
+      shortName = ++p;
+      p = strchr(p, ',');
+      if (p) {
+        *p = '\0';
+	mccMnc = ++p;
+      }
+    }
+
+    amodem_set_operator_name_ex(android_modem, oper_index, A_NAME_LONG, longName, -1);
+    if (shortName) {
+      amodem_set_operator_name_ex(android_modem, oper_index, A_NAME_SHORT, shortName, -1);
+    }
+    if (mccMnc) {
+      amodem_set_operator_name_ex(android_modem, oper_index, A_NAME_NUMERIC, mccMnc, -1);
+    }
+
+    // Notify device through amodem_unsol(...)
+    amodem_set_voice_registration(android_modem, amodem_get_voice_registration(android_modem));
+
+    do_operator_dumpall(client, NULL);
+
+    if (args_dup) {
+      free(args_dup);
+    }
+    return 0;
+}
+
+static const CommandDefRec  operator_commands[] =
+{
+    { "dumpall", "dump all operators info",
+      "'dumpall': dump all operators and their long/short names, mcc and mnc.\r\n",
+      NULL, do_operator_dumpall, NULL },
+
+    { "get", "get operator info by index",
+      "'get <operator index>' get the values of specified operator.\r\n",
+      NULL, do_operator_get, NULL},
+
+    { "set", "set operator info by index",
+      "'set <operator index> <long name>[,<short name>[,<mcc mnc>]]' set the values of specified operator.\r\n",
+      NULL, do_operator_set, NULL},
+
+    { NULL, NULL, NULL, NULL, NULL, NULL }
+};
+
+/********************************************************************************************/
+/********************************************************************************************/
+/*****                                                                                 ******/
 /*****                           M A I N   C O M M A N D S                             ******/
 /*****                                                                                 ******/
 /********************************************************************************************/
@@ -3016,6 +3174,10 @@ static const CommandDefRec   main_commands[] =
     { "sensor", "manage emulator sensors",
       "allows you to request the emulator sensors\r\n", NULL,
       NULL, sensor_commands },
+
+    { "operator", "manage telephony operator info",
+      "allows you to modify/retrieve telephony operator info\r\n", NULL,
+      NULL, operator_commands },
 
     { NULL, NULL, NULL, NULL, NULL, NULL }
 };
