@@ -69,6 +69,7 @@ extern SmsPDU*  smspdu_create_deliver_utf8( const unsigned char*   utf8,
 extern void     smspdu_free_list( SmsPDU*  pdus );
 
 extern SmsPDU   smspdu_create_from_hex( const char*  hex, int  hexlen );
+extern SmsPDU   cbspdu_create_from_hex( const char*  hex, int  hexlen );
 
 extern int      smspdu_to_hex( SmsPDU  pdu, char*  hex, int  hexsize );
 
