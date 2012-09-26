@@ -339,6 +339,33 @@ amodem_receive_sms( AModem  modem, SmsPDU  sms )
     }
 }
 
+void
+amodem_receive_cbs( AModem  modem, SmsPDU  cbs )
+{
+#define  CBS_UNSOL_HEADER  "+CBM: 0\r\n"
+
+    if (!modem->unsol_func) {
+        return;
+    }
+
+    int    len, max;
+    char*  p;
+
+    strcpy( modem->out_buff, CBS_UNSOL_HEADER );
+    p   = modem->out_buff + (sizeof(CBS_UNSOL_HEADER)-1);
+    max = sizeof(modem->out_buff) - 3 - (sizeof(CBS_UNSOL_HEADER)-1);
+    len = smspdu_to_hex( cbs, p, max );
+    if (len > max) /* too long */
+        return;
+    p[len]   = '\r';
+    p[len+1] = '\n';
+    p[len+2] = 0;
+
+    R( "CBS>> %s\n", p );
+
+    modem->unsol_func( modem->unsol_opaque, modem->out_buff );
+}
+
 static const char*
 amodem_printf( AModem  modem, const char*  format, ... )
 {
