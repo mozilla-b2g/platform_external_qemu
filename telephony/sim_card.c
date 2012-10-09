@@ -405,10 +405,12 @@ asimcard_io( ASimCard  sim, const char*  cmd )
         { "+CRSM=176,28438,0,0,2",  "+CRSM: 144,0,0233" },
 
         // Service Provider Name(6F46):
-        //   Always return SW1=0x94, SW2=0x04, which means "file ID not found".
+        //   Display Condition: display SPN in all conditions
+        //   Service Provider Name: "Android"
         // @see 3GPP TS 31.102 section 4.2.12 EFspn (Service Provider Name)
         // @see 3GPP TS 51.011 section 9.4.4 Referencing Management
-        { "+CRSM=192,28486,0,0,15", "+CRSM: 148,4" },
+        { "+CRSM=192,28486,0,0,15", "+CRSM: 144,0,000000116f4604000aa0aa01020000" },
+        { "+CRSM=176,28486,0,0,17", "+CRSM: 144,0,00416e64726f6964ffffffffffffffffff" },
 
         // Service Provider Display Information(6FCD):
         //   Always return SW1=0x94, SW2=0x04, which means "file ID not found".
