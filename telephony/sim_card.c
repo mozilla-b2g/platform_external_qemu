@@ -331,42 +331,120 @@ asimcard_io( ASimCard  sim, const char*  cmd )
 #endif
     static const struct { const char*  cmd; const char*  answer; } answers[] =
     {
+        // CPHS Network Operator Name(6F14):
+        //   PLMN Name: "Android"
+        // @see Common PCN Handset Specification (Version 4.2) B.4.1.2 Network Operator Name
         { "+CRSM=192,28436,0,0,15", "+CRSM: 144,0,000000146f1404001aa0aa01020000" },
         { "+CRSM=176,28436,0,0,20", "+CRSM: 144,0,416e64726f6964ffffffffffffffffffffffffff" },
 
+        // CPHS Voice message waiting flag(6F11):
+        //   Voice Message Waiting Indicator flags:
+        //     Line 1: no messages waiting.
+        //     Line 2: no messages waiting.
+        // @see Common PCN Handset Specification (Version 4.2) B.4.2.3 Voice Message Waiting Flags in the SIM
         { "+CRSM=192,28433,0,0,15", "+CRSM: 144,0,000000016f11040011a0aa01020000" },
         { "+CRSM=176,28433,0,0,1", "+CRSM: 144,0,55" },
 
+        // ICC Identification(2FE2):
+        //   Identification number: 89014103211118518720
+        // @see 3GPP TS 11.011 section 10.1.1 EFiccid (ICC Identification)
         { "+CRSM=192,12258,0,0,15", "+CRSM: 144,0,0000000a2fe204000fa0aa01020000" },
         { "+CRSM=176,12258,0,0,10", "+CRSM: 144,0,98101430121181157002" },
 
+        // CPHS Call forwarding flags(6F13):
+        //   Voice Call forward unconditional flags:
+        //     Line 1: no call forwarding message waiting.
+        //     Line 2: no call forwarding message waiting.
+        // @see Common PCN Handset Specification (Version 4.2) B.4.5 Diverted Call Status Indicator
         { "+CRSM=192,28435,0,0,15", "+CRSM: 144,0,000000016f13040011a0aa01020000" },
         { "+CRSM=176,28435,0,0,1",  "+CRSM: 144,0,55" },
 
+        // USIM Service Table(6F38):
+        //   Enabled: 1..8, 11, 12, 17..32, 35..38, 51..54, 63, 64, 77, 78,
+        //            97..100, 107..112
+        // @see 3GPP TS 31.102 section 4.2.8 EFust (USIM Service Table)
         { "+CRSM=192,28472,0,0,15", "+CRSM: 144,0,0000000f6f3804001aa0aa01020000" },
         { "+CRSM=176,28472,0,0,15", "+CRSM: 144,0,ff30ffff3c003c03000c0000f03f00" },
 
+        // Mailbox Identifier(6FC9):
+        //   Mailbox Dialing Number Identifier - Voicemail:      1
+        //   Mailbox Dialing Number Identifier - Fax:            no mailbox dialing number associated
+        //   Mailbox Dialing Number Identifier - Eletronic Mail: no mailbox dialing number associated
+        //   Mailbox Dialing Number Identifier - Other:          no mailbox dialing number associated
+        //   Mailbox Dialing Number Identifier - Videomail:      no mailbox dialing number associated
+        // @see 3GPP TS 31.102 section 4.2.62 EFmbi (Mailbox Identifier)
         { "+CRSM=192,28617,0,0,15", "+CRSM: 144,0,000000086fc9040011a0aa01020104" },
         { "+CRSM=178,28617,1,4,4",  "+CRSM: 144,0,01000000" },
 
+        // Message Waiting Indication Status(6FCA):
+        //   Message Waiting Indicator Status: all inactive
+        //   Number of Voicemail Messages Waiting:       0
+        //   Number of Fax Messages Waiting:             0
+        //   Number of Electronic Mail Messages Waiting: 0
+        //   Number of Other Messages Waiting:           0
+        //   Number of Videomail Messages Waiting:       0
+        // @see 3GPP TS 31.102 section 4.2.63 EFmwis (Message Waiting Indication Status)
         { "+CRSM=192,28618,0,0,15", "+CRSM: 144,0,0000000a6fca040011a0aa01020105" },
         { "+CRSM=178,28618,1,4,5",  "+CRSM: 144,0,0000000000" },
 
+        // Administrative Data(6FAD):
+        //   UE Operation mode: normal
+        //   Additional information: none
+        //   Length of MNC in the IMSI: 3
+        // @see 3GPP TS 31.102 section 4.2.18 EFad (Administrative Data)
         { "+CRSM=192,28589,0,0,15", "+CRSM: 144,0,000000046fad04000aa0aa01020000" },
         { "+CRSM=176,28589,0,0,4",  "+CRSM: 144,0,00000003" },
 
+        // CPHS Information(6F16):
+        //   CPHS Phase: 2
+        //   CPHS Service Table:
+        //     CSP(Customer Service Profile): allocated and activated
+        //     Information Numbers:           allocated and activated
+        // @see Common PCN Handset Specification (Version 4.2) B.3.1.1 CPHS Information
         { "+CRSM=192,28438,0,0,15", "+CRSM: 144,0,000000026f1604001aa0aa01020000" },
         { "+CRSM=176,28438,0,0,2",  "+CRSM: 144,0,0233" },
 
-        { "+CRSM=192,28486,0,0,15", "+CRSM: 148,4" },
+        // Service Provider Name(6F46):
+        //   Display Condition: display SPN in all conditions
+        //   Service Provider Name: "Android"
+        // @see 3GPP TS 31.102 section 4.2.12 EFspn (Service Provider Name)
+        // @see 3GPP TS 51.011 section 9.4.4 Referencing Management
+        { "+CRSM=192,28486,0,0,15", "+CRSM: 144,0,000000116f4604000aa0aa01020000" },
+        { "+CRSM=176,28486,0,0,17", "+CRSM: 144,0,00416e64726f6964ffffffffffffffffff" },
+
+        // Service Provider Display Information(6FCD):
+        //   Always return SW1=0x94, SW2=0x04, which means "file ID not found".
+        // @see 3GPP TS 31.102 section 4.2.66 EFspdi (Service Provider Display Information)
+        // @see 3GPP TS 51.011 section 9.4.4 Referencing Management
         { "+CRSM=192,28621,0,0,15", "+CRSM: 148,4" },
 
+        // PLMN Network Name(6FC5):
+        //   FIXME:
+        // @see 3GPP TS 31.102 section 4.2.58 EFpnn (PLMN Network Name)
+        // @see 3GPP TS 24.008
         { "+CRSM=192,28613,0,0,15", "+CRSM: 144,0,000000f06fc504000aa0aa01020118" },
         { "+CRSM=178,28613,1,4,24", "+CRSM: 144,0,43058441aa890affffffffffffffffffffffffffffffffff" },
 
+        // MSISDN(6F40):
+        //   Alpha Identifier: (empty)
+        //   Length of BCD number/SSC contents: 7
+        //   TON and NPI: 0x81
+        //   Dialing Number/SSC String: 15555218135, actual number is "1555521"
+        //                              + emulator port, e.g. "15555215554".
+        //   Capacity/Configuration 2 Record Identifier: not used
+        //   Extension 5 Record Identifier: not used
+        // @see 3GPP TS 31.102 section 4.2.26 EFmsisdn (MSISDN)
         { "+CRSM=192,28480,0,0,15", "+CRSM: 144,0,000000806f40040011a0aa01020120" },
         { "+CRSM=178,28480,1,4,32", "+CRSM: 144,0,ffffffffffffffffffffffffffffffffffff07815155258131f5ffffffffffff" },
 
+        // Mailbox Dialing Numbers(6FC7):
+        //   Alpha Identifier: "Voicemail"
+        //   Length of BCD number/SSC contents: 7
+        //   TON and NPI: 0x91
+        //   Dialing Number/SSC String: 15552175049
+        //   Capacity/Configuration 2 Record Identifier: not used
+        //   Extension 6 Record Identifier: not used
+        // @see 3GPP TS 31.102 section 4.2.60 EFmbdn (Mailbox Dialing Numbers)
         { "+CRSM=192,28615,0,0,15", "+CRSM: 144,0,000000406fc7040011a0aa01020120" },
         { "+CRSM=178,28615,1,4,32", "+CRSM: 144,0,566f6963656d61696cffffffffffffffffff07915155125740f9ffffffffffff" },
 
