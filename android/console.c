@@ -104,7 +104,7 @@ typedef struct ControlClientRec_
      * Currently referred modem device. Each control client have their own
      * modem device pointer to the one it's referring to. This pointer might be
      * NULL so every command handler should check its validity every time
-     * referring to it.
+     * referring to it. Its value is only modified by 'mux modem <N>'.
      */
     AModem                     modem;
 } ControlClientRec;
@@ -2921,6 +2921,59 @@ static const CommandDefRec  operator_commands[] =
 /********************************************************************************************/
 /********************************************************************************************/
 /*****                                                                                 ******/
+/*****                            M U X   C O M M A N D S                              ******/
+/*****                                                                                 ******/
+/********************************************************************************************/
+/********************************************************************************************/
+
+static int
+do_mux_modem( ControlClient client, char* args )
+{
+    if (!args) {
+        if (!client->modem) {
+            control_write( client, "KO: modem emulation not running\r\n" );
+            return -1;
+        }
+
+        control_write( client, "%d\n", amodem_get_instance_id(client->modem) );
+        return 0;
+    }
+
+    unsigned int instance_id = 0;
+    if ((sscanf(args, "%u", &instance_id) != 1)
+            || (instance_id >= amodem_num_devices)) {
+        control_write(client, "Usage: mux modem [<instance index>]\n");
+        return -1;
+    }
+
+    AModem modem = amodem_get_instance(instance_id);
+    if (!modem) {
+        /**
+         * Just give a warning message here and still allows selecting an
+         * invalid modem. Because when it comes to inter-emulator communication
+         * and the selection fails here and fallback to original modem, it will
+         * send wrong command to wrong modem and causes unexpected behaviour.
+         */
+        control_write(client, "WARNING: Modem[%u] is not enabled\n", instance_id);
+    }
+
+    client->modem = modem;
+    return 0;
+}
+
+static const CommandDefRec  mux_commands[] =
+{
+    { "modem", "select active modem device",
+      "'modem <instance index>': select active modem device by instance for further config.\r\n"
+      "'modem': display current active modem device.\r\n", NULL,
+      do_mux_modem, NULL},
+
+    { NULL, NULL, NULL, NULL, NULL, NULL }
+};
+
+/********************************************************************************************/
+/********************************************************************************************/
+/*****                                                                                 ******/
 /*****                           M A I N   C O M M A N D S                             ******/
 /*****                                                                                 ******/
 /********************************************************************************************/
@@ -3292,6 +3345,10 @@ static const CommandDefRec   main_commands[] =
     { "stk", "STK related commands",
       "allows you to simulate an inbound STK proactive command\r\n", NULL,
       NULL, stk_commands },
+
+    { "mux", "device multiplexing management",
+      "allows to select the active device of its kind for console control\r\n", NULL,
+      NULL, mux_commands },
 
     { NULL, NULL, NULL, NULL, NULL, NULL }
 };
