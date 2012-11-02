@@ -81,6 +81,8 @@
 #define  OPERATOR_ROAMING_MCCMNC  STRINGIFY(OPERATOR_ROAMING_MCC) \
                                   STRINGIFY(OPERATOR_ROAMING_MNC)
 
+int amodem_num_devices = 0;
+
 static const char* _amodem_switch_technology(AModem modem, AModemTech newtech, int32_t newpreferred);
 static int _amodem_set_cdma_subscription_source( AModem modem, ACdmaSubscriptionSource ss);
 static int _amodem_set_cdma_prl_version( AModem modem, int prlVersion);
@@ -236,6 +238,7 @@ typedef struct AModemRec_
     int           area_code;
     int           cell_id;
     int           base_port;
+    int           instance_id;
 
     int           rssi;
     int           ber;
@@ -573,17 +576,18 @@ static int  android_modem_state_load(QEMUFile *f, void  *opaque, int version_id)
     return 0; // >=0 Happy
 }
 
-static AModemRec   _android_modem[1];
+static AModemRec   _android_modem[MAX_GSM_DEVICES];
 
 AModem
-amodem_create( int  base_port, AModemUnsolFunc  unsol_func, void*  unsol_opaque )
+amodem_create( int  base_port, int instance_id, AModemUnsolFunc  unsol_func, void*  unsol_opaque )
 {
-    AModem  modem = _android_modem;
+    AModem  modem = &_android_modem[instance_id];
     char nvfname[MAX_PATH];
     char *start = nvfname;
     char *end = start + sizeof(nvfname);
 
     modem->base_port    = base_port;
+    modem->instance_id  = instance_id;
     start = bufprint_config_file( start, end, "modem-nv-ram-" );
     start = bufprint( start, end, "%d", modem->base_port );
     modem->nvram_config_filename = strdup( nvfname );
@@ -593,12 +597,15 @@ amodem_create( int  base_port, AModemUnsolFunc  unsol_func, void*  unsol_opaque 
     modem->unsol_func   = unsol_func;
     modem->unsol_opaque = unsol_opaque;
 
-    modem->sim = asimcard_create(base_port);
+    modem->sim = asimcard_create(base_port, instance_id);
 
     sys_main_init();
+    // We don't know the exact number of instances to create here, it's
+    // controlled by modem_driver_init(). Putting -1 here and register_savevm()
+    // will assign a correct SaveStateEntry instance_id for us.
     register_savevm(NULL,
                     "android_modem",
-                    0,
+                    -1,
                     MODEM_DEV_STATE_SAVE_VERSION,
                     android_modem_state_save,
                     android_modem_state_load,

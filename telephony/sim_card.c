@@ -9,6 +9,7 @@
 ** MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 ** GNU General Public License for more details.
 */
+#include "qemu-common.h"
 #include "sim_card.h"
 #include <string.h>
 #include <assert.h>
@@ -28,23 +29,25 @@ typedef struct ASimCardRec_ {
     char        puk[ A_SIM_PUK_SIZE+1 ];
     int         pin_retries;
     int         port;
+    int         instance_id;
 
     char        out_buff[ 256 ];
     int         out_size;
 
 } ASimCardRec;
 
-static ASimCardRec  _s_card[1];
+static ASimCardRec  _s_card[MAX_GSM_DEVICES];
 
 ASimCard
-asimcard_create(int port)
+asimcard_create(int port, int instance_id)
 {
-    ASimCard  card    = _s_card;
+    ASimCard  card    = &_s_card[instance_id];
     card->status      = A_SIM_STATUS_READY;
     card->pin_retries = 0;
     strncpy( card->pin, "0000", sizeof(card->pin) );
     strncpy( card->puk, "12345678", sizeof(card->puk) );
     card->port = port;
+    card->instance_id = instance_id;
     return card;
 }
 

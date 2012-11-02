@@ -18,13 +18,15 @@
 /** MODEM OBJECT
  **/
 typedef struct AModemRec_*    AModem;
+extern int         amodem_num_devices;
 
 /* a function used by the modem to send unsolicited messages to the channel controller */
 typedef void (*AModemUnsolFunc)( void*  opaque, const char*  message );
 
-extern AModem      amodem_create( int  base_port, AModemUnsolFunc  unsol_func, void*  unsol_opaque );
+extern AModem      amodem_create( int  base_port, int  instance_id, AModemUnsolFunc  unsol_func, void*  unsol_opaque );
 extern void        amodem_set_legacy( AModem  modem );
 extern void        amodem_destroy( AModem  modem );
+extern AModem      amodem_get_instance( int  instance_id );
 
 /* send a command to the modem */
 extern const char*  amodem_send( AModem  modem, const char*  cmd );
