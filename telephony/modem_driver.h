@@ -20,9 +20,6 @@
  * emulated GSM modem. see qemu_chr_open() in vl.c */
 extern CharDriverState*  android_modem_cs[MAX_GSM_DEVICES];
 
-/* the emulated GSM modem itself */
-extern AModem  android_modem;
-
 /* must be called before the VM runs if there is a modem to emulate */
 extern void   android_modem_init( int  base_port );
 

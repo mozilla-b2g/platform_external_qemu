@@ -26,7 +26,6 @@
 #  define  D(...)   ((void)0)
 #endif
 
-AModem            android_modem;
 CharDriverState*  android_modem_cs[MAX_GSM_DEVICES];
 
 typedef struct {
@@ -103,7 +102,7 @@ modem_driver_read( void*  _md, const uint8_t*  src, int  len )
             md->in_pos                = 0;
 
             D( "%s: << %s\n", __FUNCTION__, md->in_buff );
-            answer = amodem_send(android_modem, md->in_buff);
+            answer = amodem_send(md->modem, md->in_buff);
             if (answer != NULL) {
                 D( "%s: >> %s\n", __FUNCTION__, answer );
                 len = strlen(answer);
