@@ -187,6 +187,12 @@ extern void   amodem_send_stk_unsol_proactive_command( AModem  modem, const char
 extern void amodem_get_gsm_location( AModem modem, int* lac, int* ci );
 extern void amodem_set_gsm_location( AModem modem, int lac, int ci );
 
+/** Base Port & Instance ID & Phone Prefix
+ **/
+
+extern int amodem_get_base_port( AModem  modem );
+extern int amodem_get_instance_id( AModem  modem );
+
 /**/
 
 #endif /* _android_modem_h_ */

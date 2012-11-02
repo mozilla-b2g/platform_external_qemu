@@ -41,16 +41,21 @@
 #  define  S(...)   ((void)0)
 #endif
 
-/** By convention, remote numbers are the console ports, i.e. 5554, 5556, etc...
- **/
-#define  REMOTE_NUMBER_BASE       5554
+/**
+ * By convention, remote numbers are the console ports + 10000,
+ * i.e. 15554, 15556, etc. However, for compatibility, 5554 is equivalent to
+ * 15554 and so on.
+ */
+#define  REMOTE_NUMBER_BASE       15554
 #define  REMOTE_NUMBER_MAX        16
-#define  REMOTE_NUMBER_MAX_CHARS  4
 #define  REMOTE_CONSOLE_PORT      5554
 
 int
-remote_number_from_port( int  port )
+remote_number_from_modem( AModem  modem )
 {
+    int port = amodem_get_base_port(modem);
+    int instance_id = amodem_get_instance_id(modem);
+
     if (port & 1)  /* must be even */
         return -1;
 
@@ -58,24 +63,37 @@ remote_number_from_port( int  port )
     if ((unsigned)port >= REMOTE_NUMBER_MAX)
         return -1;
 
-    return REMOTE_NUMBER_BASE + port*2;
+    if ((instance_id >= 9) || (instance_id < 0))
+        return -1;
+
+    return REMOTE_NUMBER_BASE + 10000 * instance_id + port * 2;
 }
 
 int
-remote_number_to_port( int  number )
+remote_number_to_port( int  number, int*  port, int*  instance_id )
 {
     if (number & 1)  /* must be even */
         return -1;
 
-    number = (number - REMOTE_NUMBER_BASE) >> 1;
-    if ((unsigned)number >= REMOTE_NUMBER_MAX)
+    if (number < REMOTE_NUMBER_BASE)
         return -1;
 
-    return REMOTE_CONSOLE_PORT + number*2;
+    if ((unsigned)(((number - REMOTE_NUMBER_BASE) % 10000) >> 1) >= REMOTE_NUMBER_MAX)
+        return -1;
+
+    if (port) {
+        *port = number % 10000;
+    }
+
+    if (instance_id) {
+        *instance_id = number / 10000 - 1;
+    }
+
+    return number;
 }
 
 int
-remote_number_string_to_port( const char*  number )
+remote_number_string_to_port( const char*  number, AModem  modem, int*  port, int*  instance_id )
 {
     char*  end;
     long   num;
@@ -85,14 +103,16 @@ remote_number_string_to_port( const char*  number )
     len = strlen(number);
     if (len > 0 && number[len-1] == ';')
         len--;
-    if (len == 11 && !memcmp(number, PHONE_PREFIX, 7))
+    if (len == 11 && (!memcmp(number, PHONE_PREFIX, 6)
+            && ((number[6] - '1') == amodem_get_instance_id(modem)))) {
         temp += 7;
+    }
     num = strtol( temp, &end, 10 );
 
     if (end == NULL || *end || (int)num != num )
         return -1;
 
-    return remote_number_to_port( (int)num );
+    return remote_number_to_port( (int)num, port, instance_id );
 }
 
 /** REMOTE CALL OBJECTS
@@ -103,7 +123,8 @@ typedef struct RemoteCallRec {
     struct RemoteCallRec**  pref;
     RemoteCallType          type;
     int                     to_port;
-    int                     from_port;
+    int                     to_instance_id;
+    AModem                  from_modem;
     SysChannel              channel;
     RemoteResultFunc        result_func;
     void*                   result_opaque;
@@ -115,7 +136,7 @@ typedef struct RemoteCallRec {
     int                     buff_pos;
     int                     buff_len;
     int                     buff_size;
-    char                    buff0[32];
+    char                    buff0[64];
 
 } RemoteCallRec, *RemoteCall;
 
@@ -155,10 +176,10 @@ remote_call_free( RemoteCall  call )
 static void  remote_call_event( void*  opaque, int  events );  /* forward */
 
 static RemoteCall
-remote_call_alloc( RemoteCallType  type, int  to_port, int  from_port )
+remote_call_alloc( RemoteCallType  type, int  to_port, int  to_instance_id, AModem  from_modem )
 {
     RemoteCall  rcall    = calloc( sizeof(*rcall), 1 );
-    int         from_num = remote_number_from_port(from_port);
+    int         from_num = remote_number_from_modem(from_modem);
 
     if (rcall != NULL) {
         char  *p, *end;
@@ -166,13 +187,18 @@ remote_call_alloc( RemoteCallType  type, int  to_port, int  from_port )
         rcall->pref      = &rcall->next;
         rcall->type      = type;
         rcall->to_port   = to_port;
-        rcall->from_port = from_port;
+        rcall->to_instance_id = to_instance_id;
+        rcall->from_modem     = from_modem;
         rcall->buff      = rcall->buff0;
         rcall->buff_size = sizeof(rcall->buff0);
         rcall->buff_pos  = 0;
 
         p   = rcall->buff;
         end = p + rcall->buff_size;
+
+        if (to_instance_id) {
+            p = bufprint(p, end, "mux modem %d\n", to_instance_id);
+        }
 
         switch (type) {
             case REMOTE_CALL_DIAL:
@@ -270,8 +296,10 @@ remote_call_event( void*  opaque, int  events )
 {
     RemoteCall  call = opaque;
 
-    S("%s: called for call (%d,%d), events=%02x\n", __FUNCTION__,
-       call->from_port, call->to_port, events);
+    S("%s: called for call (%d:%d,%d:%d), events=%02x\n", __FUNCTION__,
+       amodem_get_base_port(call->from_modem),
+       amodem_get_instance_id(call->from_modem),
+       call->to_port, call->to_instance_id, events);
 
     if (events & SYS_EVENT_READ) {
         /* simply drain the channel */
@@ -290,8 +318,11 @@ remote_call_event( void*  opaque, int  events )
 
         if (S_ACTIVE) {
             int  nn;
-            S("%s: call (%d,%d) sending %d bytes '", __FUNCTION__,
-            call->from_port, call->to_port, call->buff_len - call->buff_pos );
+            S("%s: call (%d:%d,%d:%d) sending %d bytes '", __FUNCTION__,
+                amodem_get_base_port(call->from_modem),
+                amodem_get_instance_id(call->from_modem),
+                call->to_port, call->to_instance_id,
+                call->buff_len - call->buff_pos );
             for (nn = call->buff_pos; nn < call->buff_len; nn++) {
                 int  c = call->buff[nn];
                 if (c < 32) {
@@ -314,8 +345,8 @@ remote_call_event( void*  opaque, int  events )
                                call->buff_len - call->buff_pos );
         if (n <= 0) {
             /* remote emulator probably quitted */
-            S("%s: emulator %d quitted unexpectedly with error %d: %s\n",
-                    __FUNCTION__, call->to_port, errno, errno_str);
+            S("%s: emulator %d:%d quitted unexpectedly with error %d: %s\n",
+                __FUNCTION__, call->to_port, call->to_instance_id, errno, errno_str);
             if (call->result_func)
                 call->result_func( call->result_opaque, 0 );
             remote_call_free( call );
@@ -325,7 +356,8 @@ remote_call_event( void*  opaque, int  events )
 
         if (call->buff_pos >= call->buff_len) {
             /* cool, we sent everything */
-            S("%s: finished sending data to %d\n", __FUNCTION__, call->to_port);
+            S("%s: finished sending data to %d:%d\n", __FUNCTION__,
+                call->to_port, call->to_instance_id);
             if (!call->quitting) {
                     call->quitting = 1;
                     sprintf( call->buff, "quit\n" );
@@ -362,40 +394,44 @@ remote_from_number( const char*  from )
 #endif
 
 static RemoteCall
-remote_call_generic( RemoteCallType  type, const char*  to_number, int  from_port )
+remote_call_generic( RemoteCallType  type, const char*  to_number, AModem  from_modem )
 {
-    int         to_port = remote_number_string_to_port(to_number);
+    int         to_port, to_instance_id;
     RemoteCall  call;
 
-    if ( remote_number_from_port(from_port) < 0 ) {
-        D("%s: from_port value %d is not valid", __FUNCTION__, from_port);
+    if ( remote_number_from_modem(from_modem) < 0 ) {
+        D("%s: from port/instance_id value %d:%d is not valid", __FUNCTION__,
+            amodem_get_base_port(from_modem), amodem_get_instance_id(from_modem));
         return NULL;
     }
-    if ( to_port < 0 ) {
+    if ( remote_number_string_to_port(to_number, from_modem, &to_port, &to_instance_id) < 0 ) {
         D("%s: phone number '%s' is not decimal or remote", __FUNCTION__, to_number);
         return NULL;
     }
-    if (to_port == from_port) {
+    if ((to_port == amodem_get_base_port(from_modem))
+        && (to_instance_id == amodem_get_instance_id(from_modem))) {
         D("%s: trying to call self\n", __FUNCTION__);
         return NULL;
     }
-    call = remote_call_alloc( type, to_port, from_port );
+    call = remote_call_alloc( type, to_port, to_instance_id, from_modem );
     if (call == NULL) {
         return NULL;
     }
     remote_call_add( call, &_the_remote_calls );
-    D("%s: adding new call from port %d to port %d\n", __FUNCTION__, from_port, to_port);
+    D("%s: adding new call from %d:%d to %d:%d\n", __FUNCTION__,
+        amodem_get_base_port(from_modem), amodem_get_instance_id(from_modem),
+        to_port, to_instance_id);
     return call;
 }
 
 
 int
 remote_call_dial( const char*       number,
-                  int               from,
+                  AModem            from_modem,
                   RemoteResultFunc  result_func,
                   void*             result_opaque )
 {
-    RemoteCall   call = remote_call_generic( REMOTE_CALL_DIAL, number, from );
+    RemoteCall   call = remote_call_generic( REMOTE_CALL_DIAL, number, from_modem );
 
     if (call != NULL) {
         call->result_func   = result_func;
@@ -406,18 +442,18 @@ remote_call_dial( const char*       number,
 
 
 void
-remote_call_other( const char*  to_number, int  from_port, RemoteCallType  type )
+remote_call_other( const char*  to_number, AModem  from_modem, RemoteCallType  type )
 {
-    remote_call_generic( type, to_number, from_port );
+    remote_call_generic( type, to_number, from_modem );
 }
 
 /* call this function to send a SMS to a remote emulator */
 int
 remote_call_sms( const char*   number,
-                 int           from,
+                 AModem        from_modem,
                  SmsPDU        pdu )
 {
-    RemoteCall   call = remote_call_generic( REMOTE_CALL_SMS, number, from );
+    RemoteCall   call = remote_call_generic( REMOTE_CALL_SMS, number, from_modem );
 
     if (call == NULL)
         return -1;
@@ -433,7 +469,7 @@ remote_call_sms( const char*   number,
 
 
 void
-remote_call_cancel( const char*  to_number, int  from_port )
+remote_call_cancel( const char*  to_number, AModem  from_modem )
 {
-    remote_call_generic( REMOTE_CALL_HANGUP, to_number, from_port );
+    remote_call_generic( REMOTE_CALL_HANGUP, to_number, from_modem );
 }
