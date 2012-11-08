@@ -395,6 +395,21 @@ asimcard_io( ASimCard  sim, const char*  cmd )
         { "+CRSM=192,28589,0,0,15", "+CRSM: 144,0,000000046fad04000aa0aa01020000" },
         { "+CRSM=176,28589,0,0,4",  "+CRSM: 144,0,00000003" },
 
+        // EF-IMG (4F20) : Each record of this EF identifies instances of one particular graphical image,
+        //                 which graphical image is identified by this EF's record number.
+        //   Number of image instance specified by this record:               01
+        //   Image instance width 8 points (raster image points):             08
+        //   Image instance heigh 8 points  (raster image points):            08
+        //   Color image coding scheme:                                       21
+        //   Image identifier id of the EF where is store the image instance: 4F02
+        //   Offset of the image instance in the 4F02 EF:                     0000
+        //   Length of image instance data:                                   0016
+        // @see 3GPP TS 51.011 section 10.6.1.1, EF-img
+        { "+CRSM=192,20256,1,4,10", "+CRSM: 144,0,000000644f20040000000005020114" },
+        { "+CRSM=178,20256,1,4,20", "+CRSM: 144,0,010808214f0200000016ffffffffffffffffffff" },
+        { "+CRSM=176,20226,0,0,22", "+CRSM: 144,0,080802030016AAAA800285428142814281528002AAAAFF000000FF000000FF" },
+        { "+CRSM=176,20226,0,22,9", "+CRSM: 144,0,0808ff03a59999a5c3ff" },
+
         // CPHS Information(6F16):
         //   CPHS Phase: 2
         //   CPHS Service Table:
