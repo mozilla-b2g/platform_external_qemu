@@ -1301,6 +1301,17 @@ gsm_check_number( char*  args )
 }
 
 static int
+do_send_stkCmd( ControlClient  client, char*  args  )
+{
+    if (!args) {
+        control_write( client, "KO: missing argument, try 'stk pdu <hexstring>'\r\n" );
+        return -1;
+    }
+    amodem_send_stk_unsol_proactive_command( android_modem, args );
+    return 0;
+}
+
+static int
 do_gsm_call( ControlClient  client, char*  args )
 {
     /* check that we have a phone number made of digits */
@@ -1699,6 +1710,15 @@ static const CommandDefRec  sms_commands[] =
     "(used internally when one emulator sends SMS messages to another instance).\r\n"
     "you probably don't want to play with this at all\r\n", NULL,
     do_sms_sendpdu, NULL },
+
+    { NULL, NULL, NULL, NULL, NULL, NULL }
+};
+
+static const CommandDefRec stk_commands[] =
+{
+    { "pdu", "issue stk proactive command",
+    "'stk pdu <hexstring>' allows you to issue stk PDU to simulate an unsolicted proactive command \r\n", NULL,
+    do_send_stkCmd, NULL },
 
     { NULL, NULL, NULL, NULL, NULL, NULL }
 };
@@ -3200,6 +3220,10 @@ static const CommandDefRec   main_commands[] =
     { "operator", "manage telephony operator info",
       "allows you to modify/retrieve telephony operator info\r\n", NULL,
       NULL, operator_commands },
+
+    { "stk", "STK related commands",
+      "allows you to simulate an inbound STK proactive command\r\n", NULL,
+      NULL, stk_commands },
 
     { NULL, NULL, NULL, NULL, NULL, NULL }
 };
