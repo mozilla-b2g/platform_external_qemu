@@ -2155,6 +2155,18 @@ voice_call_event( void*  _vcall )
             call->state = A_CALL_ACTIVE;
             break;
 
+        case A_CALL_ACTIVE:
+            break;
+
+        case A_CALL_HELD:
+            break;
+
+        case A_CALL_INCOMING:
+            break;
+
+        case A_CALL_WAITING:
+            break;
+
         default:
             assert( 0 && "unreachable event call state" );
     }
