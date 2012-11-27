@@ -359,12 +359,11 @@ asimcard_io( ASimCard  sim, const char*  cmd )
         { "+CRSM=192,28435,0,0,15", "+CRSM: 144,0,000000016f13040011a0aa01020000" },
         { "+CRSM=176,28435,0,0,1",  "+CRSM: 144,0,55" },
 
-        // USIM Service Table(6F38):
-        //   Enabled: 1..8, 11, 12, 17..32, 35..38, 51..54, 63, 64, 77, 78,
-        //            97..100, 107..112
-        // @see 3GPP TS 31.102 section 4.2.8 EFust (USIM Service Table)
+        // SIM Service Table(6F38):
+        //   Enabled: 1..4, 7, 9..19, 26, 27, 29, 38, 51..55
+        // @see 3GPP TS 51.011 section 10.3.7 EFsst (SIM Service Table)
         { "+CRSM=192,28472,0,0,15", "+CRSM: 144,0,0000000f6f3804001aa0aa01020000" },
-        { "+CRSM=176,28472,0,0,15", "+CRSM: 144,0,ff30ffff3c003c03000c0000f03f00" },
+        { "+CRSM=176,28472,0,0,15", "+CRSM: 144,0,ff30ffff3f003c03000c0000f03f00" },
 
         // Mailbox Identifier(6FC9):
         //   Mailbox Dialing Number Identifier - Voicemail:      1
@@ -420,12 +419,12 @@ asimcard_io( ASimCard  sim, const char*  cmd )
         { "+CRSM=176,28438,0,0,2",  "+CRSM: 144,0,0233" },
 
         // Service Provider Name(6F46):
-        //   Display Condition: display SPN in all conditions
+        //   Display Condition: 0x1, display network name in HPLMN; display SPN if not in HPLMN.
         //   Service Provider Name: "Android"
         // @see 3GPP TS 31.102 section 4.2.12 EFspn (Service Provider Name)
         // @see 3GPP TS 51.011 section 9.4.4 Referencing Management
         { "+CRSM=192,28486,0,0,15", "+CRSM: 144,0,000000116f4604000aa0aa01020000" },
-        { "+CRSM=176,28486,0,0,17", "+CRSM: 144,0,00416e64726f6964ffffffffffffffffff" },
+        { "+CRSM=176,28486,0,0,17", "+CRSM: 144,0,01416e64726f6964ffffffffffffffffff" },
 
         // Service Provider Display Information(6FCD):
         //   Always return SW1=0x94, SW2=0x04, which means "file ID not found".
