@@ -803,23 +803,35 @@ sms_get_coding_scheme( cbytes_t  *pcur,
     *pcur      = cur;
 
     switch (dataCoding >> 4) {
-        case 0x00:
+        case 0x00: // General Data Coding Indication
+        case 0x01:
         case 0x02:
         case 0x03:
+        case 0x04: // Message Marked for Automatic Deletion Group
+        case 0x05:
+        case 0x06:
+        case 0x07:
+            switch (dataCoding & 0x0C) {
+                case 0x00:
+                case 0x0C:
+                    return SMS_CODING_SCHEME_GSM7;
+                case 0x08:
+                    return SMS_CODING_SCHEME_UCS2;
+            }
+            break;
+
+        case 0x08: // Reserved coding groups
+        case 0x09:
+        case 0x0A:
+        case 0x0B:
+        case 0x0C: // Message Waiting Indication Group: Discard Message
+        case 0x0D: // Message Waiting Indication Group: Store Message
             return SMS_CODING_SCHEME_GSM7;
 
-        case 0x01:
-            if (dataCoding == 0x10) return SMS_CODING_SCHEME_GSM7;
-            if (dataCoding == 0x11) return SMS_CODING_SCHEME_UCS2;
-            break;
+        case 0x0E: // Message Waiting Indication Group: Store Message
+            return SMS_CODING_SCHEME_UCS2;
 
-        case 0x04: case 0x05: case 0x06: case 0x07:
-            if (dataCoding & 0x20)           return SMS_CODING_SCHEME_UNKNOWN; /* compressed 7-bits */
-            if (((dataCoding >> 2) & 3) == 0) return SMS_CODING_SCHEME_GSM7;
-            if (((dataCoding >> 2) & 3) == 2) return SMS_CODING_SCHEME_UCS2;
-            break;
-
-        case 0xF:
+        case 0x0F: // Data coding/message class
             if (!(dataCoding & 4)) return SMS_CODING_SCHEME_GSM7;
             break;
     }
