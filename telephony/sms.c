@@ -1190,7 +1190,6 @@ gsm_rope_add_sms_deliver_pdu( GsmRope                 rope,
         else
             gsm_rope_add_c( rope, count*2 );
 
-        gsm_rope_add_c( rope, count*2 );
         dst = gsm_rope_reserve( rope, count*2 );
         if (dst != NULL) {
             utf8_to_ucs2( utf8, utf8len, dst );
