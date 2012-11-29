@@ -1142,8 +1142,8 @@ gsm_rope_add_sms_deliver_pdu( GsmRope                 rope,
     gsm_rope_add_address( rope, sender_address );
     gsm_rope_add_c( rope, 0 );        /* protocol identifier */
 
-    /* data coding scheme - GSM 7 bits / no class - or - 16-bit UCS2 / class 1 */
-    coding = (use_gsm7 ? 0x00 : 0x09);
+    /* data coding scheme - GSM 7 bits - or - 16-bit UCS2 */
+    coding = (use_gsm7 ? 0x00 : 0x08);
 
     gsm_rope_add_c( rope, coding );               /* data coding scheme       */
     gsm_rope_add_timestamp( rope, timestamp );    /* service center timestamp */
