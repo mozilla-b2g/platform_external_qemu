@@ -653,11 +653,10 @@ utf8_from_gsm7( cbytes_t  src,
                 int       septet_count,
                 bytes_t   utf8 )
 {
-    int  shift   = (septet_offset & 7);
+    int  shift   = septet_offset;
     int  escaped = 0;
     int  result  = 0;
 
-    src += (septet_offset >> 3);
     for ( ; septet_count > 0; septet_count-- )
     {
         int  c = (src[0] >> shift) & 0x7f;

@@ -15,6 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <math.h>
 
 #define  DEBUG  1
 
@@ -39,6 +40,10 @@
 
 /* size of the user data header in bytes */
 #define  USER_DATA_HEADER_SIZE   6
+
+/* See 3GPP TS 23.040 clause 9.2.3.24 TP‑User Data (TP‑UD) */
+#define  PDU_IEI_CONCATENATED_SHORT_MESSAGES_8BIT  0x00
+#define  PDU_IEI_CONCATENATED_SHORT_MESSAGES_16BIT 0x08
 
 /** MESSAGE TEXT
  **/
@@ -631,6 +636,7 @@ sms_skip_address( cbytes_t   *pcur,
     if (cur > end)
         goto Exit;
 
+    *pcur = cur;
     result = 0;
 Exit:
     return result;
@@ -850,6 +856,7 @@ sms_get_text_utf8( cbytes_t        *pcur,
     cbytes_t  cur    = *pcur;
     int       result = -1;
     int       len;
+    int       septet_offset = 0;
 
     if (cur >= end)
         goto Exit;
@@ -870,10 +877,14 @@ sms_get_text_utf8( cbytes_t        *pcur,
 
         cur += hlen;
 
-        if (coding == SMS_CODING_SCHEME_GSM7)
-            len -= 2*(hlen+1);
-        else
+        if (coding == SMS_CODING_SCHEME_GSM7) {
+            int  hbits = 8 * (hlen + 1);
+            int  hseptets = ceil(hbits / 7.0);
+            septet_offset = hseptets * 7 - hbits;
+            len -= hseptets;
+        } else {
             len -= hlen+1;
+        }
 
         if (len < 0)
             goto Exit;
@@ -882,15 +893,15 @@ sms_get_text_utf8( cbytes_t        *pcur,
     /* switch the user data header if any */
     if (coding == SMS_CODING_SCHEME_GSM7)
     {
-        int  count = utf8_from_gsm7( cur, 0, len, NULL );
+        int  count = utf8_from_gsm7( cur, septet_offset, len, NULL );
 
         if (rope != NULL)
         {
             bytes_t  dst = gsm_rope_reserve( rope, count );
             if (dst != NULL)
-                utf8_from_gsm7( cur, 0, len, dst );
+                utf8_from_gsm7( cur, septet_offset, len, dst );
         }
-        cur += (len+1)/2;
+        cur += (len * 7 + septet_offset) / 8;
     }
     else if (coding == SMS_CODING_SCHEME_UCS2)
     {
@@ -1044,13 +1055,20 @@ smspdu_get_user_data_ref( SmsPDU  pdu )
     while (len >= 2 && data + 2 <= end) {
         int  htype = data[0];
         int  hlen = data[1];
-
-        if (htype == 00 && hlen == 3 && data + 5 <= end) {
-            return data + 2;
+        if (htype == PDU_IEI_CONCATENATED_SHORT_MESSAGES_8BIT) {
+            if ((hlen == 3) && (data + 4 <= end)) {
+                return data;
+            }
+            goto Fail;
+        } else if (htype == PDU_IEI_CONCATENATED_SHORT_MESSAGES_16BIT) {
+            if ((hlen == 4) && (data + 5 <= end)) {
+                return data;
+            }
+            goto Fail;
         }
 
-        data += hlen;
-        len  -= hlen - 2;
+        data += hlen + 2;
+        len  -= hlen + 2;
     }
 Fail:
     return NULL;
@@ -1063,7 +1081,23 @@ smspdu_get_ref( SmsPDU  pdu )
 
     if (user_ref != NULL)
     {
-        return user_ref[0];
+        // user_ref[0]: IEI type
+        // user_ref[1]: IED length
+        if (user_ref[0] == PDU_IEI_CONCATENATED_SHORT_MESSAGES_8BIT) {
+            // user_ref[2]: Concatenated short message reference number.
+            // user_ref[3]: Maximum number of short messages in the concatenated short message.
+            // user_ref[4]: Sequence number of the current short message.
+            //
+            // See 3GPP TS 23.040 clause 9.2.3.24.1
+            return user_ref[2];
+        }
+
+        // user_ref[2-3]: Concatenated short message reference number.
+        // user_ref[4]: Maximum number of short messages in the concatenated short message.
+        // user_ref[5]: Sequence number of the current short message.
+        //
+        // See 3GPP TS 23.040 clause 9.2.3.24.8
+        return ((int)user_ref[2] << 8) | user_ref[3];
     }
     else
     {
@@ -1086,10 +1120,26 @@ smspdu_get_max_index( SmsPDU  pdu )
     cbytes_t  user_ref = smspdu_get_user_data_ref( pdu );
 
     if (user_ref != NULL) {
-        return user_ref[1];
-    } else {
-        return 1;
+        // user_ref[0]: IEI type
+        // user_ref[1]: IED length
+        if (user_ref[0] == PDU_IEI_CONCATENATED_SHORT_MESSAGES_8BIT) {
+            // user_ref[2]: Concatenated short message reference number.
+            // user_ref[3]: Maximum number of short messages in the concatenated short message.
+            // user_ref[4]: Sequence number of the current short message.
+            //
+            // See 3GPP TS 23.040 clause 9.2.3.24.1
+            return user_ref[3];
+        }
+
+        // user_ref[2-3]: Concatenated short message reference number.
+        // user_ref[4]: Maximum number of short messages in the concatenated short message.
+        // user_ref[5]: Sequence number of the current short message.
+        //
+        // See 3GPP TS 23.040 clause 9.2.3.24.8
+        return user_ref[4];
     }
+
+    return 1;
 }
 
 int
@@ -1098,10 +1148,26 @@ smspdu_get_cur_index( SmsPDU  pdu )
     cbytes_t  user_ref = smspdu_get_user_data_ref( pdu );
 
     if (user_ref != NULL) {
-        return user_ref[2] - 1;
-    } else {
-        return 0;
+        // user_ref[0]: IEI type
+        // user_ref[1]: IED length
+        if (user_ref[0] == PDU_IEI_CONCATENATED_SHORT_MESSAGES_8BIT) {
+            // user_ref[2]: Concatenated short message reference number.
+            // user_ref[3]: Maximum number of short messages in the concatenated short message.
+            // user_ref[4]: Sequence number of the current short message.
+            //
+            // See 3GPP TS 23.040 clause 9.2.3.24.1
+            return user_ref[4] - 1;
+        }
+
+        // user_ref[2-3]: Concatenated short message reference number.
+        // user_ref[4]: Maximum number of short messages in the concatenated short message.
+        // user_ref[5]: Sequence number of the current short message.
+        //
+        // See 3GPP TS 23.040 clause 9.2.3.24.8
+        return user_ref[5] - 1;
     }
+
+    return 0;
 }
 
 
@@ -1112,7 +1178,8 @@ gsm_rope_add_sms_user_header( GsmRope  rope,
                               int      pdu_index )
 {
     gsm_rope_add_c( rope, 0x05 );     /* total header length == 5 bytes */
-    gsm_rope_add_c( rope, 0x00 );     /* element id: concatenated message reference number */
+    /* element id: concatenated message reference number */
+    gsm_rope_add_c( rope, PDU_IEI_CONCATENATED_SHORT_MESSAGES_8BIT );
     gsm_rope_add_c( rope, 0x03 );     /* element len: 3 bytes */
     gsm_rope_add_c( rope, (byte_t)ref_number );  /* reference number */
     gsm_rope_add_c( rope, (byte_t)pdu_count );     /* max pdu index */
@@ -1281,13 +1348,12 @@ smspdu_create_deliver_utf8( const unsigned char*   utf8,
     use_gsm7 = utf8_check_gsm7( utf8, utf8len );
 
     /* count the number of SMS PDUs we'll need */
-    block = MAX_USER_DATA_SEPTETS - USER_DATA_HEADER_SIZE;
-
     if (use_gsm7) {
         count = utf8_to_gsm7( utf8, utf8len, NULL, 0 );
+        block = MAX_USER_DATA_SEPTETS - USER_DATA_HEADER_SIZE;
     } else {
         count = utf8_to_ucs2( utf8, utf8len, NULL );
-        block = MAX_USER_DATA_BYTES - USER_DATA_HEADER_SIZE;
+        block = (MAX_USER_DATA_BYTES - USER_DATA_HEADER_SIZE) / 2;
     }
 
     num_pdus = count / block;
@@ -1313,7 +1379,11 @@ smspdu_create_deliver_utf8( const unsigned char*   utf8,
             if (leftover > 0 && nn == num_pdus-1)
                 skip = leftover;
 
-            src_next = utf8_skip_gsm7( src, src_end, skip );
+            if (use_gsm7) {
+                src_next = utf8_skip_gsm7( src, src_end, skip );
+            } else {
+                src_next = utf8_skip( src, src_end, skip );
+            }
 
             list[nn] = smspdu_create_deliver( src, src_next - src, use_gsm7, sender_address, timestamp,
                                               ref_num, num_pdus, nn );
