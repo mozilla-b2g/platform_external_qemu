@@ -668,6 +668,7 @@ utf8_from_gsm7( cbytes_t  src,
         }
 
         if (escaped) {
+            escaped = 0;
             v = gsm7bits_extend_to_unicode[c];
         } else if (c == GSM_7BITS_ESCAPE) {
             escaped = 1;
