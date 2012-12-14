@@ -466,6 +466,20 @@ asimcard_io( ASimCard  sim, const char*  cmd )
         { "+CRSM=192,28615,0,0,15", "+CRSM: 144,0,000000406fc7040011a0aa01020120" },
         { "+CRSM=178,28615,1,4,32", "+CRSM: 144,0,566f6963656d61696cffffffffffffffffff07915155125740f9ffffffffffff" },
 
+        // Abbreviated Dialling Numbers(6FCA)
+        //   Length of BCD number/SSC contents: 7
+        //   TON and NPI: 0x81
+        // @see 3GPP TS 51.011 section 10.5.1 EFadn
+        { "+CRSM=192,28474,0,0,15", "+CRSM: 144,0,000000806f3a040011a0aa01020120" },
+        // Alpha Id(Encoded with GSM 8 bit): "Mozilla", Dialling Number: 15555218201
+        { "+CRSM=178,28474,1,4,32", "+CRSM: 144,0,4d6f7a696c6c61ffffffffffffffffffffff07815155258102f1ffffffffffff" },
+        // Alpha Id(Encoded with UCS2 0x80: "Saßê黃", Dialling Number: 15555218202
+        { "+CRSM=178,28474,2,4,32", "+CRSM: 144,0,800053006100df00ea9ec3ffffffffffffff07815155258102f2ffffffffffff" },
+        // Alpha Id(Encoded with UCS2 0x81): "Fire 火", Dialling Number: 15555218203
+        { "+CRSM=178,28474,3,4,32", "+CRSM: 144,0,8106e04669726520ebffffffffffffffffff07815155258102f3ffffffffffff" },
+        // Alpha Id(Encoded with UCS2 0x82): "Huang 黃", Dialling Number: 15555218204
+        { "+CRSM=178,28474,4,4,32", "+CRSM: 144,0,82079e804875616e6720c3ffffffffffffff07815155258102f4ffffffffffff" },
+
         { NULL, NULL }
     };
 
