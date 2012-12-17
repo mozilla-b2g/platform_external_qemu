@@ -544,7 +544,7 @@ static const unsigned short   gsm7bits_to_unicode[128] = {
   ' ',  '!',  '"',  '#', 0xa4,  '%',  '&', '\'',  '(',  ')',  '*',  '+',  ',',  '-',  '.',  '/',
   '0',  '1',  '2',  '3',  '4',  '5',  '6',  '7',  '8',  '9',  ':',  ';',  '<',  '=',  '>',  '?',
  0xa1,  'A',  'B',  'C',  'D',  'E',  'F',  'G',  'H',  'I',  'J',  'K',  'L',  'M',  'N',  'O',
-  'P',  'Q',  'R',  'S',  'T',  'U',  'V',  'W',  'X',  'Y',  'Z', 0xc4, 0xd6,0x147, 0xdc, 0xa7,
+  'P',  'Q',  'R',  'S',  'T',  'U',  'V',  'W',  'X',  'Y',  'Z', 0xc4, 0xd6, 0xd1, 0xdc, 0xa7,
  0xbf,  'a',  'b',  'c',  'd',  'e',  'f',  'g',  'h',  'i',  'j',  'k',  'l',  'm',  'n',  'o',
   'p',  'q',  'r',  's',  't',  'u',  'v',  'w',  'x',  'y',  'z', 0xe4, 0xf6, 0xf1, 0xfc, 0xe0,
 };
@@ -653,11 +653,10 @@ utf8_from_gsm7( cbytes_t  src,
                 int       septet_count,
                 bytes_t   utf8 )
 {
-    int  shift   = (septet_offset & 7);
+    int  shift   = septet_offset;
     int  escaped = 0;
     int  result  = 0;
 
-    src += (septet_offset >> 3);
     for ( ; septet_count > 0; septet_count-- )
     {
         int  c = (src[0] >> shift) & 0x7f;
@@ -668,6 +667,7 @@ utf8_from_gsm7( cbytes_t  src,
         }
 
         if (escaped) {
+            escaped = 0;
             v = gsm7bits_extend_to_unicode[c];
         } else if (c == GSM_7BITS_ESCAPE) {
             escaped = 1;
