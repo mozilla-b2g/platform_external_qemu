@@ -360,10 +360,10 @@ asimcard_io( ASimCard  sim, const char*  cmd )
         { "+CRSM=176,28435,0,0,1",  "+CRSM: 144,0,55" },
 
         // SIM Service Table(6F38):
-        //   Enabled: 1..4, 7, 9..19, 26, 27, 29, 38, 51..56
+        //   Enabled: 1..4, 7, 9..19, 26, 27, 29, 30, 38, 51..55
         // @see 3GPP TS 51.011 section 10.3.7 EFsst (SIM Service Table)
         { "+CRSM=192,28472,0,0,15", "+CRSM: 144,0,0000000f6f3804001aa0aa01020000" },
-        { "+CRSM=176,28472,0,0,15", "+CRSM: 144,0,ff30ffff3f003c03000c0000f0ff00" },
+        { "+CRSM=176,28472,0,0,15", "+CRSM: 144,0,ff30ffff3f003c0f000c0000f0ff00" },
 
         // Mailbox Identifier(6FC9):
         //   Mailbox Dialing Number Identifier - Voicemail:      1
@@ -465,6 +465,23 @@ asimcard_io( ASimCard  sim, const char*  cmd )
         // @see 3GPP TS 31.102 section 4.2.60 EFmbdn (Mailbox Dialing Numbers)
         { "+CRSM=192,28615,0,0,15", "+CRSM: 144,0,000000406fc7040011a0aa01020120" },
         { "+CRSM=178,28615,1,4,32", "+CRSM: 144,0,566f6963656d61696cffffffffffffffffff07915155125740f9ffffffffffff" },
+
+        // Cell Broadcast Message Identifier selection(6F45):
+        //   CB Message Identifier 1: 45056(B000)
+        //   CB Message Identifier 2: 65535(FFFF, not used)
+        //   CB Message Identifier 3: 61440(F000, not settable by MMI)
+        // @see 3GPP TS 31.102 section 4.2.14 EFcbmi (Cell Broadcast Message Identifier selection)
+        { "+CRSM=192,28485,0,0,15", "+CRSM: 144,0,000000066f4504000fa0aa01020000" },
+        { "+CRSM=176,28485,0,0,6", "+CRSM: 144,0,b000fffff000" },
+
+        // Cell Broadcast Message Identifier Range selection(6F50):
+        //   CB Message Identifier Range 1: 45058..49152(B002..C000)
+        //   CB Message Identifier Range 2: 65535..49153(FFFF..C001, should be ignored)
+        //   CB Message Identifier Range 3: 49153..65535(C001..FFFF, should be ignored)
+        //   CB Message Identifier Range 4: 61442..65280(F002..FF00, not settable by MMI)
+        // @see 3GPP TS 31.102 section 4.2.14 EFcbmir (Cell Broadcast Message Identifier Range selection)
+        { "+CRSM=192,28496,0,0,15", "+CRSM: 144,0,000000106f5004000fa0aa01020000" },
+        { "+CRSM=176,28496,0,0,16", "+CRSM: 144,0,b002c000ffffc001c001fffff002ff00" },
 
         { NULL, NULL }
     };

@@ -32,6 +32,9 @@ extern const char*  amodem_send( AModem  modem, const char*  cmd );
 /* simulate the receipt on an incoming SMS message */
 extern void         amodem_receive_sms( AModem  modem, SmsPDU  pdu );
 
+/* simulate the receipt on an incoming SMS message */
+extern void         amodem_receive_cbs( AModem  modem, SmsPDU  pdu );
+
 /** RADIO STATE
  **/
 typedef enum {

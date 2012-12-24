@@ -1437,6 +1437,35 @@ Fail:
     return NULL;
 }
 
+SmsPDU
+cbspdu_create_from_hex( const char*  hex, int  hexlen )
+{
+    SmsPDU    p;
+
+    p = calloc( sizeof(*p), 1 );
+    if (!p) goto Exit;
+
+    p->base = malloc( (hexlen+1)/2 );
+    if (p->base == NULL) {
+        free(p);
+        p = NULL;
+        goto Exit;
+    }
+
+    if ( gsm_hex_to_bytes( (cbytes_t)hex, hexlen, p->base ) < 0 )
+        goto Fail;
+
+    p->end = p->base + (hexlen+1)/2;
+
+Exit:
+    return p;
+
+Fail:
+    free(p->base);
+    free(p);
+    return NULL;
+}
+
 int
 smspdu_to_hex( SmsPDU  pdu, char*  hex, int  hexlen )
 {
