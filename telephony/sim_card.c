@@ -466,7 +466,7 @@ asimcard_io( ASimCard  sim, const char*  cmd )
         { "+CRSM=192,28615,0,0,15", "+CRSM: 144,0,000000406fc7040011a0aa01020120" },
         { "+CRSM=178,28615,1,4,32", "+CRSM: 144,0,566f6963656d61696cffffffffffffffffff07915155125740f9ffffffffffff" },
 
-        // Abbreviated Dialling Numbers(6FCA)
+        // Abbreviated Dialling Numbers(6F3A)
         //   Length of BCD number/SSC contents: 7
         //   TON and NPI: 0x81
         // @see 3GPP TS 51.011 section 10.5.1 EFadn
@@ -479,6 +479,70 @@ asimcard_io( ASimCard  sim, const char*  cmd )
         { "+CRSM=178,28474,3,4,32", "+CRSM: 144,0,8106e04669726520ebffffffffffffffffff07815155258102f3ffffffffffff" },
         // Alpha Id(Encoded with UCS2 0x82): "Huang 黃", Dialling Number: 15555218204
         { "+CRSM=178,28474,4,4,32", "+CRSM: 144,0,82079e804875616e6720c3ffffffffffffff07815155258102f4ffffffffffff" },
+
+        // Phone Book Reference file(4F30):
+        // @see 3GPP TS 131.102 section 4.4.2.1 EFpbr
+        { "+CRSM=192,20272,0,0,15", "+CRSM: 144,0,000000204f30040011a0aa01020120" },
+        // Phonebook set 1:
+        //  - Tag 'A8': 'C0'(6F3A, 01), 'C1'(4F11), 'C4'(4F12, 03)
+        //  - Tag 'A9': 'C4'(4F13, 04), 'CA'(4F14, 02)
+        { "+CRSM=178,20272,1,4,32", "+CRSM: 144,0,a80ec0036f3a01c1024f11c4034f1304a90ac4034f1203ca034f1402ffffffff" },
+
+        // Index Administration Phone Book(4F11)
+        // @see 3GPP TS 131.102 section 4.4.2.2 EFiap
+        { "+CRSM=192,20241,0,0,15", "+CRSM: 144,0,000000104f11040011a0aa01020104" },
+        // ANR Index: 1, Email Index: 2
+        { "+CRSM=178,20241,1,4,4", "+CRSM: 144,0,0102" },
+        // ANR Index: null, Email Index: 3
+        { "+CRSM=178,20241,2,4,4", "+CRSM: 144,0,ff03" },
+        // ANR Index: null, Email Index: 1
+        { "+CRSM=178,20241,3,4,4", "+CRSM: 144,0,ff01" },
+        // ANR Index: 2, Email Index: null
+        { "+CRSM=178,20241,4,4,4", "+CRSM: 144,0,02ff" },
+
+        // Additional Number 1(4F12)
+        //   Length of BCD number/SSC contents: 7
+        //   TON and NPI: 0x81
+        //   Capability/Configuration Record Identifier: 0xff
+        //   Extension1 Record Identifier: 0xff
+        // @see 3GPP TS 131.102 section 4.4.2.9 EFanr
+        { "+CRSM=192,20243,0,0,15", "+CRSM: 144,0,0000003c4f13040011a0aa0102010f" },
+        // Dialling Number: 16666218201
+        { "+CRSM=178,20243,1,4,15", "+CRSM: 144,0,0007816166268102f1ffffffffffff" },
+        // Dialling Number: null
+        { "+CRSM=178,20243,2,4,15", "+CRSM: 144,0,ffffffffffffffffffffffffffffff" },
+        // Dialling Number: 16666218203
+        { "+CRSM=178,20243,3,4,15", "+CRSM: 144,0,0007816166268102f3ffffffffffff" },
+        // Dialling Number: 16666218204
+        { "+CRSM=178,20243,4,4,15", "+CRSM: 144,0,0007816166268102f4ffffffffffff" },
+
+        // Additional Number 2(4F13)
+        //   Length of BCD number/SSC contents: 7
+        //   TON and NPI: 0x81
+        //   Capability/Configuration Record Identifier: 0xff
+        //   Extension1 Record Identifier: 0xff
+        // @see 3GPP TS 131.102 section 4.4.2.9 EFanr
+        { "+CRSM=192,20242,0,0,15", "+CRSM: 144,0,000000444f12040011a0aa01020111" },
+        // Dialling Number: 17777218201, SFI: null, Record Identifier: 1
+        { "+CRSM=178,20242,1,4,17", "+CRSM: 144,0,0007817177278102f1ffffffffffffff01" },
+        // Dialling Number: 17777218204, SFI: null, Record Identifier: 4
+        { "+CRSM=178,20242,2,4,17", "+CRSM: 144,0,0007817177278102f4ffffffffffffff04" },
+        // Dialling Number: null, SFI: null, Record Identifier: null
+        { "+CRSM=178,20242,3,4,17", "+CRSM: 144,0,ffffffffffffffffffffffffffffffffff" },
+        // Dialling Number: null, SFI: null, Record Identifier: null
+        { "+CRSM=178,20242,4,4,17", "+CRSM: 144,0,ffffffffffffffffffffffffffffffffff" },
+
+        // E-Mail Address(4F14)
+        // @see 3GPP TS 131.102 section 4.4.2.13
+        { "+CRSM=192,20244,0,0,15", "+CRSM: 144,0,000000804f14040011a0aa01020120" },
+        // Email: "WEB@firefox.com", SFI: null, Record Identifier: 3
+        { "+CRSM=178,20244,1,4,32", "+CRSM: 144,0,5745420066697265666f782e636f6dffffffffffffffffffffffffffffffff03" },
+        // Email: "tw@mozilla.org", SFI: null, Record Identifier: 1
+        { "+CRSM=178,20244,2,4,32", "+CRSM: 144,0,7477006d6f7a696c6c612e6f7267ffffffffffffffffffffffffffffffffff01" },
+        // Email: "Huang@Äèü.cc", SFI: null, Record Identifier: 2
+        { "+CRSM=178,20244,3,4,32", "+CRSM: 144,0,4875616e67005b047e2e6363ffffffffffffffffffffffffffffffffffffff02" },
+        // Email: null, SFI: null, Record Identifier: null
+        { "+CRSM=178,20244,4,4,32", "+CRSM: 144,0,ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" },
 
         { NULL, NULL }
     };
