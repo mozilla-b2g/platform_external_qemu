@@ -13,14 +13,21 @@
 #define _REMOTE_CALL_H
 
 #include "sms.h"
+#include "android_modem.h"
 
-/* convert a base console port into a remote phone number, -1 on error */
-extern int         remote_number_from_port( int  port );
+/* convert a AModem into a remote phone number, -1 on error */
+extern int         remote_number_from_modem( AModem  modem );
 
-/* convert a remote phone number into a remote console port, -1 on error */
-extern int         remote_number_to_port( int  number );
+/* convert a remote phone number into a remote console port & instance id,
+ * returns > 0 if success, -1 otherwise. */
+extern int         remote_number_to_port( int   number,
+                                          int*  port,
+                                          int*  instance_id);
 
-extern int         remote_number_string_to_port( const char*  number );
+extern int         remote_number_string_to_port( const char*  number,
+                                                 AModem       modem,
+                                                 int*         port,
+                                                 int*         instance_id);
 
 typedef void   (*RemoteResultFunc)( void*  opaque, int  success );
 
@@ -40,16 +47,16 @@ typedef enum {
  * returns 0 if the number is to a remote phone, or -1 otherwise
  */
 extern  int     remote_call_dial( const char*       to_number,
-                                  int               from_port,
+                                  AModem            from_modem,
                                   RemoteResultFunc  result_func,
                                   void*             result_opaque );
 
 /* call this function to send a SMS to a remote emulator */
-extern int      remote_call_sms( const char*   number, int  from_port, SmsPDU  pdu );
+extern int      remote_call_sms( const char*   number, AModem  from_modem, SmsPDU  pdu );
 
 /* call this function to indicate that you're busy to a remote caller */
-extern void     remote_call_other( const char*  to_number, int  from_port, RemoteCallType  type );
+extern void     remote_call_other( const char*  to_number, AModem  from_modem, RemoteCallType  type );
 
-extern void     remote_call_cancel( const char*  to_number, int from_port );
+extern void     remote_call_cancel( const char*  to_number, AModem  from_modem );
 
 #endif /* _REMOTE_CALL_H */

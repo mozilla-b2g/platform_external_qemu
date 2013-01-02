@@ -573,8 +573,13 @@ int send_all(int fd, const void *_buf, int len1)
 
 static CharDriverState *qemu_chr_open_android_modem(QemuOpts* opts)
 {
+    int  instance_id = qemu_opt_get_number(opts, "instance_id", -1);
+    if (instance_id < 0) {
+        return NULL;
+    }
+
     CharDriverState*  cs;
-    qemu_chr_open_charpipe( &cs, &android_modem_cs );
+    qemu_chr_open_charpipe( &cs, &android_modem_cs[instance_id] );
     return cs;
 }
 static CharDriverState *qemu_chr_open_android_gps(QemuOpts* opts)
@@ -2530,7 +2535,19 @@ QemuOpts *qemu_chr_parse_compat(const char *label, const char *filename)
         qemu_opt_set(opts, "backend", "android-qemud");
         return opts;
     }
-    if (!strcmp(filename, "android-modem")) {
+    if (strstart(filename, "android-modem", &p)) {
+        int instance_id;
+        if (*p == '\0') {
+            qemu_opt_set(opts, "instance_id", "0");
+        } else if ((sscanf(p, "%d", &instance_id) == 1)
+                   && (instance_id >= 0)
+                   && (instance_id < amodem_num_devices)) {
+            char temp[8];
+            snprintf(temp, sizeof temp, "%d", instance_id);
+            qemu_opt_set(opts, "instance_id", p);
+        } else {
+            goto fail;
+        }
         qemu_opt_set(opts, "backend", "android-modem");
         return opts;
     }

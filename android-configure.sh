@@ -24,6 +24,7 @@ OPTION_TRY_64=no
 OPTION_HELP=no
 OPTION_STATIC=no
 OPTION_MINGW=no
+OPTION_MULTISIM=1
 
 GLES_INCLUDE=
 GLES_LIBS=
@@ -77,6 +78,8 @@ for opt do
   ;;
   --no-gles) GLES_PROBE=no
   ;;
+  --multisim=*) OPTION_MULTISIM=$optarg
+  ;;
   *)
     echo "unknown option '$opt', use --help"
     exit 1
@@ -109,6 +112,7 @@ EOF
     echo "  --gles-include=PATH      specify path to GLES emulation headers"
     echo "  --gles-libs=PATH         specify path to GLES emulation host libraries"
     echo "  --no-gles                disable GLES emulation support"
+    echo "  --multisim               the number of modem devices, default 1, max 9."
     echo ""
     exit 1
 fi
@@ -687,6 +691,8 @@ echo "#define CONFIG_ANDROID       1" >> $config_h
 if [ "$GLES_INCLUDE" -a "$GLES_LIBS" ]; then
     echo "#define CONFIG_ANDROID_OPENGLES 1" >> $config_h
 fi
+
+echo "#define MAX_GSM_DEVICES  $OPTION_MULTISIM" >> $config_h
 
 log "Generate   : $config_h"
 

@@ -363,7 +363,13 @@ qemud_serial_read( void*  opaque, const uint8_t*  from, int  len )
                     D("%s: legacy qemud detected.", __FUNCTION__);
                     s->version = QEMUD_VERSION_LEGACY;
                     /* tell the modem to use legacy emulation mode */
-                    amodem_set_legacy(android_modem);
+                    int i;
+                    AModem modem;
+                    for (i = 0; i < amodem_num_devices; i++) {
+                        if ((modem = amodem_get_instance(i)) != NULL) {
+                            amodem_set_legacy(modem);
+                        }
+                    }
                 } else {
                     D("%s: normal qemud detected.", __FUNCTION__);
                     s->version = QEMUD_VERSION_NORMAL;

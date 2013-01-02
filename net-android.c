@@ -2671,9 +2671,14 @@ android_parse_network_speed(const char*  speed)
         }
     }
 
-    if (android_modem)
-        amodem_set_data_network_type( android_modem,
-                                      android_parse_network_type(speed) );
+    ADataNetworkType type = android_parse_network_type(speed);
+    AModem modem;
+    for (n = 0; n < amodem_num_devices; n++) {
+        if ((modem = amodem_get_instance(n)) != NULL) {
+            amodem_set_data_network_type(modem, type);
+        }
+    }
+
     return 0;
 }
 

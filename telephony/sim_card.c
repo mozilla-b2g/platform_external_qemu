@@ -9,6 +9,7 @@
 ** MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 ** GNU General Public License for more details.
 */
+#include "qemu-common.h"
 #include "sim_card.h"
 #include <string.h>
 #include <assert.h>
@@ -28,23 +29,25 @@ typedef struct ASimCardRec_ {
     char        puk[ A_SIM_PUK_SIZE+1 ];
     int         pin_retries;
     int         port;
+    int         instance_id;
 
     char        out_buff[ 256 ];
     int         out_size;
 
 } ASimCardRec;
 
-static ASimCardRec  _s_card[1];
+static ASimCardRec  _s_card[MAX_GSM_DEVICES];
 
 ASimCard
-asimcard_create(int port)
+asimcard_create(int port, int instance_id)
 {
-    ASimCard  card    = _s_card;
+    ASimCard  card    = &_s_card[instance_id];
     card->status      = A_SIM_STATUS_READY;
     card->pin_retries = 0;
     strncpy( card->pin, "0000", sizeof(card->pin) );
     strncpy( card->puk, "12345678", sizeof(card->puk) );
     card->port = port;
+    card->instance_id = instance_id;
     return card;
 }
 
@@ -447,8 +450,9 @@ asimcard_io( ASimCard  sim, const char*  cmd )
         //   Alpha Identifier: (empty)
         //   Length of BCD number/SSC contents: 7
         //   TON and NPI: 0x81
-        //   Dialing Number/SSC String: 15555218135, actual number is "1555521"
-        //                              + emulator port, e.g. "15555215554".
+        //   Dialing Number/SSC String: 15555218135, actual number is "155552"
+        //                              + (sim->instance_id + 1) + emulator port,
+        //                              e.g. "15555215554" for first sim of first emulator.
         //   Capacity/Configuration 2 Record Identifier: not used
         //   Extension 5 Record Identifier: not used
         // @see 3GPP TS 31.102 section 4.2.26 EFmsisdn (MSISDN)
@@ -543,7 +547,13 @@ asimcard_io( ASimCard  sim, const char*  cmd )
 #endif
 
     if (!strcmp("+CRSM=178,28480,1,4,32", cmd)) {
-        snprintf( sim->out_buff, sizeof(sim->out_buff), "+CRSM: 144,0,ffffffffffffffffffffffffffffffffffff0781515525%d1%d%df%dffffffffffff", (sim->port / 1000) % 10, (sim->port / 10) % 10, (sim->port / 100) % 10, sim->port % 10);
+        snprintf( sim->out_buff, sizeof(sim->out_buff),
+                  "+CRSM: 144,0,ffffffffffffffffffffffffffffffffffff0781515525%d%d%d%df%dffffffffffff",
+                  (sim->port / 1000) % 10,
+                  (sim->instance_id + 1),
+                  (sim->port / 10) % 10,
+                  (sim->port / 100) % 10,
+                  sim->port % 10);
         return sim->out_buff;
         }
 

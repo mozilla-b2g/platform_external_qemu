@@ -15,6 +15,7 @@
  */
 #include "modem_driver.h"
 #include "qemu-char.h"
+#include "sysdeps.h"
 
 #define  xxDEBUG
 
@@ -25,8 +26,7 @@
 #  define  D(...)   ((void)0)
 #endif
 
-AModem            android_modem;
-CharDriverState*  android_modem_cs;
+CharDriverState*  android_modem_cs[MAX_GSM_DEVICES];
 
 typedef struct {
     CharDriverState*  cs;
@@ -35,6 +35,8 @@ typedef struct {
     int               in_pos;
     int               in_sms;
 } ModemDriver;
+
+static ModemDriver  modem_driver[MAX_GSM_DEVICES];
 
 /* send unsollicited messages to the device */
 static void
@@ -100,7 +102,7 @@ modem_driver_read( void*  _md, const uint8_t*  src, int  len )
             md->in_pos                = 0;
 
             D( "%s: << %s\n", __FUNCTION__, md->in_buff );
-            answer = amodem_send(android_modem, md->in_buff);
+            answer = amodem_send(md->modem, md->in_buff);
             if (answer != NULL) {
                 D( "%s: >> %s\n", __FUNCTION__, answer );
                 len = strlen(answer);
@@ -126,12 +128,12 @@ modem_driver_read( void*  _md, const uint8_t*  src, int  len )
 
 
 static void
-modem_driver_init( int  base_port, ModemDriver*  dm, CharDriverState*  cs )
+modem_driver_init( int  base_port, int  instance_id, ModemDriver*  dm, CharDriverState*  cs )
 {
     dm->cs     = cs;
     dm->in_pos = 0;
     dm->in_sms = 0;
-    dm->modem  = amodem_create( base_port, modem_driver_unsol, dm );
+    dm->modem  = amodem_create( base_port, instance_id, modem_driver_unsol, dm );
 
     qemu_chr_add_handlers( cs, modem_driver_can_read, modem_driver_read, NULL, dm );
 }
@@ -139,10 +141,31 @@ modem_driver_init( int  base_port, ModemDriver*  dm, CharDriverState*  cs )
 
 void android_modem_init( int  base_port )
 {
-    static ModemDriver  modem_driver[1];
+    bool sys_main_inited = false;
+    int i;
 
-    if (android_modem_cs != NULL) {
-        modem_driver_init( base_port, modem_driver, android_modem_cs );
-        android_modem = modem_driver->modem;
+    for (i = 0; i < amodem_num_devices; i++) {
+        if (android_modem_cs[i] == NULL) {
+            continue;
+        }
+
+        // Moved from amodem_create() because now we may invoke amodem_create()
+        // several times in modem_driver_init().
+        if (!sys_main_inited) {
+            sys_main_inited = true;
+            sys_main_init();
+        }
+
+        modem_driver_init( base_port, i, &modem_driver[i], android_modem_cs[i] );
     }
+}
+
+
+AModem
+amodem_get_instance( int  instance_id )
+{
+    if (android_modem_cs[instance_id])
+        return modem_driver[instance_id].modem;
+
+    return NULL;
 }

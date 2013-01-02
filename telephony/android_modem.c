@@ -81,6 +81,8 @@
 #define  OPERATOR_ROAMING_MCCMNC  STRINGIFY(OPERATOR_ROAMING_MCC) \
                                   STRINGIFY(OPERATOR_ROAMING_MNC)
 
+int amodem_num_devices = 0;
+
 static const char* _amodem_switch_technology(AModem modem, AModemTech newtech, int32_t newpreferred);
 static int _amodem_set_cdma_subscription_source( AModem modem, ACdmaSubscriptionSource ss);
 static int _amodem_set_cdma_prl_version( AModem modem, int prlVersion);
@@ -236,6 +238,7 @@ typedef struct AModemRec_
     int           area_code;
     int           cell_id;
     int           base_port;
+    int           instance_id;
 
     int           rssi;
     int           ber;
@@ -573,17 +576,18 @@ static int  android_modem_state_load(QEMUFile *f, void  *opaque, int version_id)
     return 0; // >=0 Happy
 }
 
-static AModemRec   _android_modem[1];
+static AModemRec   _android_modem[MAX_GSM_DEVICES];
 
 AModem
-amodem_create( int  base_port, AModemUnsolFunc  unsol_func, void*  unsol_opaque )
+amodem_create( int  base_port, int instance_id, AModemUnsolFunc  unsol_func, void*  unsol_opaque )
 {
-    AModem  modem = _android_modem;
+    AModem  modem = &_android_modem[instance_id];
     char nvfname[MAX_PATH];
     char *start = nvfname;
     char *end = start + sizeof(nvfname);
 
     modem->base_port    = base_port;
+    modem->instance_id  = instance_id;
     start = bufprint_config_file( start, end, "modem-nv-ram-" );
     start = bufprint( start, end, "%d", modem->base_port );
     modem->nvram_config_filename = strdup( nvfname );
@@ -593,15 +597,29 @@ amodem_create( int  base_port, AModemUnsolFunc  unsol_func, void*  unsol_opaque 
     modem->unsol_func   = unsol_func;
     modem->unsol_opaque = unsol_opaque;
 
-    modem->sim = asimcard_create(base_port);
+    modem->sim = asimcard_create(base_port, instance_id);
 
-    sys_main_init();
-    register_savevm( "android_modem", 0, MODEM_DEV_STATE_SAVE_VERSION,
+    // We don't know the exact number of instances to create here, it's
+    // controlled by modem_driver_init(). Putting -1 here and register_savevm()
+    // will assign a correct SaveStateEntry instance_id for us.
+    register_savevm( "android_modem", -1, MODEM_DEV_STATE_SAVE_VERSION,
                       android_modem_state_save,
                       android_modem_state_load, modem);
 
     aconfig_save_file( modem->nvram_config, modem->nvram_config_filename );
     return  modem;
+}
+
+int
+amodem_get_base_port( AModem  modem )
+{
+    return modem->base_port;
+}
+
+int
+amodem_get_instance_id( AModem  modem )
+{
+    return modem->instance_id;
 }
 
 void
@@ -874,7 +892,7 @@ amodem_free_call( AModem  modem, AVoiceCall  call )
     }
 
     if (call->is_remote) {
-        remote_call_cancel( call->call.number, modem->base_port );
+        remote_call_cancel( call->call.number, modem );
         call->is_remote = 0;
     }
 
@@ -936,7 +954,7 @@ amodem_add_inbound_call( AModem  modem, const char*  number )
     call->mode  = A_CALL_VOICE;
     call->multi = 0;
 
-    vcall->is_remote = (remote_number_string_to_port(number) > 0);
+    vcall->is_remote = (remote_number_string_to_port(number, modem, NULL, NULL) > 0);
 
     len  = strlen(number);
     if (len >= sizeof(call->number))
@@ -980,15 +998,14 @@ acall_set_state( AVoiceCall    call, ACallState  state )
         if (call->is_remote)
         {
             const char*  number = call->call.number;
-            int          port   = call->modem->base_port;
 
             switch (state) {
                 case A_CALL_HELD:
-                    remote_call_other( number, port, REMOTE_CALL_HOLD );
+                    remote_call_other( number, call->modem, REMOTE_CALL_HOLD );
                     break;
 
                 case A_CALL_ACTIVE:
-                    remote_call_other( number, port, REMOTE_CALL_ACCEPT );
+                    remote_call_other( number, call->modem, REMOTE_CALL_ACCEPT );
                     break;
 
                 default: ;
@@ -1721,33 +1738,33 @@ handleSendSMSText( const char*  cmd, AModem  modem )
     }
 
     do {
-        int  index, remote_port;
+        int  index;
 
         numlen = sms_address_to_str( &address, temp, sizeof(temp) );
         if (numlen > sizeof(temp)-1)
             break;
         temp[numlen] = 0;
 
-        /* Converts 4, 7, and 10 digits number to 11 digits */
-        if (numlen == 10 && !strncmp(temp, PHONE_PREFIX+1, 6)) {
-            memcpy( number, PHONE_PREFIX, 1 );
-            memcpy( number+1, temp, numlen );
-            number[numlen+1] = 0;
-        } else if (numlen == 7 && !strncmp(temp, PHONE_PREFIX+4, 3)) {
-            memcpy( number, PHONE_PREFIX, 4 );
-            memcpy( number+4, temp, numlen );
-            number[numlen+4] = 0;
+        /* Converts 4, 5, 7, and 10 digits number to 11 digits */
+        if ((numlen == 10 && (!strncmp(temp, PHONE_PREFIX+1, 5) && ((temp[5] - '1') == modem->instance_id)))
+            || (numlen == 7 && (!strncmp(temp, PHONE_PREFIX+4, 2) && ((temp[2] - '1') == modem->instance_id)))
+            || (numlen == 5 && ((temp[0] - '1') == modem->instance_id))) {
+            memcpy( number, PHONE_PREFIX, 11 - numlen );
+            memcpy( number + 11 - numlen, temp, numlen );
+            number[11] = 0;
         } else if (numlen == 4) {
-            memcpy( number, PHONE_PREFIX, 7 );
+            memcpy( number, PHONE_PREFIX, 6 );
+            number[6] = '1' + modem->instance_id;
             memcpy( number+7, temp, numlen );
-            number[numlen+7] = 0;
+            number[11] = 0;
         } else {
             memcpy( number, temp, numlen );
             number[numlen] = 0;
         }
 
-        remote_port = remote_number_string_to_port( number );
-        if (remote_port < 0) {
+        int remote_port = -1, remote_instance_id = -1;
+        if (remote_number_string_to_port( number, modem, &remote_port,
+                                          &remote_instance_id ) < 0) {
             break;
         }
 
@@ -1773,7 +1790,8 @@ handleSendSMSText( const char*  cmd, AModem  modem )
             SmsPDU*        deliver;
             int            nn;
 
-            snprintf( temp, sizeof(temp), PHONE_PREFIX "%d", modem->base_port );
+            snprintf( temp, sizeof(temp), PHONE_PREFIX "%d%d",
+                      modem->instance_id + 1, modem->base_port );
             sms_address_from_str( from, temp, strlen(temp) );
 
             deliver = sms_receiver_create_deliver( modem->sms_receiver, index, from );
@@ -1785,8 +1803,11 @@ handleSendSMSText( const char*  cmd, AModem  modem )
 
             for (nn = 0; deliver[nn] != NULL; nn++) {
                 if (remote_port == modem->base_port) {
-                    amodem_receive_sms( modem, deliver[nn] );
-                } else if ( remote_call_sms( number, modem->base_port, deliver[nn] ) < 0 ) {
+                    AModem remote_modem = amodem_get_instance(remote_instance_id);
+                    if (remote_modem) {
+                        amodem_receive_sms( remote_modem, deliver[nn] );
+                    }
+                } else if ( remote_call_sms( number, modem, deliver[nn] ) < 0 ) {
                     D( "%s: could not send SMS PDU to remote emulator\n",
                        __FUNCTION__ );
                     break;
@@ -2090,8 +2111,7 @@ voice_call_event( void*  _vcall )
             call->state = A_CALL_ALERTING;
 
             if (vcall->is_remote) {
-                if ( remote_call_dial( call->number,
-                                       vcall->modem->base_port,
+                if ( remote_call_dial( call->number, vcall->modem,
                                        remote_voice_call_event, vcall ) < 0 )
                 {
                    /* we could not connect, probably because the corresponding
@@ -2167,19 +2187,18 @@ handleDial( const char*  cmd, AModem  modem )
     if (len >= sizeof(call->number))
         len = sizeof(call->number)-1;
 
-    /* Converts 4, 7, and 10 digits number to 11 digits */
-    if (len == 10 && !strncmp(cmd, PHONE_PREFIX+1, 6)) {
-        memcpy( call->number, PHONE_PREFIX, 1 );
-        memcpy( call->number+1, cmd, len );
-        call->number[len+1] = 0;
-    } else if (len == 7 && !strncmp(cmd, PHONE_PREFIX+4, 3)) {
-        memcpy( call->number, PHONE_PREFIX, 4 );
-        memcpy( call->number+4, cmd, len );
-        call->number[len+4] = 0;
+    /* Converts 4, 5, 7, and 10 digits number to 11 digits */
+    if ((len == 10 && (!strncmp(cmd, PHONE_PREFIX+1, 5) && ((cmd[5] - '1') == modem->instance_id)))
+        || (len == 7 && (!strncmp(cmd, PHONE_PREFIX+4, 2) && ((cmd[2] - '1') == modem->instance_id)))
+        || (len == 5 && ((cmd[0] - '1') == modem->instance_id))) {
+        memcpy( call->number, PHONE_PREFIX, 11 - len );
+        memcpy( call->number + 11 - len, cmd, len );
+        call->number[11] = 0;
     } else if (len == 4) {
-        memcpy( call->number, PHONE_PREFIX, 7 );
+        memcpy( call->number, PHONE_PREFIX, 6 );
+        call->number[6] = '1' + modem->instance_id;
         memcpy( call->number+7, cmd, len );
-        call->number[len+7] = 0;
+        call->number[11] = 0;
     } else {
         memcpy( call->number, cmd, len );
         call->number[len] = 0;
@@ -2190,7 +2209,7 @@ handleDial( const char*  cmd, AModem  modem )
         modem->in_emergency_mode = 1;
         amodem_add_line( modem, "+WSOS: 1" );
     }
-    vcall->is_remote = (remote_number_string_to_port(call->number) > 0);
+    vcall->is_remote = (remote_number_string_to_port(call->number, modem, NULL, NULL) > 0);
 
     vcall->timer = sys_timer_create();
     sys_timer_set( vcall->timer, sys_time_ms() + CALL_DELAY_DIAL,

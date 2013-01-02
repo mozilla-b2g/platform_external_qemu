@@ -3730,10 +3730,23 @@ int main(int argc, char **argv, char **envp)
                         "used -help-char-devices for list of available formats",
                     android_op_radio);
         }
+        amodem_num_devices = 1;
         android_qemud_set_channel( ANDROID_QEMUD_GSM, cs);
     } else if (android_hw->hw_gsmModem != 0 ) {
-        if ( android_qemud_get_channel( ANDROID_QEMUD_GSM, &android_modem_cs ) < 0 ) {
-            PANIC("could not initialize qemud 'gsm' channel");
+        char buf[32];
+        const char* name;
+
+        amodem_num_devices = MAX_GSM_DEVICES;
+        for (i = 0; i < amodem_num_devices; i++) {
+            if (i == 0) {
+                name = ANDROID_QEMUD_GSM;
+            } else {
+                snprintf(buf, sizeof(buf), "%s%d", ANDROID_QEMUD_GSM, i);
+                name = buf;
+            }
+            if ( android_qemud_get_channel( name, &android_modem_cs[i] ) < 0 ) {
+                PANIC("could not initialize qemud '%s' channel", name);
+            }
         }
     }
 

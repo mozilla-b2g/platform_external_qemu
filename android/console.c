@@ -100,6 +100,13 @@ typedef struct ControlClientRec_
     char                       buff[ 4096 ];
     int                        buff_len;
 
+    /**
+     * Currently referred modem device. Each control client have their own
+     * modem device pointer to the one it's referring to. This pointer might be
+     * NULL so every command handler should check its validity every time
+     * referring to it. Its value is only modified by 'mux modem <N>'.
+     */
+    AModem                     modem;
 } ControlClientRec;
 
 
@@ -331,6 +338,7 @@ control_client_create( Socket         socket,
         client->global  = global;
         client->sock    = socket;
         client->next    = global->clients;
+        client->modem   = amodem_get_instance(0);
         global->clients = client;
 
         qemu_set_fd_handler( socket, control_client_read, NULL, client );
@@ -727,8 +735,8 @@ do_network_speed( ControlClient  client, char*  args )
     netshaper_set_rate( slirp_shaper_in,  qemu_net_download_speed );
     netshaper_set_rate( slirp_shaper_out, qemu_net_upload_speed );
 
-    if (android_modem) {
-        amodem_set_data_network_type( android_modem,
+    if (client->modem) {
+        amodem_set_data_network_type( client->modem,
                                     android_parse_network_type( args ) );
     }
     return 0;
@@ -1069,6 +1077,11 @@ do_cdma_ssource( ControlClient  client, char*  args )
         return -1;
     }
 
+    if (!client->modem) {
+        control_write( client, "KO: modem emulation not running\r\n" );
+        return -1;
+    }
+
     for (nn = 0; ; nn++) {
         const char*         name    = _cdma_subscription_sources[nn].name;
         ACdmaSubscriptionSource ssource = _cdma_subscription_sources[nn].source;
@@ -1077,7 +1090,7 @@ do_cdma_ssource( ControlClient  client, char*  args )
             break;
 
         if (!strcasecmp( args, name )) {
-            amodem_set_cdma_subscription_source( android_modem, ssource );
+            amodem_set_cdma_subscription_source( client->modem, ssource );
             return 0;
         }
     }
@@ -1096,9 +1109,14 @@ do_cdma_prl_version( ControlClient client, char * args )
         return -1;
     }
 
+    if (!client->modem) {
+        control_write( client, "KO: modem emulation not running\r\n" );
+        return -1;
+    }
+
     version = strtol(args, &endptr, 0);
     if (endptr != args) {
-        amodem_set_cdma_prl_version( android_modem, version );
+        amodem_set_cdma_prl_version( client->modem, version );
     }
     return 0;
 }
@@ -1143,16 +1161,16 @@ do_gsm_status( ControlClient  client, char*  args )
         control_write( client, "KO: no argument required\r\n" );
         return -1;
     }
-    if (!android_modem) {
+    if (!client->modem) {
         control_write( client, "KO: modem emulation not running\r\n" );
         return -1;
     }
     control_write( client, "gsm voice state: %s\r\n",
                    gsm_state_to_string(
-                       amodem_get_voice_registration(android_modem) ) );
+                       amodem_get_voice_registration(client->modem) ) );
     control_write( client, "gsm data state:  %s\r\n",
                    gsm_state_to_string(
-                       amodem_get_data_registration(android_modem) ) );
+                       amodem_get_data_registration(client->modem) ) );
     return 0;
 }
 
@@ -1195,11 +1213,11 @@ do_gsm_data( ControlClient  client, char*  args )
             break;
 
         if ( !strcmp( args, name ) ) {
-            if (!android_modem) {
+            if (!client->modem) {
                 control_write( client, "KO: modem emulation not running\r\n" );
                 return -1;
             }
-            amodem_set_data_registration( android_modem, state );
+            amodem_set_data_registration( client->modem, state );
             qemu_net_disable = (state != A_REGISTRATION_HOME    &&
                                 state != A_REGISTRATION_ROAMING );
             return 0;
@@ -1247,11 +1265,11 @@ do_gsm_voice( ControlClient  client, char*  args )
             break;
 
         if ( !strcmp( args, name ) ) {
-            if (!android_modem) {
+            if (!client->modem) {
                 control_write( client, "KO: modem emulation not running\r\n" );
                 return -1;
             }
-            amodem_set_voice_registration( android_modem, state );
+            amodem_set_voice_registration( client->modem, state );
             return 0;
         }
     }
@@ -1264,13 +1282,13 @@ do_gsm_location( ControlClient  client, char*  args )
 {
     int lac, ci;
 
-    if (!android_modem) {
+    if (!client->modem) {
         control_write( client, "KO: modem emulation not running\r\n" );
         return -1;
     }
 
     if (!args) {
-        amodem_get_gsm_location( android_modem, &lac, &ci );
+        amodem_get_gsm_location( client->modem, &lac, &ci );
         control_write( client, "lac: %d\r\nci: %d\r\n", lac, ci );
         return 0;
     }
@@ -1285,7 +1303,7 @@ do_gsm_location( ControlClient  client, char*  args )
         return -1;
     }
 
-    amodem_set_gsm_location( android_modem, lac, ci );
+    amodem_set_gsm_location( client->modem, lac, ci );
     return 0;
 }
 
@@ -1313,7 +1331,13 @@ do_send_stkCmd( ControlClient  client, char*  args  )
         control_write( client, "KO: missing argument, try 'stk pdu <hexstring>'\r\n" );
         return -1;
     }
-    amodem_send_stk_unsol_proactive_command( android_modem, args );
+
+    if (!client->modem) {
+        control_write( client, "KO: modem emulation not running\r\n" );
+        return -1;
+    }
+
+    amodem_send_stk_unsol_proactive_command( client->modem, args );
     return 0;
 }
 
@@ -1331,11 +1355,11 @@ do_gsm_call( ControlClient  client, char*  args )
         return -1;
     }
 
-    if (!android_modem) {
+    if (!client->modem) {
         control_write( client, "KO: modem emulation not running\r\n" );
         return -1;
     }
-    amodem_add_inbound_call( android_modem, args );
+    amodem_add_inbound_call( client->modem, args );
     return 0;
 }
 
@@ -1350,11 +1374,11 @@ do_gsm_cancel( ControlClient  client, char*  args )
         control_write( client, "KO: bad phone number format, use digits, # and + only\r\n" );
         return -1;
     }
-    if (!android_modem) {
+    if (!client->modem) {
         control_write( client, "KO: modem emulation not running\r\n" );
         return -1;
     }
-    if ( amodem_disconnect_call( android_modem, args ) < 0 ) {
+    if ( amodem_disconnect_call( client->modem, args ) < 0 ) {
         control_write( client, "KO: could not cancel this number\r\n" );
         return -1;
     }
@@ -1378,11 +1402,16 @@ call_state_to_string( ACallState  state )
 static int
 do_gsm_list( ControlClient  client, char*  args )
 {
+    if (!client->modem) {
+        control_write( client, "KO: modem emulation not running\r\n" );
+        return -1;
+    }
+
     /* check that we have a phone number made of digits */
-    int   count = amodem_get_call_count( android_modem );
+    int   count = amodem_get_call_count( client->modem );
     int   nn;
     for (nn = 0; nn < count; nn++) {
-        ACall        call = amodem_get_call( android_modem, nn );
+        ACall        call = amodem_get_call( client->modem, nn );
         const char*  dir;
 
         if (call == NULL)
@@ -1408,12 +1437,18 @@ do_gsm_busy( ControlClient  client, char*  args )
         control_write( client, "KO: missing argument, try 'gsm busy <phonenumber>'\r\n" );
         return -1;
     }
-    call = amodem_find_call_by_number( android_modem, args );
+
+    if (!client->modem) {
+        control_write( client, "KO: modem emulation not running\r\n" );
+        return -1;
+    }
+
+    call = amodem_find_call_by_number( client->modem, args );
     if (call == NULL || call->dir != A_CALL_OUTBOUND) {
         control_write( client, "KO: no current outbound call to number '%s' (call %p)\r\n", args, call );
         return -1;
     }
-    if ( amodem_disconnect_call( android_modem, args ) < 0 ) {
+    if ( amodem_disconnect_call( client->modem, args ) < 0 ) {
         control_write( client, "KO: could not cancel this number\r\n" );
         return -1;
     }
@@ -1429,12 +1464,18 @@ do_gsm_hold( ControlClient  client, char*  args )
         control_write( client, "KO: missing argument, try 'gsm out hold <phonenumber>'\r\n" );
         return -1;
     }
-    call = amodem_find_call_by_number( android_modem, args );
+
+    if (!client->modem) {
+        control_write( client, "KO: modem emulation not running\r\n" );
+        return -1;
+    }
+
+    call = amodem_find_call_by_number( client->modem, args );
     if (call == NULL) {
         control_write( client, "KO: no current call to/from number '%s'\r\n", args );
         return -1;
     }
-    if ( amodem_update_call( android_modem, args, A_CALL_HELD ) < 0 ) {
+    if ( amodem_update_call( client->modem, args, A_CALL_HELD ) < 0 ) {
         control_write( client, "KO: could put this call on hold\r\n" );
         return -1;
     }
@@ -1451,12 +1492,18 @@ do_gsm_accept( ControlClient  client, char*  args )
         control_write( client, "KO: missing argument, try 'gsm accept <phonenumber>'\r\n" );
         return -1;
     }
-    call = amodem_find_call_by_number( android_modem, args );
+
+    if (!client->modem) {
+        control_write( client, "KO: modem emulation not running\r\n" );
+        return -1;
+    }
+
+    call = amodem_find_call_by_number( client->modem, args );
     if (call == NULL) {
         control_write( client, "KO: no current call to/from number '%s'\r\n", args );
         return -1;
     }
-    if ( amodem_update_call( android_modem, args, A_CALL_ACTIVE ) < 0 ) {
+    if ( amodem_update_call( client->modem, args, A_CALL_ACTIVE ) < 0 ) {
         control_write( client, "KO: could not activate this call\r\n" );
         return -1;
     }
@@ -1472,6 +1519,11 @@ do_gsm_signal( ControlClient  client, char*  args )
       int     params[ NUM_SIGNAL_PARAMS ];
 
       static  int  last_ber = 99;
+
+      if (!client->modem) {
+          control_write( client, "KO: modem emulation not running\r\n" );
+          return -1;
+      }
 
       if (!p)
           p = "";
@@ -1517,7 +1569,7 @@ do_gsm_signal( ControlClient  client, char*  args )
           last_ber = ber;
       }
 
-      amodem_set_signal_strength( android_modem, rssi, last_ber );
+      amodem_set_signal_strength( client->modem, rssi, last_ber );
 
       return 0;
   }
@@ -1658,7 +1710,7 @@ do_sms_send( ControlClient  client, char*  args )
         return -1;
     }
 
-    if (!android_modem) {
+    if (!client->modem) {
         control_write( client, "KO: modem emulation not running\r\n" );
         return -1;
     }
@@ -1671,7 +1723,7 @@ do_sms_send( ControlClient  client, char*  args )
     }
 
     for (nn = 0; pdus[nn] != NULL; nn++)
-        amodem_receive_sms( android_modem, pdus[nn] );
+        amodem_receive_sms( client->modem, pdus[nn] );
 
     smspdu_free_list( pdus );
     return 0;
@@ -1688,7 +1740,7 @@ do_sms_sendpdu( ControlClient  client, char*  args )
         return -1;
     }
 
-    if (!android_modem) {
+    if (!client->modem) {
         control_write( client, "KO: modem emulation not running\r\n" );
         return -1;
     }
@@ -1699,7 +1751,7 @@ do_sms_sendpdu( ControlClient  client, char*  args )
         return -1;
     }
 
-    amodem_receive_sms( android_modem, pdu );
+    amodem_receive_sms( client->modem, pdu );
     smspdu_free( pdu );
     return 0;
 }
@@ -2669,9 +2721,15 @@ do_operator_dumpall( ControlClient client, char* args )
 {
     int oper_index = 0, name_index, pos = 0, n;
     char replybuf[64];
+
+    if (!client->modem) {
+        control_write( client, "KO: modem emulation not running\r\n" );
+        return -1;
+    }
+
     for (; oper_index < A_OPERATOR_MAX; oper_index++) {
         for (name_index = 0; name_index < A_NAME_MAX; name_index++) {
-            n = amodem_get_operator_name_ex(android_modem,
+            n = amodem_get_operator_name_ex(client->modem,
                                             oper_index, name_index,
                                             replybuf + pos, sizeof(replybuf) - pos);
             if (n) {
@@ -2697,6 +2755,11 @@ do_operator_get( ControlClient client, char* args )
         return -1;
     }
 
+    if (!client->modem) {
+        control_write( client, "KO: modem emulation not running\r\n" );
+        return -1;
+    }
+
     int oper_index = A_OPERATOR_MAX;
     if ((sscanf(args, "%u", &oper_index) != 1) ||
         (oper_index >= A_OPERATOR_MAX)) {
@@ -2707,7 +2770,7 @@ do_operator_get( ControlClient client, char* args )
     int name_index = 0, pos = 0, n;
     char replybuf[64];
     for (; name_index < A_NAME_MAX; name_index++) {
-        n = amodem_get_operator_name_ex(android_modem,
+        n = amodem_get_operator_name_ex(client->modem,
                                         oper_index, name_index,
                                         replybuf + pos, sizeof(replybuf) - pos);
         if (n) {
@@ -2734,6 +2797,11 @@ USAGE:
         control_write(client, "Usage: operator set <operator index> <long name>[,<short name>[,<mcc mnc>]]\n");
 FREE_BUF:
         if (args_dup) free(args_dup);
+        return -1;
+    }
+
+    if (!client->modem) {
+        control_write( client, "KO: modem emulation not running\r\n" );
         return -1;
     }
 
@@ -2778,16 +2846,16 @@ FREE_BUF:
       }
     }
 
-    amodem_set_operator_name_ex(android_modem, oper_index, A_NAME_LONG, longName, -1);
+    amodem_set_operator_name_ex(client->modem, oper_index, A_NAME_LONG, longName, -1);
     if (shortName) {
-      amodem_set_operator_name_ex(android_modem, oper_index, A_NAME_SHORT, shortName, -1);
+      amodem_set_operator_name_ex(client->modem, oper_index, A_NAME_SHORT, shortName, -1);
     }
     if (mccMnc) {
-      amodem_set_operator_name_ex(android_modem, oper_index, A_NAME_NUMERIC, mccMnc, -1);
+      amodem_set_operator_name_ex(client->modem, oper_index, A_NAME_NUMERIC, mccMnc, -1);
     }
 
     // Notify device through amodem_unsol(...)
-    amodem_set_voice_registration(android_modem, amodem_get_voice_registration(android_modem));
+    amodem_set_voice_registration(client->modem, amodem_get_voice_registration(client->modem));
 
     do_operator_dumpall(client, NULL);
 
@@ -2810,6 +2878,59 @@ static const CommandDefRec  operator_commands[] =
     { "set", "set operator info by index",
       "'set <operator index> <long name>[,<short name>[,<mcc mnc>]]' set the values of specified operator.\r\n",
       NULL, do_operator_set, NULL},
+
+    { NULL, NULL, NULL, NULL, NULL, NULL }
+};
+
+/********************************************************************************************/
+/********************************************************************************************/
+/*****                                                                                 ******/
+/*****                            M U X   C O M M A N D S                              ******/
+/*****                                                                                 ******/
+/********************************************************************************************/
+/********************************************************************************************/
+
+static int
+do_mux_modem( ControlClient client, char* args )
+{
+    if (!args) {
+        if (!client->modem) {
+            control_write( client, "KO: modem emulation not running\r\n" );
+            return -1;
+        }
+
+        control_write( client, "%d\n", amodem_get_instance_id(client->modem) );
+        return 0;
+    }
+
+    unsigned int instance_id = 0;
+    if ((sscanf(args, "%u", &instance_id) != 1)
+            || (instance_id >= amodem_num_devices)) {
+        control_write(client, "Usage: mux modem [<instance index>]\n");
+        return -1;
+    }
+
+    AModem modem = amodem_get_instance(instance_id);
+    if (!modem) {
+        /**
+         * Just give a warning message here and still allows selecting an
+         * invalid modem. Because when it comes to inter-emulator communication
+         * and the selection fails here and fallback to original modem, it will
+         * send wrong command to wrong modem and causes unexpected behaviour.
+         */
+        control_write(client, "WARNING: Modem[%u] is not enabled\n", instance_id);
+    }
+
+    client->modem = modem;
+    return 0;
+}
+
+static const CommandDefRec  mux_commands[] =
+{
+    { "modem", "select active modem device",
+      "'modem <instance index>': select active modem device by instance for further config.\r\n"
+      "'modem': display current active modem device.\r\n", NULL,
+      do_mux_modem, NULL},
 
     { NULL, NULL, NULL, NULL, NULL, NULL }
 };
@@ -3202,6 +3323,10 @@ static const CommandDefRec   main_commands[] =
     { "stk", "STK related commands",
       "allows you to simulate an inbound STK proactive command\r\n", NULL,
       NULL, stk_commands },
+
+    { "mux", "device multiplexing management",
+      "allows to select the active device of its kind for console control\r\n", NULL,
+      NULL, mux_commands },
 
     { NULL, NULL, NULL, NULL, NULL, NULL }
 };

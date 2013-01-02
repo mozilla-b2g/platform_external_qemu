@@ -224,7 +224,7 @@ typedef struct CharPipeState {
 
 
 
-#define   MAX_CHAR_PIPES   8
+#define   MAX_CHAR_PIPES   16
 
 static CharPipeState  _s_charpipes[ MAX_CHAR_PIPES ];
 
