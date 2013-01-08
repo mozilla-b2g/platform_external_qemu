@@ -2938,6 +2938,51 @@ static const CommandDefRec  mux_commands[] =
 /********************************************************************************************/
 /********************************************************************************************/
 /*****                                                                                 ******/
+/*****                           C B S   C O M M A N D                                 ******/
+/*****                                                                                 ******/
+/********************************************************************************************/
+/********************************************************************************************/
+
+static int
+do_cbs_sendpdu( ControlClient  client, char*  args )
+{
+    SmsPDU pdu;
+
+    /* check that we have a phone number made of digits */
+    if (!args) {
+        control_write( client, "KO: missing argument, try 'cbs pdu <hexstring>'\r\n" );
+        return -1;
+    }
+
+    if (!client->modem) {
+        control_write( client, "KO: modem emulation not running\r\n" );
+        return -1;
+    }
+
+    pdu = cbspdu_create_from_hex( args, strlen(args) );
+    if (pdu == NULL) {
+        control_write( client, "KO: badly formatted <hexstring>\r\n" );
+        return -1;
+    }
+
+    amodem_receive_cbs( client->modem, pdu );
+    smspdu_free( pdu );
+    return 0;
+}
+
+static const CommandDefRec  cbs_commands[] =
+{
+    { "pdu", "send inbound Cell Broadcast PDU",
+    "'cbs pdu <hexstring>' allows you to simulate a new inbound Cell Broadcast PDU\r\n"
+    "you probably love to play with this ;)\r\n", NULL,
+    do_cbs_sendpdu, NULL },
+
+    { NULL, NULL, NULL, NULL, NULL, NULL }
+};
+
+/********************************************************************************************/
+/********************************************************************************************/
+/*****                                                                                 ******/
 /*****                           M A I N   C O M M A N D S                             ******/
 /*****                                                                                 ******/
 /********************************************************************************************/
@@ -3327,6 +3372,10 @@ static const CommandDefRec   main_commands[] =
     { "mux", "device multiplexing management",
       "allows to select the active device of its kind for console control\r\n", NULL,
       NULL, mux_commands },
+
+    { "cbs", "Cell Broadcast related commands",
+      "allows you to simulate an inbound CBS\r\n", NULL,
+      NULL, cbs_commands },
 
     { NULL, NULL, NULL, NULL, NULL, NULL }
 };
