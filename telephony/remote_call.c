@@ -105,7 +105,7 @@ remote_number_string_to_port( const char*  number, AModem  modem, int*  port, in
         len--;
     if (len == 11 && (!memcmp(number, PHONE_PREFIX, 6)
             && ((number[6] - '1') == amodem_get_instance_id(modem)))) {
-        temp += 7;
+        temp += 6;
     }
     num = strtol( temp, &end, 10 );
 
