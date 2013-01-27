@@ -9,11 +9,21 @@
 ** MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 ** GNU General Public License for more details.
 */
+#include "android/utils/debug.h"
 #include "qemu-common.h"
 #include "sim_card.h"
 #include <string.h>
 #include <assert.h>
 #include <stdio.h>
+
+#define  DEBUG  0
+
+#if DEBUG
+#  define  D_ACTIVE  VERBOSE_CHECK(modem)
+#  define  D(...)   do { if (D_ACTIVE) fprintf( stderr, __VA_ARGS__ ); } while (0)
+#else
+#  define  D(...)   ((void)0)
+#endif
 
 /* set ENABLE_DYNAMIC_RECORDS to 1 to enable dynamic records
  * for now, this is an experimental feature that needs more testing
@@ -22,6 +32,33 @@
 
 #define  A_SIM_PIN_SIZE  4
 #define  A_SIM_PUK_SIZE  8
+
+#define  SIM_FILE_RECORD_ABSOLUTE_MODE  4
+
+// @see TS 102.221 section 10.2.1 Status conditions returned by the UICC.
+/* Normal processing */
+// Normal ending of the command - sw1='90', sw2='00'.
+#define  SIM_RESPONSE_NORMAL_ENDING         "+CRSM: 144,0"
+
+/* Execution errors */
+// sw1='64', sw2='00', No information given, state of non-volatile memory unchanged.
+#define  SIM_RESPONSE_EXECUTION_ERROR       "+CRSM: 100,0"
+
+/* Checking errors */
+// sw1='67', sw2='00', Wrong length.
+#define  SIM_RESPONSE_WRONG_LENGTH          "+CRSM: 103,0"
+
+/* Wrong parameters */
+// sw1='6A', sw2='81', Function not supported.
+#define  SIM_RESPONSE_FUNCTION_NOT_SUPPORT  "+CRSM: 106,129"
+// sw1='6A', sw2='82', File not found.
+#define  SIM_RESPONSE_FILE_NOT_FOUND        "+CRSM: 106,130"
+// sw1='6A', sw2='83', Record not found
+#define  SIM_RESPONSE_RECORD_NOT_FOUND      "+CRSM: 106,131"
+// sw1='6A', sw2='86', Incorrect parameters P1 to P2.
+#define  SIM_RESPONSE_INCORRECT_PARAMETERS  "+CRSM: 106,134"
+
+typedef union SimFileRec_ SimFileRec, *SimFile;
 
 typedef struct ASimCardRec_ {
     ASimStatus  status;
@@ -33,6 +70,8 @@ typedef struct ASimCardRec_ {
 
     char        out_buff[ 256 ];
     int         out_size;
+
+    SimFile     efs;
 
 } ASimCardRec;
 
@@ -159,6 +198,8 @@ typedef enum {
 
 /* descriptor for a known SIM File */
 #define  SIM_FILE_HEAD       \
+    SimFileRec*     next;    \
+    SimFileRec**    prev;    \
     SimFileType     type;    \
     unsigned short  id;      \
     unsigned short  flags;
@@ -183,15 +224,171 @@ typedef struct {
 typedef SimFileEFLinearRec   SimFileEFCyclicRec;
 typedef SimFileEFCyclicRec*  SimFileEFCyclic;
 
-typedef union {
+typedef union SimFileRec_ {
     SimFileAnyRec          any;
     SimFileEFDedicatedRec  dedicated;
     SimFileEFLinearRec     linear;
     SimFileEFCyclicRec     cyclic;
 } SimFileRec, *SimFile;
 
+static int
+asimcard_ef_read_dedicated( SimFile ef, char* dst )
+{
+    if (dst == NULL) {
+        D("ERROR: Destination buffer is NULL.\n");
+        return -1;
+    }
+
+    if (ef == NULL || ef->any.type != SIM_FILE_EF_DEDICATED) {
+        D("ERROR: The type of EF is not SIM_FILE_EF_DEDICATED.\n");
+        return -1;
+    }
+
+    SimFileEFDedicated dedicated = (SimFileEFDedicated) ef;
+
+    gsm_hex_from_bytes(dst, dedicated->data, dedicated->length);
+    dst[dedicated->length * 2] = '\0';
+
+    return dedicated->length;
+}
+
+static int
+asimcard_ef_read_linear( SimFile ef, byte_t record_id, char* dst )
+{
+    if (dst == NULL) {
+        D("ERROR: Destination buffer is NULL.\n");
+        return -1;
+    }
+
+    if (ef == NULL || ef->any.type != SIM_FILE_EF_LINEAR) {
+        D("ERROR: The type of EF is not SIM_FILE_EF_LINEAR.\n");
+        return -1;
+    }
+
+    if (ef->linear.rec_count < record_id) {
+        D("ERROR: Invaild record id.\n");
+        return -1;
+    }
+
+    SimFileEFLinear linear = (SimFileEFLinear) ef;
+    bytes_t         record = linear->records + ((record_id - 1) * linear->rec_len);
+
+    gsm_hex_from_bytes(dst, record, linear->rec_len);
+    dst[linear->rec_len * 2] = '\0';
+
+    return linear->rec_len;
+}
+
+static SimFile
+asimcard_ef_find( ASimCard sim, int id )
+{
+    SimFile ef = sim->efs;
+
+    for(; ef != NULL; ef = ef->any.next) {
+        if (ef->any.id == id) {
+            break;
+        }
+    }
+
+    return ef;
+}
+
+static const char*
+asimcard_io_read_binary( ASimCard sim, int id, int p1, int p2, int p3 )
+{
+    char*   out = sim->out_buff;
+    SimFile ef  = asimcard_ef_find(sim, id);
+
+    if (ef == NULL) {
+        return SIM_RESPONSE_FILE_NOT_FOUND;
+    }
+
+    if (p1 != 0 || p2 != 0) {
+        return SIM_RESPONSE_INCORRECT_PARAMETERS;
+    }
+
+    if (ef->any.type != SIM_FILE_EF_DEDICATED) {
+        return SIM_RESPONSE_FUNCTION_NOT_SUPPORT;
+    }
+
+    if (ef->dedicated.length < p3) {
+        return SIM_RESPONSE_WRONG_LENGTH;
+    }
+
+    sprintf(out, "%s,", SIM_RESPONSE_NORMAL_ENDING);
+    out  += strlen(out);
+    if (asimcard_ef_read_dedicated(ef, out) < 0) {
+        return SIM_RESPONSE_EXECUTION_ERROR;
+    }
+
+    return sim->out_buff;
+}
+
+static const char*
+asimcard_io_read_record( ASimCard sim, int id, int p1, int p2, int p3 )
+{
+    char*   out = sim->out_buff;
+    SimFile ef  = asimcard_ef_find(sim, id);
+
+    if (ef == NULL) {
+        return SIM_RESPONSE_FILE_NOT_FOUND;
+    }
+
+    // We only support ABSOLUTE_MODE
+    if (p2 != SIM_FILE_RECORD_ABSOLUTE_MODE || p1 <= 0) {
+        return SIM_RESPONSE_INCORRECT_PARAMETERS;
+    }
+
+    if (ef->any.type != SIM_FILE_EF_LINEAR) {
+        return SIM_RESPONSE_FUNCTION_NOT_SUPPORT;
+    }
+
+    if (ef->linear.rec_count < p1) {
+        return SIM_RESPONSE_RECORD_NOT_FOUND;
+    }
+
+    if (ef->linear.rec_len < p3) {
+        return SIM_RESPONSE_WRONG_LENGTH;
+    }
+
+    sprintf(out, "%s,", SIM_RESPONSE_NORMAL_ENDING);
+    out += strlen(out);
+    if (asimcard_ef_read_linear(ef, p1, out) < 0) {
+        return SIM_RESPONSE_EXECUTION_ERROR;
+    }
+
+    return sim->out_buff;
+}
 
 #if ENABLE_DYNAMIC_RECORDS
+static int sim_file_to_hex( SimFile  file, bytes_t  dst );
+
+static const char*
+asimcard_io_get_response( ASimCard sim, int id, int p1, int p2, int p3 )
+{
+    int    count;
+    char*   out = sim->out_buff;
+    SimFile ef  = asimcard_ef_find(sim, id);
+
+    if (ef == NULL) {
+        return SIM_RESPONSE_FILE_NOT_FOUND;
+    }
+
+    if (p1 != 0 || p2 != 0 || p3 != 15) {
+        return SIM_RESPONSE_INCORRECT_PARAMETERS;
+    }
+
+    sprintf(out, "%s,", SIM_RESPONSE_NORMAL_ENDING);
+    out  += strlen(out);
+    count = sim_file_to_hex(ef, out);
+    if (count < 0) {
+        return SIM_RESPONSE_EXECUTION_ERROR;
+    }
+    out[count] = 0;
+
+    return sim->out_buff;
+}
+
 /* convert a SIM File descriptor into an ASCII string,
    assumes 'dst' is NULL or properly sized.
    return the number of chars, or -1 on error */
@@ -265,19 +462,23 @@ sim_file_to_hex( SimFile  file, bytes_t  dst )
 
                     /* byte 14 is struct of EF */
                     dst[0] = '0';
-                    if (type == SIM_FILE_EF_DEDICATED)
+                    if (type == SIM_FILE_EF_DEDICATED) {
                         dst[1] = '0';
-                    else if (type == SIM_FILE_EF_LINEAR)
+                    } else if (type == SIM_FILE_EF_LINEAR) {
                         dst[1] = '1';
-                    else
+                    } else {
                         dst[1] = '3';
+                    }
+                    dst   += 2;
 
                     /* byte 15 is lenght of record, or 0 */
                     if (type == SIM_FILE_EF_DEDICATED) {
                         dst[0] = '0';
                         dst[1] = '0';
-                    } else
+                    } else {
                         gsm_hex_from_byte( dst, file->linear.rec_len );
+                    }
+                    dst   += 2;
                 }
                 result = 30;
             }
@@ -288,41 +489,6 @@ sim_file_to_hex( SimFile  file, bytes_t  dst )
     }
     return result;
 }
-
-
-static const byte_t  _const_spn_cphs[20] = {
-    0x41, 0x6e, 0x64, 0x72, 0x6f, 0x69, 0x64, 0xff, 0xff, 0xff,
-    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff
-};
-
-static const byte_t  _const_voicemail_cphs[1] = {
-    0x55
-};
-
-static const byte_t  _const_iccid[10] = {
-    0x98, 0x10, 0x14, 0x30, 0x12, 0x11, 0x81, 0x15, 0x70, 0x02
-};
-
-static const byte_t  _const_cff_cphs[1] = {
-    0x55
-};
-
-static SimFileEFDedicatedRec  _const_files_dedicated[] =
-{
-    { SIM_FILE_EF_DEDICATED, 0x6f14, SIM_FILE_READ_ONLY | SIM_FILE_NEED_PIN,
-      _const_spn_cphs, sizeof(_const_spn_cphs) },
-
-    { SIM_FILE_EF_DEDICATED, 0x6f11, SIM_FILE_NEED_PIN,
-      _const_voicemail_cphs, sizeof(_const_voicemail_cphs) },
-
-    { SIM_FILE_EF_DEDICATED, 0x2fe2, SIM_FILE_READ_ONLY,
-      _const_iccid, sizeof(_const_iccid) },
-
-    { SIM_FILE_EF_DEDICATED, 0x6f13, SIM_FILE_NEED_PIN,
-      _const_cff_cphs, sizeof(_const_cff_cphs) },
-
-    { 0, 0, 0, NULL, 0 }  /* end of list */
-};
 #endif /* ENABLE_DYNAMIC_RECORDS */
 
 const char*
@@ -510,55 +676,16 @@ asimcard_io( ASimCard  sim, const char*  cmd )
     if ( sscanf(cmd, "+CRSM=%d,%d,%d,%d,%d", &command, &id, &p1, &p2, &p3) == 5 ) {
         switch (command) {
             case A_SIM_CMD_GET_RESPONSE:
-                {
-                    const SimFileEFDedicatedRec*  file = _const_files_dedicated;
-
-                    assert(p1 == 0 && p2 == 0 && p3 == 15);
-
-                    for ( ; file->id != 0; file++ ) {
-                        if (file->id == id) {
-                            int    count;
-                            char*  out = sim->out_buff;
-                            strcpy( out, "+CRSM: 144,0," );
-                            out  += strlen(out);
-                            count = sim_file_to_hex( (SimFile) file, out );
-                            if (count < 0)
-                                return "ERROR: INTERNAL SIM ERROR";
-                            out[count] = 0;
-                            return sim->out_buff;
-                        }
-                    }
-                    break;
-                }
+                return asimcard_io_get_response(sim, id, p1, p2, p3);
 
             case A_SIM_CMD_READ_BINARY:
-                {
-                    const SimFileEFDedicatedRec*  file = _const_files_dedicated;
-
-                    assert(p1 == 0 && p2 == 0);
-
-                    for ( ; file->id != 0; file++ ) {
-                        if (file->id == id) {
-                            char*  out = sim->out_buff;
-
-                            if (p3 > file->length)
-                                return "ERROR: BINARY LENGTH IS TOO LONG";
-
-                            strcpy( out, "+CRSM: 144,0," );
-                            out  += strlen(out);
-                            gsm_hex_from_bytes( out, file->data, p3 );
-                            out[p3*2] = 0;
-                            return sim->out_buff;
-                        }
-                    }
-                    break;
-                }
+                return asimcard_io_read_binary(sim, id, p1, p2, p3);
 
             case A_SIM_CMD_READ_RECORD:
-                break;
+                return asimcard_io_read_record(sim, id, p1, p2, p3);
 
             default:
-                return "ERROR: UNSUPPORTED SIM COMMAND";
+                return SIM_RESPONSE_FUNCTION_NOT_SUPPORT;
         }
     }
 #endif
@@ -579,6 +706,6 @@ asimcard_io( ASimCard  sim, const char*  cmd )
             return answers[nn].answer;
         }
     }
-    return "ERROR: BAD COMMAND";
+    return SIM_RESPONSE_INCORRECT_PARAMETERS;
 }
 
