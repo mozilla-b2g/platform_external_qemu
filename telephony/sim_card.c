@@ -25,11 +25,6 @@
 #  define  D(...)   ((void)0)
 #endif
 
-/* set ENABLE_DYNAMIC_RECORDS to 1 to enable dynamic records
- * for now, this is an experimental feature that needs more testing
- */
-#define  ENABLE_DYNAMIC_RECORDS  0
-
 #define  A_SIM_PIN_SIZE  4
 #define  A_SIM_PUK_SIZE  8
 
@@ -75,6 +70,8 @@ typedef struct ASimCardRec_ {
 
 } ASimCardRec;
 
+static int asimcard_ef_init( ASimCard sim );
+static void asimcard_ef_remove( ASimCard sim, SimFile ef );
 static ASimCardRec  _s_card[MAX_GSM_DEVICES];
 
 ASimCard
@@ -87,12 +84,19 @@ asimcard_create(int port, int instance_id)
     strncpy( card->puk, "12345678", sizeof(card->puk) );
     card->port = port;
     card->instance_id = instance_id;
+    asimcard_ef_init(card);
     return card;
 }
 
 void
 asimcard_destroy( ASimCard  card )
 {
+    /* remove and free all EFs */
+    SimFile ef = card->efs;
+    for(; ef != NULL; ef = card->efs) {
+        asimcard_ef_remove(card, ef);
+    }
+
     /* nothing really */
     card=card;
 }
@@ -232,6 +236,172 @@ typedef union SimFileRec_ {
 } SimFileRec, *SimFile;
 
 static int
+asimcard_ef_add( ASimCard sim, SimFile ef )
+{
+    SimFile first = sim->efs;
+
+    sim->efs     = ef;
+    ef->any.next = first;
+    ef->any.prev = &(sim->efs);
+
+    if (first) {
+        first->any.prev = &(ef->any.next);
+    }
+
+    return 0;
+}
+
+static SimFile
+asimcard_ef_new_dedicated( unsigned short id, unsigned short flags )
+{
+    SimFileEFDedicatedRec* dedicated = (SimFileEFDedicatedRec*) calloc(1, sizeof(SimFileEFDedicatedRec));
+
+    if (dedicated == NULL) {
+        return NULL;
+    }
+
+    dedicated->type   = SIM_FILE_EF_DEDICATED;
+    dedicated->id     = id;
+    dedicated->flags  = flags;
+    dedicated->length = 0;
+    dedicated->data   = NULL;
+
+    return (SimFile) dedicated;
+}
+
+static SimFile
+asimcard_ef_new_linear( unsigned short id, unsigned short flags, byte_t rec_len )
+{
+    SimFileEFLinearRec* linear= (SimFileEFLinearRec*) calloc(1, sizeof(SimFileEFLinearRec));
+
+    if (linear == NULL) {
+        return NULL;
+    }
+
+    linear->type      = SIM_FILE_EF_LINEAR;
+    linear->id        = id;
+    linear->flags     = flags;
+    linear->rec_len   = rec_len;
+    linear->rec_count = 0;
+    linear->records   = NULL;
+
+    return (SimFile) linear;
+}
+
+static void
+asimcard_ef_free( SimFile ef )
+{
+    if (ef == NULL) {
+        return;
+    }
+
+    if (ef->any.type == SIM_FILE_EF_LINEAR) {
+        if (ef->linear.records) {
+            free(ef->linear.records);
+        }
+    } else if (ef->any.type == SIM_FILE_EF_DEDICATED) {
+        if (ef->dedicated.data) {
+            free(ef->dedicated.data);
+        }
+    }
+
+    free(ef);
+}
+
+static void
+asimcard_ef_remove( ASimCard sim, SimFile ef )
+{
+    if (ef == NULL) {
+        return;
+    }
+
+    SimFile next = ef->any.next;
+    if (next) {
+        next->any.prev = ef->any.prev;
+    }
+
+    ef->any.prev[0] = ef->any.next;
+    ef->any.next    = NULL;
+    ef->any.prev    = &(ef->any.next);
+
+    asimcard_ef_free(ef);
+}
+
+static int
+asimcard_ef_update_dedicated( SimFile ef, char* data )
+{
+    if (data == NULL || (strlen(data) % 2) == 1) {
+        D("ERROR: Length of data should be even.\n");
+        return -1;
+    }
+
+    if (ef == NULL || ef->any.type != SIM_FILE_EF_DEDICATED) {
+        D("ERROR: The type of EF is not SIM_FILE_EF_DEDICATED.\n");
+        return -1;
+    }
+
+    SimFileEFDedicated dedicated = (SimFileEFDedicated) ef;
+
+    if (dedicated->length != (strlen(data) / 2)) {
+        if (dedicated->data) {
+            free(dedicated->data);
+        }
+
+        dedicated->length = strlen(data) / 2;
+        dedicated->data   = (cbytes_t) malloc(dedicated->length * sizeof(byte_t));
+        memset(dedicated->data, 0xff, dedicated->length * sizeof(byte_t));
+    }
+
+    return gsm_hex_to_bytes((cbytes_t) data, strlen(data), dedicated->data);
+}
+
+static int
+asimcard_ef_update_linear( SimFile ef, byte_t record_id, char* data )
+{
+    if (data == NULL || (strlen(data) % 2) == 1) {
+        D("ERROR: Length of data should be even.\n");
+        return -1;
+    }
+
+    if (record_id < 0x00 || record_id > 0xff) {
+        D("ERROR: Invaild record id.\n");
+        return -1;
+    }
+
+    if (ef == NULL || ef->any.type != SIM_FILE_EF_LINEAR) {
+        D("ERROR: The type of EF is not SIM_FILE_EF_LINEAR.\n");
+        return -1;
+    }
+
+    if (ef->linear.rec_len < (strlen(data) / 2)) {
+        D("ERROR: Data is too large.\n");
+        return -1;
+    }
+
+    SimFileEFLinear linear = (SimFileEFLinear) ef;
+
+    if (linear->rec_count < record_id) {
+        int      file_size     = linear->rec_len * record_id;
+        int      rec_count_old = linear->rec_count;
+        cbytes_t records_old   = linear->records;
+
+        linear->rec_count = record_id;
+        linear->records   = (cbytes_t) malloc(file_size * sizeof(byte_t));
+        memset(linear->records, 0xff, file_size * sizeof(byte_t));
+
+        if (records_old) {
+            int size = linear->rec_len * rec_count_old;
+            memcpy(linear->records, records_old, size * sizeof(byte_t));
+            free(records_old);
+        }
+    }
+
+    bytes_t record = linear->records + ((record_id - 1) * linear->rec_len);
+
+    return gsm_hex_to_bytes((cbytes_t) data, strlen(data), record);
+}
+
+static int
 asimcard_ef_read_dedicated( SimFile ef, char* dst )
 {
     if (dst == NULL) {
@@ -360,7 +530,238 @@ asimcard_io_read_record( ASimCard sim, int id, int p1, int p2, int p3 )
     return sim->out_buff;
 }
 
-#if ENABLE_DYNAMIC_RECORDS
+static int
+asimcard_ef_init( ASimCard card )
+{
+    char buff[128] = {'\0'};
+    SimFile ef;
+
+    // CPHS Network Operator Name(6F14):
+    //   File size: 0x14
+    //   PLMN Name: "Android"
+    // @see Common PCN Handset Specification (Version 4.2) B.4.1.2 Network Operator Name
+    ef = asimcard_ef_new_dedicated(0x6f14, SIM_FILE_READ_ONLY | SIM_FILE_NEED_PIN);
+    asimcard_ef_update_dedicated(ef, "416e64726f6964ffffffffffffffffffffffffff");
+    asimcard_ef_add(card, ef);
+
+    // CPHS Voice message waiting flag(6F11):
+    //   File size: 0x01
+    //   Voice Message Waiting Indicator flags:
+    //     Line 1: no messages waiting.
+    //     Line 2: no messages waiting.
+    // @see Common PCN Handset Specification (Version 4.2) B.4.2.3 Voice Message Waiting Flags in the SIM
+    ef = asimcard_ef_new_dedicated(0x6f11, SIM_FILE_NEED_PIN);
+    asimcard_ef_update_dedicated(ef, "55");
+    asimcard_ef_add(card, ef);
+
+    // ICC Identification(2FE2):
+    //   File size: 0x0a
+    //   Identification number: 89014103211118518720
+    // @see 3GPP TS 11.011 section 10.1.1 EFiccid (ICC Identification)
+    ef = asimcard_ef_new_dedicated(0x2fe2, SIM_FILE_READ_ONLY);
+    asimcard_ef_update_dedicated(ef, "98101430121181157002");
+    asimcard_ef_add(card, ef);
+
+    // CPHS Call forwarding flags(6F13):
+    //   File size: 0x01
+    //   Voice Call forward unconditional flags:
+    //     Line 1: no call forwarding message waiting.
+    //     Line 2: no call forwarding message waiting.
+    // @see Common PCN Handset Specification (Version 4.2) B.4.5 Diverted Call Status Indicator
+    ef = asimcard_ef_new_dedicated(0x6f13, SIM_FILE_NEED_PIN);
+    asimcard_ef_update_dedicated(ef, "55");
+    asimcard_ef_add(card, ef);
+
+    // SIM Service Table(6F38):
+    //   File size: 0x0f
+    //   Enabled: 1..4, 7, 9..19, 26, 27, 29, 30, 38, 51..56
+    // @see 3GPP TS 51.011 section 10.3.7 EFsst (SIM Service Table)
+    ef = asimcard_ef_new_dedicated(0x6f38, SIM_FILE_READ_ONLY | SIM_FILE_NEED_PIN);
+    asimcard_ef_update_dedicated(ef, "ff30ffff3f003c0f000c0000f0ff00");
+    asimcard_ef_add(card, ef);
+
+    // Mailbox Identifier(6FC9):
+    //   Record size: 0x04
+    //   Record count: 0x02
+    //   Mailbox Dialing Number Identifier - Voicemail:      1
+    //   Mailbox Dialing Number Identifier - Fax:            no mailbox dialing number associated
+    //   Mailbox Dialing Number Identifier - Eletronic Mail: no mailbox dialing number associated
+    //   Mailbox Dialing Number Identifier - Other:          no mailbox dialing number associated
+    //   Mailbox Dialing Number Identifier - Videomail:      no mailbox dialing number associated
+    // @see 3GPP TS 31.102 section 4.2.62 EFmbi (Mailbox Identifier)
+    ef = asimcard_ef_new_linear(0x6fc9, SIM_FILE_NEED_PIN, 0x04);
+    asimcard_ef_update_linear(ef, 0x01, "01000000");
+    asimcard_ef_update_linear(ef, 0x02, "ffffffff");
+    asimcard_ef_add(card, ef);
+
+    // Message Waiting Indication Status(6FCA):
+    //   Record size: 0x05
+    //   Record count: 0x02
+    //   Message Waiting Indicator Status: all inactive
+    //   Number of Voicemail Messages Waiting:       0
+    //   Number of Fax Messages Waiting:             0
+    //   Number of Electronic Mail Messages Waiting: 0
+    //   Number of Other Messages Waiting:           0
+    //   Number of Videomail Messages Waiting:       0
+    // @see 3GPP TS 31.102 section 4.2.63 EFmwis (Message Waiting Indication Status)
+    ef = asimcard_ef_new_linear(0x6fca, SIM_FILE_NEED_PIN, 0x05);
+    asimcard_ef_update_linear(ef, 0x01, "0000000000");
+    asimcard_ef_update_linear(ef, 0x02, "ffffffffff");
+    asimcard_ef_add(card, ef);
+
+    // Administrative Data(6FAD):
+    //   File size: 0x04
+    //   UE Operation mode: normal
+    //   Additional information: none
+    //   Length of MNC in the IMSI: 3
+    // @see 3GPP TS 31.102 section 4.2.18 EFad (Administrative Data)
+    ef = asimcard_ef_new_dedicated(0x6fad, SIM_FILE_READ_ONLY);
+    asimcard_ef_update_dedicated(ef, "00000003");
+    asimcard_ef_add(card, ef);
+
+    // EF-IMG (4F20) : Each record of this EF identifies instances of one particular graphical image,
+    //                 which graphical image is identified by this EF's record number.
+    //   Record size: 0x14
+    //   Record count: 0x05
+    //   Number of image instance specified by this record:               01
+    //   Image instance width 8 points (raster image points):             08
+    //   Image instance heigh 8 points  (raster image points):            08
+    //   Color image coding scheme:                                       21
+    //   Image identifier id of the EF where is store the image instance: 4F02
+    //   Offset of the image instance in the 4F02 EF:                     0000
+    //   Length of image instance data:                                   0016
+    // @see 3GPP TS 51.011 section 10.6.1.1, EF-img
+    ef = asimcard_ef_new_linear(0x4f20, 0x00, 0x14);
+    asimcard_ef_update_linear(ef, 0x01, "010808214f0200000016ffffffffffffffffffff");
+    asimcard_ef_update_linear(ef, 0x05, "ffffffffffffffffffffffffffffffffffffffff");
+    asimcard_ef_add(card, ef);
+
+    // CPHS Information(6F16):
+    //   File size: 0x02
+    //   CPHS Phase: 2
+    //   CPHS Service Table:
+    //     CSP(Customer Service Profile): allocated and activated
+    //     Information Numbers:           allocated and activated
+    // @see Common PCN Handset Specification (Version 4.2) B.3.1.1 CPHS Information
+    ef = asimcard_ef_new_dedicated(0x6f16, SIM_FILE_READ_ONLY | SIM_FILE_NEED_PIN);
+    asimcard_ef_update_dedicated(ef, "0233");
+    asimcard_ef_add(card, ef);
+
+    // Service Provider Name(6F46):
+    //   File size: 0x11
+    //   Display Condition: 0x1, display network name in HPLMN; display SPN if not in HPLMN.
+    //   Service Provider Name: "Android"
+    // @see 3GPP TS 31.102 section 4.2.12 EFspn (Service Provider Name)
+    // @see 3GPP TS 51.011 section 9.4.4 Referencing Management
+    ef = asimcard_ef_new_dedicated(0x6f46, SIM_FILE_READ_ONLY);
+    asimcard_ef_update_dedicated(ef, "01416e64726f6964ffffffffffffffffff");
+    asimcard_ef_add(card, ef);
+
+    // Service Provider Display Information(6FCD):
+    //   File size: 0x0d
+    //   SPDI TLV (tag = 'a3')
+    //     SPDI TLV (tag = '80')
+    //       PLMN: 234136
+    //       PLMN: 46692
+    // @see 3GPP TS 31.102 section 4.2.66 EFspdi (Service Provider Display Information)
+    // @see 3GPP TS 51.011 section 9.4.4 Referencing Management
+    ef = asimcard_ef_new_dedicated(0x6fcd, SIM_FILE_READ_ONLY);
+    asimcard_ef_update_dedicated(ef, "a30b800932643164269fffffff");
+    asimcard_ef_add(card, ef);
+
+    // PLMN Network Name(6FC5):
+    //   Record size: 0x18
+    //   Record count: 0x0a
+    // @see 3GPP TS 31.102 section 4.2.58 EFpnn (PLMN Network Name)
+    // @see 3GPP TS 24.008
+    // FIXME: bug 835255 - marionette test will fail when enable EFpnn
+    /*
+    ef = asimcard_ef_new_linear(0x6fc5, SIM_FILE_READ_ONLY, 0x18);
+    asimcard_ef_update_linear(ef, 0x01, "43058441aa890affffffffffffffffffffffffffffffffff");
+    asimcard_ef_update_linear(ef, 0x0a, "ffffffffffffffffffffffffffffffffffffffffffffffff");
+    asimcard_ef_add(card, ef);
+    */
+
+    // MSISDN(6F40):
+    //   Record size: 0x20
+    //   Record count: 0x04
+    //   Alpha Identifier: (empty)
+    //   Length of BCD number/SSC contents: 7
+    //   TON and NPI: 0x81
+    //   Dialing Number/SSC String: 15555218135, actual number is "155552"
+    //                              + (sim->instance_id + 1) + emulator port,
+    //                              e.g. "15555215554" for first sim of first emulator.
+    //   Capacity/Configuration 2 Record Identifier: not used
+    //   Extension 5 Record Identifier: not used
+    // @see 3GPP TS 31.102 section 4.2.26 EFmsisdn (MSISDN)
+    ef = asimcard_ef_new_linear(0x6f40, SIM_FILE_NEED_PIN, 0x20);
+    snprintf(buff, sizeof(buff), "ffffffffffffffffffffffffffffffffffff0781515525%d%d%d%df%dffffffffffff",
+        (card->port / 1000) % 10,
+        (card->instance_id + 1),
+        (card->port / 10) % 10,
+        (card->port / 100) % 10,
+        card->port % 10);
+    asimcard_ef_update_linear(ef, 0x01, buff);
+    asimcard_ef_update_linear(ef, 0x04, "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
+    asimcard_ef_add(card, ef);
+
+    // Mailbox Dialing Numbers(6FC7):
+    //   Record size: 0x20
+    //   Record count: 0x02
+    //   Alpha Identifier: "Voicemail"
+    //   Length of BCD number/SSC contents: 7
+    //   TON and NPI: 0x91
+    //   Dialing Number/SSC String: 15552175049
+    //   Capacity/Configuration 2 Record Identifier: not used
+    //   Extension 6 Record Identifier: not used
+    // @see 3GPP TS 31.102 section 4.2.60 EFmbdn (Mailbox Dialing Numbers)
+    ef = asimcard_ef_new_linear(0x6fc7, SIM_FILE_NEED_PIN, 0x20);
+    asimcard_ef_update_linear(ef, 0x01, "566f6963656d61696cffffffffffffffffff07915155125740f9ffffffffffff");
+    asimcard_ef_update_linear(ef, 0x02, "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
+    asimcard_ef_add(card, ef);
+
+    // Abbreviated Dialling Numbers(6F3A)
+    //   Record size: 0x20
+    //   Record count: 0xff
+    //   Length of BCD number/SSC contents: 7
+    //   TON and NPI: 0x81
+    // @see 3GPP TS 51.011 section 10.5.1 EFadn
+    ef = asimcard_ef_new_linear(0x6f3a, SIM_FILE_NEED_PIN, 0x20);
+    // Alpha Id(Encoded with GSM 8 bit): "Mozilla", Dialling Number: 15555218201
+    asimcard_ef_update_linear(ef, 0x01, "4d6f7a696c6c61ffffffffffffffffffffff07815155258102f1ffffffffffff");
+    // Alpha Id(Encoded with UCS2 0x80: "Saßê黃", Dialling Number: 15555218202
+    asimcard_ef_update_linear(ef, 0x02, "800053006100df00ea9ec3ffffffffffffff07815155258102f2ffffffffffff");
+    // Alpha Id(Encoded with UCS2 0x81): "Fire 火", Dialling Number: 15555218203
+    asimcard_ef_update_linear(ef, 0x03, "8106e04669726520ebffffffffffffffffff07815155258102f3ffffffffffff");
+    // Alpha Id(Encoded with UCS2 0x82): "Huang 黃", Dialling Number: 15555218204
+    asimcard_ef_update_linear(ef, 0x04, "82079e804875616e6720c3ffffffffffffff07815155258102f4ffffffffffff");
+    asimcard_ef_update_linear(ef, 0xff, "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
+    asimcard_ef_add(card, ef);
+
+    // Cell Broadcast Message Identifier selection(6F45):
+    //   File size: 0x06
+    //   CB Message Identifier 1: 45056(B000)
+    //   CB Message Identifier 2: 65535(FFFF, not used)
+    //   CB Message Identifier 3: 61440(F000, not settable by MMI)
+    // @see 3GPP TS 31.102 section 4.2.14 EFcbmi (Cell Broadcast Message Identifier selection)
+    ef = asimcard_ef_new_dedicated(0x6f45, SIM_FILE_READ_ONLY);
+    asimcard_ef_update_dedicated(ef, "b000fffff000");
+    asimcard_ef_add(card, ef);
+
+    // Cell Broadcast Message Identifier Range selection(6F50):
+    //   File size: 0x10
+    //   CB Message Identifier Range 1: 45058..49152(B002..C000)
+    //   CB Message Identifier Range 2: 65535..49153(FFFF..C001, should be ignored)
+    //   CB Message Identifier Range 3: 49153..65535(C001..FFFF, should be ignored)
+    //   CB Message Identifier Range 4: 61442..65280(F002..FF00, not settable by MMI)
+    // @see 3GPP TS 31.102 section 4.2.14 EFcbmir (Cell Broadcast Message Identifier Range selection)
+    ef = asimcard_ef_new_dedicated(0x6f50, SIM_FILE_READ_ONLY);
+    asimcard_ef_update_dedicated(ef, "b002c000ffffc001c001fffff002ff00");
+    asimcard_ef_add(card, ef);
+
+    return 0;
+}
+
 static int sim_file_to_hex( SimFile  file, bytes_t  dst );
 
 static const char*
@@ -489,190 +890,14 @@ sim_file_to_hex( SimFile  file, bytes_t  dst )
     }
     return result;
 }
-#endif /* ENABLE_DYNAMIC_RECORDS */
 
 const char*
 asimcard_io( ASimCard  sim, const char*  cmd )
 {
-    int  nn;
-#if ENABLE_DYNAMIC_RECORDS
     int  command, id, p1, p2, p3;
-#endif
-    static const struct { const char*  cmd; const char*  answer; } answers[] =
-    {
-        // CPHS Network Operator Name(6F14):
-        //   PLMN Name: "Android"
-        // @see Common PCN Handset Specification (Version 4.2) B.4.1.2 Network Operator Name
-        { "+CRSM=192,28436,0,0,15", "+CRSM: 144,0,000000146f1404001aa0aa01020000" },
-        { "+CRSM=176,28436,0,0,20", "+CRSM: 144,0,416e64726f6964ffffffffffffffffffffffffff" },
-
-        // CPHS Voice message waiting flag(6F11):
-        //   Voice Message Waiting Indicator flags:
-        //     Line 1: no messages waiting.
-        //     Line 2: no messages waiting.
-        // @see Common PCN Handset Specification (Version 4.2) B.4.2.3 Voice Message Waiting Flags in the SIM
-        { "+CRSM=192,28433,0,0,15", "+CRSM: 144,0,000000016f11040011a0aa01020000" },
-        { "+CRSM=176,28433,0,0,1", "+CRSM: 144,0,55" },
-
-        // ICC Identification(2FE2):
-        //   Identification number: 89014103211118518720
-        // @see 3GPP TS 11.011 section 10.1.1 EFiccid (ICC Identification)
-        { "+CRSM=192,12258,0,0,15", "+CRSM: 144,0,0000000a2fe204000fa0aa01020000" },
-        { "+CRSM=176,12258,0,0,10", "+CRSM: 144,0,98101430121181157002" },
-
-        // CPHS Call forwarding flags(6F13):
-        //   Voice Call forward unconditional flags:
-        //     Line 1: no call forwarding message waiting.
-        //     Line 2: no call forwarding message waiting.
-        // @see Common PCN Handset Specification (Version 4.2) B.4.5 Diverted Call Status Indicator
-        { "+CRSM=192,28435,0,0,15", "+CRSM: 144,0,000000016f13040011a0aa01020000" },
-        { "+CRSM=176,28435,0,0,1",  "+CRSM: 144,0,55" },
-
-        // SIM Service Table(6F38):
-        //   Enabled: 1..4, 7, 9..19, 26, 27, 29, 30, 38, 51..56
-        // @see 3GPP TS 51.011 section 10.3.7 EFsst (SIM Service Table)
-        { "+CRSM=192,28472,0,0,15", "+CRSM: 144,0,0000000f6f3804001aa0aa01020000" },
-        { "+CRSM=176,28472,0,0,15", "+CRSM: 144,0,ff30ffff3f003c0f000c0000f0ff00" },
-
-        // Mailbox Identifier(6FC9):
-        //   Mailbox Dialing Number Identifier - Voicemail:      1
-        //   Mailbox Dialing Number Identifier - Fax:            no mailbox dialing number associated
-        //   Mailbox Dialing Number Identifier - Eletronic Mail: no mailbox dialing number associated
-        //   Mailbox Dialing Number Identifier - Other:          no mailbox dialing number associated
-        //   Mailbox Dialing Number Identifier - Videomail:      no mailbox dialing number associated
-        // @see 3GPP TS 31.102 section 4.2.62 EFmbi (Mailbox Identifier)
-        { "+CRSM=192,28617,0,0,15", "+CRSM: 144,0,000000086fc9040011a0aa01020104" },
-        { "+CRSM=178,28617,1,4,4",  "+CRSM: 144,0,01000000" },
-
-        // Message Waiting Indication Status(6FCA):
-        //   Message Waiting Indicator Status: all inactive
-        //   Number of Voicemail Messages Waiting:       0
-        //   Number of Fax Messages Waiting:             0
-        //   Number of Electronic Mail Messages Waiting: 0
-        //   Number of Other Messages Waiting:           0
-        //   Number of Videomail Messages Waiting:       0
-        // @see 3GPP TS 31.102 section 4.2.63 EFmwis (Message Waiting Indication Status)
-        { "+CRSM=192,28618,0,0,15", "+CRSM: 144,0,0000000a6fca040011a0aa01020105" },
-        { "+CRSM=178,28618,1,4,5",  "+CRSM: 144,0,0000000000" },
-
-        // Administrative Data(6FAD):
-        //   UE Operation mode: normal
-        //   Additional information: none
-        //   Length of MNC in the IMSI: 3
-        // @see 3GPP TS 31.102 section 4.2.18 EFad (Administrative Data)
-        { "+CRSM=192,28589,0,0,15", "+CRSM: 144,0,000000046fad04000aa0aa01020000" },
-        { "+CRSM=176,28589,0,0,4",  "+CRSM: 144,0,00000003" },
-
-        // EF-IMG (4F20) : Each record of this EF identifies instances of one particular graphical image,
-        //                 which graphical image is identified by this EF's record number.
-        //   Number of image instance specified by this record:               01
-        //   Image instance width 8 points (raster image points):             08
-        //   Image instance heigh 8 points  (raster image points):            08
-        //   Color image coding scheme:                                       21
-        //   Image identifier id of the EF where is store the image instance: 4F02
-        //   Offset of the image instance in the 4F02 EF:                     0000
-        //   Length of image instance data:                                   0016
-        // @see 3GPP TS 51.011 section 10.6.1.1, EF-img
-        { "+CRSM=192,20256,1,4,10", "+CRSM: 144,0,000000644f20040000000005020114" },
-        { "+CRSM=178,20256,1,4,20", "+CRSM: 144,0,010808214f0200000016ffffffffffffffffffff" },
-        { "+CRSM=176,20226,0,0,22", "+CRSM: 144,0,080802030016AAAA800285428142814281528002AAAAFF000000FF000000FF" },
-        { "+CRSM=176,20226,0,22,9", "+CRSM: 144,0,0808ff03a59999a5c3ff" },
-
-        // CPHS Information(6F16):
-        //   CPHS Phase: 2
-        //   CPHS Service Table:
-        //     CSP(Customer Service Profile): allocated and activated
-        //     Information Numbers:           allocated and activated
-        // @see Common PCN Handset Specification (Version 4.2) B.3.1.1 CPHS Information
-        { "+CRSM=192,28438,0,0,15", "+CRSM: 144,0,000000026f1604001aa0aa01020000" },
-        { "+CRSM=176,28438,0,0,2",  "+CRSM: 144,0,0233" },
-
-        // Service Provider Name(6F46):
-        //   Display Condition: 0x1, display network name in HPLMN; display SPN if not in HPLMN.
-        //   Service Provider Name: "Android"
-        // @see 3GPP TS 31.102 section 4.2.12 EFspn (Service Provider Name)
-        // @see 3GPP TS 51.011 section 9.4.4 Referencing Management
-        { "+CRSM=192,28486,0,0,15", "+CRSM: 144,0,000000116f4604000aa0aa01020000" },
-        { "+CRSM=176,28486,0,0,17", "+CRSM: 144,0,01416e64726f6964ffffffffffffffffff" },
-
-        // Service Provider Display Information(6FCD):
-        //   SPDI TLV (tag = 'a3')
-        //     SPDI TLV (tag = '80')
-        //       PLMN: 234136
-        //       PLMN: 46692
-        // @see 3GPP TS 31.102 section 4.2.66 EFspdi (Service Provider Display Information)
-        // @see 3GPP TS 51.011 section 9.4.4 Referencing Management
-        { "+CRSM=192,28621,0,0,15", "+CRSM: 144,0,0000000d6fcd04000aa0aa01020000" },
-        { "+CRSM=176,28621,0,0,13", "+CRSM: 144,0,a30b800932643164269fffffff" },
-
-        // PLMN Network Name(6FC5):
-        //   FIXME:
-        // @see 3GPP TS 31.102 section 4.2.58 EFpnn (PLMN Network Name)
-        // @see 3GPP TS 24.008
-        { "+CRSM=192,28613,0,0,15", "+CRSM: 144,0,000000f06fc504000aa0aa01020118" },
-        { "+CRSM=178,28613,1,4,24", "+CRSM: 144,0,43058441aa890affffffffffffffffffffffffffffffffff" },
-
-        // MSISDN(6F40):
-        //   Alpha Identifier: (empty)
-        //   Length of BCD number/SSC contents: 7
-        //   TON and NPI: 0x81
-        //   Dialing Number/SSC String: 15555218135, actual number is "155552"
-        //                              + (sim->instance_id + 1) + emulator port,
-        //                              e.g. "15555215554" for first sim of first emulator.
-        //   Capacity/Configuration 2 Record Identifier: not used
-        //   Extension 5 Record Identifier: not used
-        // @see 3GPP TS 31.102 section 4.2.26 EFmsisdn (MSISDN)
-        { "+CRSM=192,28480,0,0,15", "+CRSM: 144,0,000000806f40040011a0aa01020120" },
-        { "+CRSM=178,28480,1,4,32", "+CRSM: 144,0,ffffffffffffffffffffffffffffffffffff07815155258131f5ffffffffffff" },
-
-        // Mailbox Dialing Numbers(6FC7):
-        //   Alpha Identifier: "Voicemail"
-        //   Length of BCD number/SSC contents: 7
-        //   TON and NPI: 0x91
-        //   Dialing Number/SSC String: 15552175049
-        //   Capacity/Configuration 2 Record Identifier: not used
-        //   Extension 6 Record Identifier: not used
-        // @see 3GPP TS 31.102 section 4.2.60 EFmbdn (Mailbox Dialing Numbers)
-        { "+CRSM=192,28615,0,0,15", "+CRSM: 144,0,000000406fc7040011a0aa01020120" },
-        { "+CRSM=178,28615,1,4,32", "+CRSM: 144,0,566f6963656d61696cffffffffffffffffff07915155125740f9ffffffffffff" },
-
-        // Abbreviated Dialling Numbers(6FCA)
-        //   Length of BCD number/SSC contents: 7
-        //   TON and NPI: 0x81
-        // @see 3GPP TS 51.011 section 10.5.1 EFadn
-        { "+CRSM=192,28474,0,0,15", "+CRSM: 144,0,000000806f3a040011a0aa01020120" },
-        // Alpha Id(Encoded with GSM 8 bit): "Mozilla", Dialling Number: 15555218201
-        { "+CRSM=178,28474,1,4,32", "+CRSM: 144,0,4d6f7a696c6c61ffffffffffffffffffffff07815155258102f1ffffffffffff" },
-        // Alpha Id(Encoded with UCS2 0x80: "Saßê黃", Dialling Number: 15555218202
-        { "+CRSM=178,28474,2,4,32", "+CRSM: 144,0,800053006100df00ea9ec3ffffffffffffff07815155258102f2ffffffffffff" },
-        // Alpha Id(Encoded with UCS2 0x81): "Fire 火", Dialling Number: 15555218203
-        { "+CRSM=178,28474,3,4,32", "+CRSM: 144,0,8106e04669726520ebffffffffffffffffff07815155258102f3ffffffffffff" },
-        // Alpha Id(Encoded with UCS2 0x82): "Huang 黃", Dialling Number: 15555218204
-        { "+CRSM=178,28474,4,4,32", "+CRSM: 144,0,82079e804875616e6720c3ffffffffffffff07815155258102f4ffffffffffff" },
-
-        // Cell Broadcast Message Identifier selection(6F45):
-        //   CB Message Identifier 1: 45056(B000)
-        //   CB Message Identifier 2: 65535(FFFF, not used)
-        //   CB Message Identifier 3: 61440(F000, not settable by MMI)
-        // @see 3GPP TS 31.102 section 4.2.14 EFcbmi (Cell Broadcast Message Identifier selection)
-        { "+CRSM=192,28485,0,0,15", "+CRSM: 144,0,000000066f4504000fa0aa01020000" },
-        { "+CRSM=176,28485,0,0,6", "+CRSM: 144,0,b000fffff000" },
-
-        // Cell Broadcast Message Identifier Range selection(6F50):
-        //   CB Message Identifier Range 1: 45058..49152(B002..C000)
-        //   CB Message Identifier Range 2: 65535..49153(FFFF..C001, should be ignored)
-        //   CB Message Identifier Range 3: 49153..65535(C001..FFFF, should be ignored)
-        //   CB Message Identifier Range 4: 61442..65280(F002..FF00, not settable by MMI)
-        // @see 3GPP TS 31.102 section 4.2.14 EFcbmir (Cell Broadcast Message Identifier Range selection)
-        { "+CRSM=192,28496,0,0,15", "+CRSM: 144,0,000000106f5004000fa0aa01020000" },
-        { "+CRSM=176,28496,0,0,16", "+CRSM: 144,0,b002c000ffffc001c001fffff002ff00" },
-
-        { NULL, NULL }
-    };
 
     assert( memcmp( cmd, "+CRSM=", 6 ) == 0 );
 
-#if ENABLE_DYNAMIC_RECORDS
     if ( sscanf(cmd, "+CRSM=%d,%d,%d,%d,%d", &command, &id, &p1, &p2, &p3) == 5 ) {
         switch (command) {
             case A_SIM_CMD_GET_RESPONSE:
@@ -688,24 +913,7 @@ asimcard_io( ASimCard  sim, const char*  cmd )
                 return SIM_RESPONSE_FUNCTION_NOT_SUPPORT;
         }
     }
-#endif
 
-    if (!strcmp("+CRSM=178,28480,1,4,32", cmd)) {
-        snprintf( sim->out_buff, sizeof(sim->out_buff),
-                  "+CRSM: 144,0,ffffffffffffffffffffffffffffffffffff0781515525%d%d%d%df%dffffffffffff",
-                  (sim->port / 1000) % 10,
-                  (sim->instance_id + 1),
-                  (sim->port / 10) % 10,
-                  (sim->port / 100) % 10,
-                  sim->port % 10);
-        return sim->out_buff;
-        }
-
-    for (nn = 0; answers[nn].cmd != NULL; nn++) {
-        if ( !strcmp( answers[nn].cmd, cmd ) ) {
-            return answers[nn].answer;
-        }
-    }
     return SIM_RESPONSE_INCORRECT_PARAMETERS;
 }
 
