@@ -53,6 +53,10 @@
 // sw1='6A', sw2='86', Incorrect parameters P1 to P2.
 #define  SIM_RESPONSE_INCORRECT_PARAMETERS  "+CRSM: 106,134"
 
+/* Command not allowed */
+// sw1='69', sw2='85', Conditions of use not satisfied.
+#define  SIM_RESPONSE_CONDITION_NOT_SATISFIED "+CRSM: 105,133"
+
 typedef union SimFileRec_ SimFileRec, *SimFile;
 
 typedef struct ASimCardRec_ {
@@ -530,6 +534,40 @@ asimcard_io_read_record( ASimCard sim, int id, int p1, int p2, int p3 )
     return sim->out_buff;
 }
 
+static const char*
+asimcard_io_update_record( ASimCard sim, int id, int p1, int p2, int p3, char* data )
+{
+    char* out = sim->out_buff;
+    SimFile ef  = asimcard_ef_find(sim, id);
+
+    if (ef == NULL) {
+        return SIM_RESPONSE_FILE_NOT_FOUND;
+    }
+
+    // We only support ABSOLUTE_MODE
+    if (p2 != SIM_FILE_RECORD_ABSOLUTE_MODE || p1 <= 0) {
+        return SIM_RESPONSE_INCORRECT_PARAMETERS;
+    }
+
+    if (ef->any.flags & SIM_FILE_READ_ONLY) {
+        return SIM_RESPONSE_CONDITION_NOT_SATISFIED;
+    }
+
+    if (ef->linear.rec_len < p3) {
+        return SIM_RESPONSE_WRONG_LENGTH;
+    }
+
+    if (ef->linear.rec_count < p1) {
+        return SIM_RESPONSE_RECORD_NOT_FOUND;
+    }
+
+    if (asimcard_ef_update_linear(ef, p1, data) < 0) {
+        return SIM_RESPONSE_EXECUTION_ERROR;
+    }
+
+    return SIM_RESPONSE_NORMAL_ENDING;
+}
+
 static int
 asimcard_ef_init( ASimCard card )
 {
@@ -895,10 +933,11 @@ const char*
 asimcard_io( ASimCard  sim, const char*  cmd )
 {
     int  command, id, p1, p2, p3;
+    char data[128] = {'\0'};
 
     assert( memcmp( cmd, "+CRSM=", 6 ) == 0 );
 
-    if ( sscanf(cmd, "+CRSM=%d,%d,%d,%d,%d", &command, &id, &p1, &p2, &p3) == 5 ) {
+    if ( sscanf(cmd, "+CRSM=%d,%d,%d,%d,%d,%s", &command, &id, &p1, &p2, &p3, data) >= 5 ) {
         switch (command) {
             case A_SIM_CMD_GET_RESPONSE:
                 return asimcard_io_get_response(sim, id, p1, p2, p3);
@@ -908,6 +947,9 @@ asimcard_io( ASimCard  sim, const char*  cmd )
 
             case A_SIM_CMD_READ_RECORD:
                 return asimcard_io_read_record(sim, id, p1, p2, p3);
+
+            case A_SIM_CMD_UPDATE_RECORD:
+                return asimcard_io_update_record(sim, id, p1, p2, p3, data);
 
             default:
                 return SIM_RESPONSE_FUNCTION_NOT_SUPPORT;
