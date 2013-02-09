@@ -2167,16 +2167,10 @@ voice_call_event( void*  _vcall )
                     /* it seems the Android code simply waits for changes in the list   */
                     amodem_free_call( vcall->modem, vcall );
                 }
-            } else {
-               /* this is not a remote emulator number, so just simulate
-                * a small ringing delay */
-                sys_timer_set( vcall->timer, sys_time_ms() + CALL_DELAY_ALERT,
-                               voice_call_event, vcall );
             }
             break;
 
         case A_CALL_ALERTING:
-            call->state = A_CALL_ACTIVE;
             break;
 
         case A_CALL_ACTIVE:
