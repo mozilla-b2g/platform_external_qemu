@@ -2251,6 +2251,8 @@ handleDial( const char*  cmd, AModem  modem )
         call->number[len] = 0;
     }
 
+    amodem_send_calls_update( modem );
+
     amodem_begin_line( modem );
     if (amodem_is_emergency(modem, call->number)) {
         modem->in_emergency_mode = 1;
