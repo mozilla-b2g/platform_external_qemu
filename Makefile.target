@@ -81,6 +81,7 @@ HW_SOURCES := \
     android/goldfish/mmc.c   \
     android/goldfish/nand.c \
     android/goldfish/pipe.c \
+    android/goldfish/rfkill.c \
     android/goldfish/tty.c \
     android/goldfish/vmem.c \
     android/goldfish/trace.c \

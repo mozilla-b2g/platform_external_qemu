@@ -1040,6 +1040,8 @@ static void pc_init1(ram_addr_t ram_size,
 
     goldfish_battery_init(android_hw->hw_battery);
 
+    goldfish_rfkill_init();
+
 #ifdef CONFIG_NAND
     goldfish_add_device_no_io(&nand_device);
     nand_dev_init(nand_device.base);

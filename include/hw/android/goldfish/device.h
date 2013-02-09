@@ -51,6 +51,7 @@ void goldfish_battery_set_prop(int ac, int property, int value);
 void goldfish_battery_display(void (* callback)(void *data, const char* string), void *data);
 void goldfish_mmc_init(uint32_t base, int id, BlockDriverState* bs);
 int goldfish_guest_is_64bit();
+void goldfish_rfkill_init();
 
 // these do not add a device
 void trace_dev_init();
