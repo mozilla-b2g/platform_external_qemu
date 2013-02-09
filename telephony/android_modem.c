@@ -2158,6 +2158,12 @@ voice_call_event( void*  _vcall )
 
     switch (call->state) {
         case A_CALL_DIALING:
+            // Check number is valid or not.
+            if (strspn(call->number, "+0123456789") != strlen(call->number)) {
+                amodem_free_call(vcall->modem, vcall, CALL_FAIL_UNOBTAINABLE_NUMBER);
+                break;
+            }
+
             call->state = A_CALL_ALERTING;
 
             if (vcall->is_remote) {

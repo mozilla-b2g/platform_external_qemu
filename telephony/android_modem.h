@@ -165,6 +165,7 @@ typedef enum {
 
 #define  A_CALL_NUMBER_MAX_SIZE  16
 
+#define CALL_FAIL_UNOBTAINABLE_NUMBER 1
 #define CALL_FAIL_NORMAL 16
 
 typedef struct {
