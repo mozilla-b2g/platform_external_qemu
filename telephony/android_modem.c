@@ -1065,6 +1065,19 @@ amodem_update_call( AModem  modem, const char*  fromNumber, ACallState  state )
 }
 
 
+int amodem_remote_call_busy( AModem  modem, const char*  number )
+{
+    AVoiceCall vcall = (AVoiceCall) amodem_find_call_by_number(modem, number);
+
+    if (!vcall)
+        return -1;
+
+    amodem_free_call(modem, vcall, CALL_FAIL_BUSY);
+    amodem_send_calls_update(modem);
+    return 0;
+}
+
+
 int
 amodem_disconnect_call( AModem  modem, const char*  number )
 {
