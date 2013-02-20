@@ -1070,6 +1070,21 @@ amodem_disconnect_call( AModem  modem, const char*  number )
     return 0;
 }
 
+int
+amodem_clear_call( AModem modem )
+{
+  AVoiceCall  vcall = modem->calls;
+  AVoiceCall  vend  = vcall + modem->call_count;
+
+  for ( ; vcall < vend; vcall++ ) {
+      AVoiceCall call = (AVoiceCall) &vcall->call;
+      amodem_free_call( modem, call );
+      amodem_send_calls_update(modem);
+  }
+
+  return 0;
+}
+
 /** Cell Location
  **/
 

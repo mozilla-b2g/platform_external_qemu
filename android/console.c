@@ -1511,6 +1511,20 @@ do_gsm_accept( ControlClient  client, char*  args )
 }
 
 static int
+do_gsm_clear( ControlClient client, char* args)
+{
+    if (!client->modem) {
+        control_write( client, "KO: modem emulation not running\r\n" );
+        return -1;
+    }
+    if ( amodem_clear_call( client->modem ) < 0 ) {
+        control_write( client, "KO: could not clear up modem\r\n" );
+        return -1;
+    }
+    return 0;
+}
+
+static int
 do_gsm_signal( ControlClient  client, char*  args )
 {
       enum { SIGNAL_RSSI = 0, SIGNAL_BER, NUM_SIGNAL_PARAMS };
@@ -1632,6 +1646,10 @@ static const CommandDefRec  gsm_commands[] =
     "'gsm accept <remoteNumber>' change the state of a call to 'active'. this is only possible\r\n"
     "if the call is in the 'waiting' or 'held' state\r\n", NULL,
     do_gsm_accept, NULL },
+
+    { "clear", "clear current phone calls",
+    "'gsm clear' cleans up all inbound and outbound calls\r\n", NULL,
+    do_gsm_clear, NULL },
 
     { "cancel", "disconnect an inbound or outbound phone call",
     "'gsm cancel <phonenumber>' allows you to simulate the end of an inbound or outbound call\r\n", NULL,
