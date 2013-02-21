@@ -776,6 +776,24 @@ asimcard_ef_init( ASimCard card )
     asimcard_ef_update_linear(ef, 0xff, "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
     asimcard_ef_add(card, ef);
 
+    // Fixed Dialling Numbers(6F3B)
+    //   Record size: 0x20
+    //   Record count: 0xff
+    //   Length of BCD number/SSC contents: 7
+    //   TON and NPI: 0x81
+    // @see 3GPP TS 51.011 section 10.5.2 EFfdn
+    ef = asimcard_ef_new_linear(0x6f3b, SIM_FILE_NEED_PIN, 0x20);
+    // Alpha Id(Encoded with GSM 8 bit): "Mozilla", Dialling Number: 15555218201
+    asimcard_ef_update_linear(ef, 0x01, "4d6f7a696c6c61ffffffffffffffffffffff07815155258102f1ffffffffffff");
+    // Alpha Id(Encoded with UCS2 0x80: "Saßê黃", Dialling Number: 15555218202
+    asimcard_ef_update_linear(ef, 0x02, "800053006100df00ea9ec3ffffffffffffff07815155258102f2ffffffffffff");
+    // Alpha Id(Encoded with UCS2 0x81): "Fire 火", Dialling Number: 15555218203
+    asimcard_ef_update_linear(ef, 0x03, "8106e04669726520ebffffffffffffffffff07815155258102f3ffffffffffff");
+    // Alpha Id(Encoded with UCS2 0x82): "Huang 黃", Dialling Number: 15555218204
+    asimcard_ef_update_linear(ef, 0x04, "82079e804875616e6720c3ffffffffffffff07815155258102f4ffffffffffff");
+    asimcard_ef_update_linear(ef, 0xff, "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
+    asimcard_ef_add(card, ef);
+
     // Cell Broadcast Message Identifier selection(6F45):
     //   File size: 0x06
     //   CB Message Identifier 1: 45056(B000)
