@@ -270,6 +270,9 @@ typedef struct AModemRec_
     AVoiceCallRec       calls[ MAX_CALLS ];
     int                 call_count;
 
+    /* last call fail cause */
+    int                 last_call_fail_cause;
+
     /* unsolicited callback */  /* XXX: TODO: use this */
     AModemUnsolFunc     unsol_func;
     void*               unsol_opaque;
@@ -551,7 +554,7 @@ amodem_reset( AModem  modem )
 }
 
 static AVoiceCall amodem_alloc_call( AModem   modem );
-static void amodem_free_call( AModem  modem, AVoiceCall  call );
+static void amodem_free_call( AModem  modem, AVoiceCall  call, int cause );
 
 #define MODEM_DEV_STATE_SAVE_VERSION 1
 
@@ -586,7 +589,7 @@ static int  android_modem_state_load(QEMUFile *f, void  *opaque, int version_id)
     // In case there are timers or remote calls.
     int nn;
     for (nn = modem->call_count - 1; nn >= 0; nn--) {
-      amodem_free_call( modem, modem->calls + nn);
+      amodem_free_call( modem, modem->calls + nn, CALL_FAIL_NORMAL );
     }
 
     int call_count = qemu_get_byte(f);
@@ -909,7 +912,7 @@ amodem_alloc_call( AModem   modem )
 
 
 static void
-amodem_free_call( AModem  modem, AVoiceCall  call )
+amodem_free_call( AModem  modem, AVoiceCall  call, int  cause )
 {
     int  nn;
 
@@ -934,8 +937,8 @@ amodem_free_call( AModem  modem, AVoiceCall  call )
              (modem->call_count - 1 - nn)*sizeof(*call) );
 
     modem->call_count -= 1;
+    modem->last_call_fail_cause = cause;
 }
-
 
 static AVoiceCall
 amodem_find_call( AModem  modem, int  id )
@@ -1057,6 +1060,19 @@ amodem_update_call( AModem  modem, const char*  fromNumber, ACallState  state )
 }
 
 
+int amodem_remote_call_busy( AModem  modem, const char*  number )
+{
+    AVoiceCall vcall = (AVoiceCall) amodem_find_call_by_number(modem, number);
+
+    if (!vcall)
+        return -1;
+
+    amodem_free_call(modem, vcall, CALL_FAIL_BUSY);
+    amodem_send_calls_update(modem);
+    return 0;
+}
+
+
 int
 amodem_disconnect_call( AModem  modem, const char*  number )
 {
@@ -1065,7 +1081,7 @@ amodem_disconnect_call( AModem  modem, const char*  number )
     if (!vcall)
         return -1;
 
-    amodem_free_call( modem, vcall );
+    amodem_free_call( modem, vcall, CALL_FAIL_NORMAL );
     amodem_send_calls_update(modem);
     return 0;
 }
@@ -1078,7 +1094,7 @@ amodem_clear_call( AModem modem )
 
   for ( ; vcall < vend; vcall++ ) {
       AVoiceCall call = (AVoiceCall) &vcall->call;
-      amodem_free_call( modem, call );
+      amodem_free_call( modem, call, CALL_FAIL_NORMAL );
       amodem_send_calls_update(modem);
   }
 
@@ -1943,7 +1959,7 @@ handleListCurrentCalls( const char*  cmd, AModem  modem )
 static const char*
 handleLastCallFailCause( const char* cmd, AModem modem )
 {
-    amodem_add_line( modem, "+CEER: %d\n", CALL_FAIL_NORMAL );
+    amodem_add_line( modem, "+CEER: %d\n", modem->last_call_fail_cause );
     return amodem_end_line( modem );
 }
 
@@ -2136,7 +2152,7 @@ remote_voice_call_event( void*  _vcall, int  success )
 
     if (!success) {
         /* aargh, the remote emulator probably quitted at that point */
-        amodem_free_call(modem, vcall);
+        amodem_free_call(modem, vcall, CALL_FAIL_NORMAL);
         amodem_send_calls_update(modem);
     }
 }
@@ -2150,6 +2166,12 @@ voice_call_event( void*  _vcall )
 
     switch (call->state) {
         case A_CALL_DIALING:
+            // Check number is valid or not.
+            if (strspn(call->number, "+0123456789") != strlen(call->number)) {
+                amodem_free_call(vcall->modem, vcall, CALL_FAIL_UNOBTAINABLE_NUMBER);
+                break;
+            }
+
             call->state = A_CALL_ALERTING;
 
             if (vcall->is_remote) {
@@ -2160,18 +2182,12 @@ voice_call_event( void*  _vcall )
                     * emulator is not running, so simply destroy this call.
                     * XXX: should we send some sort of message to indicate BAD NUMBER ? */
                     /* it seems the Android code simply waits for changes in the list   */
-                    amodem_free_call( vcall->modem, vcall );
+                    amodem_free_call( vcall->modem, vcall, CALL_FAIL_NORMAL );
                 }
-            } else {
-               /* this is not a remote emulator number, so just simulate
-                * a small ringing delay */
-                sys_timer_set( vcall->timer, sys_time_ms() + CALL_DELAY_ALERT,
-                               voice_call_event, vcall );
             }
             break;
 
         case A_CALL_ALERTING:
-            call->state = A_CALL_ACTIVE;
             break;
 
         case A_CALL_ACTIVE:
@@ -2246,6 +2262,8 @@ handleDial( const char*  cmd, AModem  modem )
         call->number[len] = 0;
     }
 
+    amodem_send_calls_update( modem );
+
     amodem_begin_line( modem );
     if (amodem_is_emergency(modem, call->number)) {
         modem->in_emergency_mode = 1;
@@ -2279,7 +2297,7 @@ handleAnswer( const char*  cmd, AModem  modem )
         } else if (cmd[0] == 'H') {
             /* ATH: hangup, since user is busy */
             if (call->state == A_CALL_INCOMING) {
-                amodem_free_call( modem, vcall );
+                amodem_free_call( modem, vcall, CALL_FAIL_NORMAL );
                 break;
             }
         }
@@ -2331,7 +2349,7 @@ handleHangup( const char*  cmd, AModem  modem )
                     if (call->state == A_CALL_HELD    ||
                         call->state == A_CALL_WAITING ||
                         call->state == A_CALL_INCOMING) {
-                        amodem_free_call(modem, vcall);
+                        amodem_free_call(modem, vcall, CALL_FAIL_NORMAL);
                         nn--;
                     }
                 }
@@ -2345,7 +2363,7 @@ handleHangup( const char*  cmd, AModem  modem )
                         if (call->mode != A_CALL_VOICE)
                             continue;
                         if (call->state == A_CALL_ACTIVE) {
-                            amodem_free_call(modem, vcall);
+                            amodem_free_call(modem, vcall, CALL_FAIL_NORMAL);
                             nn--;
                         }
                         else if (call->state == A_CALL_HELD     ||
@@ -2357,7 +2375,7 @@ handleHangup( const char*  cmd, AModem  modem )
                     int  id = cmd[1] - '0';
                     AVoiceCall  vcall = amodem_find_call( modem, id );
                     if (vcall != NULL)
-                        amodem_free_call( modem, vcall );
+                        amodem_free_call( modem, vcall, CALL_FAIL_NORMAL );
                 }
                 break;
 

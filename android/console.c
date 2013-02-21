@@ -1448,7 +1448,7 @@ do_gsm_busy( ControlClient  client, char*  args )
         control_write( client, "KO: no current outbound call to number '%s' (call %p)\r\n", args, call );
         return -1;
     }
-    if ( amodem_disconnect_call( client->modem, args ) < 0 ) {
+    if ( amodem_remote_call_busy( client->modem, args ) < 0 ) {
         control_write( client, "KO: could not cancel this number\r\n" );
         return -1;
     }
