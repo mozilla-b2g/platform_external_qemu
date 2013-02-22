@@ -1089,16 +1089,19 @@ amodem_disconnect_call( AModem  modem, const char*  number )
 int
 amodem_clear_call( AModem modem )
 {
-  AVoiceCall  vcall = modem->calls;
-  AVoiceCall  vend  = vcall + modem->call_count;
+    if (!modem->call_count)
+        return 0;
 
-  for ( ; vcall < vend; vcall++ ) {
-      AVoiceCall call = (AVoiceCall) &vcall->call;
-      amodem_free_call( modem, call, CALL_FAIL_NORMAL );
-      amodem_send_calls_update(modem);
-  }
+    AVoiceCall  vcall = modem->calls;
+    AVoiceCall  vend  = vcall + modem->call_count;
 
-  return 0;
+    for ( ; vcall < vend; vcall++ ) {
+        AVoiceCall call = (AVoiceCall) &vcall->call;
+        amodem_free_call( modem, call, CALL_FAIL_NORMAL );
+    }
+    amodem_send_calls_update(modem);
+
+    return 0;
 }
 
 /** Cell Location
