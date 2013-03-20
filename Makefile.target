@@ -73,6 +73,7 @@ HW_SOURCES := \
     core/sysbus.c \
     core/dma.c \
     android/goldfish/audio.c \
+    android/goldfish/bt.c \
     android/goldfish/device.c \
     android/goldfish/events_device.c \
     android/goldfish/fb.c \
