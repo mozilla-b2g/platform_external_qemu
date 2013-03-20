@@ -4036,6 +4036,9 @@ int main(int argc, char **argv, char **envp)
         }
 
     /* Initialize Bluetooth */
+    if (!nb_hcis && android_hw->hw_bluetooth) {
+        bt_parse("hci,hci");
+    }
     if (nb_hcis) {
         const char *fmt = NULL;
         char buf[32];
