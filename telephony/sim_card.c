@@ -717,15 +717,26 @@ asimcard_ef_init( ASimCard card )
     // PLMN Network Name(6FC5):
     //   Record size: 0x18
     //   Record count: 0x0a
+    //   Record:
+    //     PNN 1: Fullname: "AT&T"
     // @see 3GPP TS 31.102 section 4.2.58 EFpnn (PLMN Network Name)
     // @see 3GPP TS 24.008
-    // FIXME: bug 835255 - marionette test will fail when enable EFpnn
-    /*
     ef = asimcard_ef_new_linear(0x6fc5, SIM_FILE_READ_ONLY, 0x18);
     asimcard_ef_update_linear(ef, 0x01, "43058441aa890affffffffffffffffffffffffffffffffff");
     asimcard_ef_update_linear(ef, 0x0a, "ffffffffffffffffffffffffffffffffffffffffffffffff");
     asimcard_ef_add(card, ef);
-    */
+
+    // Operator PLMN List (6FC6):
+    //   Record size: 0x18
+    //   Record count: 0x0a
+    //   Record:
+    //     MCC = 310, MNC = 070, PNN = 01
+    // @see 3GPP TS 31.102 section 4.2.59 EFopl (Operator PLMN List)
+    // @see 3GPP TS 24.008
+    ef = asimcard_ef_new_linear(0x6fc6, SIM_FILE_READ_ONLY, 0x18);
+    asimcard_ef_update_linear(ef, 0x01, "1300700000fffe01ffffffffffffffffffffffffffffffff");
+    asimcard_ef_update_linear(ef, 0x0a, "ffffffffffffffffffffffffffffffffffffffffffffffff");
+    asimcard_ef_add(card, ef);
 
     // MSISDN(6F40):
     //   Record size: 0x20
