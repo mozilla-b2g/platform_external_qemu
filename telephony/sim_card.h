@@ -14,6 +14,9 @@
 
 #include "gsm.h"
 
+#define  A_SIM_PIN_RETRIES 3
+#define  A_SIM_PUK_RETRIES 6
+
 typedef struct ASimCardRec_*    ASimCard;
 
 extern ASimCard  asimcard_create( int base_port , int instance_id);
@@ -38,6 +41,8 @@ extern void         asimcard_set_puk( ASimCard  sim, const char*  puk );
 
 extern int         asimcard_check_pin( ASimCard  sim, const char*  pin );
 extern int         asimcard_check_puk( ASimCard  sim, const char*  puk, const char*  pin );
+
+extern int         asimcard_get_pin_retries( ASimCard  sim );
 
 /* Restricted SIM Access command, as defined by 8.18 of 3GPP 27.007 */
 typedef enum {
