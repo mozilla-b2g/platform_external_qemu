@@ -1943,6 +1943,26 @@ handleChangeOrEnterPIN( const char*  cmd, AModem  modem )
 
 
 static const char*
+handleGetRemainingRetries( const char* cmd, AModem modem )
+{
+    assert(!memcmp(cmd, "+CPINR=", 7));
+    cmd += 7;
+
+    amodem_begin_line(modem);
+
+    if (!strcmp(cmd, "SIM PIN")) {
+      amodem_add_line(modem, "+CPINR: SIM PIN,%d,%d\r\n",
+                      asimcard_get_pin_retries(modem->sim),
+                      A_SIM_PIN_RETRIES);
+    } else {
+      // Incorrect parameters
+      amodem_add_line( modem, "+CME ERROR: 50\r\n");
+    }
+
+    return amodem_end_line(modem);
+}
+
+static const char*
 handleListCurrentCalls( const char*  cmd, AModem  modem )
 {
     int  nn;
@@ -2551,6 +2571,7 @@ static const struct {
     { "+COPS=0", NULL, handleOperatorSelection }, /* set network selection to automatic */
     { "!+CMGD=", NULL, handleDeleteSMSonSIM }, /* delete SMS on SIM */
     { "!+CPIN=", NULL, handleChangeOrEnterPIN },
+    { "!+CPINR=", NULL, handleGetRemainingRetries }, /* get remaining PIN retries*/
     { "+CEER", NULL, handleLastCallFailCause },
 
     /* see getSIMStatus() */

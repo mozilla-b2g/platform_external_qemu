@@ -64,6 +64,7 @@ typedef struct ASimCardRec_ {
     char        pin[ A_SIM_PIN_SIZE+1 ];
     char        puk[ A_SIM_PUK_SIZE+1 ];
     int         pin_retries;
+    int         puk_retries;
     int         port;
     int         instance_id;
 
@@ -84,6 +85,7 @@ asimcard_create(int port, int instance_id)
     ASimCard  card    = &_s_card[instance_id];
     card->status      = A_SIM_STATUS_READY;
     card->pin_retries = 0;
+    card->puk_retries = 0;
     strncpy( card->pin, "0000", sizeof(card->pin) );
     strncpy( card->puk, "12345678", sizeof(card->puk) );
     card->port = port;
@@ -139,14 +141,12 @@ void
 asimcard_set_pin( ASimCard  sim, const char*  pin )
 {
     strncpy( sim->pin, pin, A_SIM_PIN_SIZE );
-    sim->pin_retries = 0;
 }
 
 void
 asimcard_set_puk( ASimCard  sim, const char*  puk )
 {
     strncpy( sim->puk, puk, A_SIM_PUK_SIZE );
-    sim->pin_retries = 0;
 }
 
 
@@ -163,9 +163,10 @@ asimcard_check_pin( ASimCard  sim, const char*  pin )
         return 1;
     }
 
-    if (sim->status != A_SIM_STATUS_READY) {
-        if (++sim->pin_retries == 3)
-            sim->status = A_SIM_STATUS_PUK;
+    if (++sim->pin_retries == A_SIM_PIN_RETRIES) {
+        if (sim->status != A_SIM_STATUS_READY) {
+            sim->status = 0;
+        }
     }
     return 0;
 }
@@ -181,14 +182,20 @@ asimcard_check_puk( ASimCard  sim, const char* puk, const char*  pin )
         strncpy( sim->puk, puk, A_SIM_PUK_SIZE );
         strncpy( sim->pin, pin, A_SIM_PIN_SIZE );
         sim->status      = A_SIM_STATUS_READY;
-        sim->pin_retries = 0;
+        sim->puk_retries = 0;
         return 1;
     }
 
-    if ( ++sim->pin_retries == 6 ) {
+    if ( ++sim->puk_retries == A_SIM_PUK_RETRIES ) {
         sim->status = A_SIM_STATUS_ABSENT;
     }
     return 0;
+}
+
+int
+asimcard_get_pin_retries( ASimCard sim )
+{
+    return A_SIM_PIN_RETRIES - sim->pin_retries;
 }
 
 typedef enum {
