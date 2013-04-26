@@ -450,7 +450,7 @@ amodem_nvram_get_int( AModem modem, const char *nvname, int defval)
 
     value = aconfig_int(modem->nvram_config, nvname, defval);
     snprintf(strval, MAX_KEY_NAME, "%d", value);
-    D("Setting value of %s to %d (%s)",nvname, value, strval);
+    D("Setting value of %s to %d (%s)\n",nvname, value, strval);
     newvalue = strdup(strval);
     if (!newvalue) {
         newvalue = "";
@@ -466,6 +466,7 @@ amodem_nvram_get_str( AModem modem, const char *nvname, const char *defval)
     const char *value;
 
     value = aconfig_str(modem->nvram_config, nvname, defval);
+    D("Setting value of %s to %s\n",nvname, value);
 
     if (!value) {
         if (!defval)
@@ -628,7 +629,7 @@ amodem_create( int  base_port, int instance_id, AModemUnsolFunc  unsol_func, voi
     modem->base_port    = base_port;
     modem->instance_id  = instance_id;
     start = bufprint_config_file( start, end, "modem-nv-ram-" );
-    start = bufprint( start, end, "%d", modem->base_port );
+    start = bufprint( start, end, "%d-%d", modem->base_port, modem->instance_id );
     modem->nvram_config_filename = strdup( nvfname );
 
     amodem_reset( modem );
