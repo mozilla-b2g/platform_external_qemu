@@ -83,9 +83,21 @@
 
 #define  SMSC_ADDRESS           "+123456789"
 
+static const struct {
+    const char* name;
+    AModemTech  tech;
+} techs[] = {
+    { "gsm",   A_TECH_GSM },
+    { "wcdma", A_TECH_WCDMA },
+    { "cdma",  A_TECH_CDMA },
+    { "evdo",  A_TECH_EVDO },
+    { "lte",   A_TECH_LTE },
+    { NULL,    A_TECH_UNKNOWN }
+};
+
 int amodem_num_devices = 0;
 
-static const char* _amodem_switch_technology(AModem modem, AModemTech newtech, int32_t newpreferred);
+static int _amodem_switch_technology(AModem modem, AModemTech newtech, int32_t newpreferred);
 static int _amodem_set_cdma_subscription_source( AModem modem, ACdmaSubscriptionSource ss);
 static int _amodem_set_cdma_prl_version( AModem modem, int prlVersion);
 
@@ -126,14 +138,6 @@ static const char*  quote( const char*  line )
 extern AModemTech
 android_parse_modem_tech( const char * tech )
 {
-    const struct { const char* name; AModemTech  tech; }  techs[] = {
-        { "gsm", A_TECH_GSM },
-        { "wcdma", A_TECH_WCDMA },
-        { "cdma", A_TECH_CDMA },
-        { "evdo", A_TECH_EVDO },
-        { "lte", A_TECH_LTE },
-        { NULL, 0 }
-    };
     int  nn;
 
     for (nn = 0; techs[nn].name; nn++) {
@@ -142,6 +146,19 @@ android_parse_modem_tech( const char * tech )
     }
     /* not found */
     return A_TECH_UNKNOWN;
+}
+
+extern const char*
+android_get_modem_tech_name( AModemTech tech )
+{
+    int  nn;
+
+    for (nn = 0; techs[nn].name; nn++) {
+        if (techs[nn].tech == tech)
+            return techs[nn].name;
+    }
+    /* not found */
+    return NULL;
 }
 
 extern ADataNetworkType
@@ -810,10 +827,8 @@ amodem_set_data_network_type( AModem  modem, ADataNetworkType   type )
     modem->data_network = type;
     amodem_set_data_registration( modem, modem->data_state );
     modemTech = tech_from_network_type(type);
-    if (modem->unsol_func && modemTech != A_TECH_UNKNOWN) {
-        if (_amodem_switch_technology( modem, modemTech, modem->preferred_mask )) {
-            modem->unsol_func( modem->unsol_opaque, modem->out_buff );
-        }
+    if (modemTech != A_TECH_UNKNOWN) {
+        amodem_set_technology( modem, modemTech );
     }
 }
 
@@ -1198,16 +1213,16 @@ chooseTechFromMask( AModem modem, int32_t preferred )
     return A_TECH_UNKNOWN;
 }
 
-static const char*
+static int
 _amodem_switch_technology( AModem modem, AModemTech newtech, int32_t newpreferred )
 {
     D("_amodem_switch_technology: oldtech: %d, newtech %d, preferred: %d. newpreferred: %d\n",
                       modem->technology, newtech, modem->preferred_mask,newpreferred);
-    const char *ret = "+CTEC: DONE";
     assert( modem );
 
     if (!newpreferred) {
-        return "ERROR: At least one technology must be enabled";
+        D("ERROR: At least one technology must be enabled");
+        return -1;
     }
     if (modem->preferred_mask != newpreferred) {
         char value[MAX_KEY_NAME + 1];
@@ -1220,10 +1235,39 @@ _amodem_switch_technology( AModem modem, AModemTech newtech, int32_t newpreferre
     }
 
     if (modem->technology != newtech) {
+        if (!matchPreferredMask(modem->preferred_mask, newtech)) {
+            D("ERROR: Select an unsupported technology");
+            return -1;
+        }
         modem->technology = newtech;
-        ret = amodem_printf(modem, "+CTEC: %d", modem->technology);
+        amodem_nvram_set(modem, NV_MODEM_TECHNOLOGY,
+                         android_get_modem_tech_name(modem->technology));
     }
-    return ret;
+
+    return modem->technology;
+}
+
+AModemTech
+amodem_get_technology( AModem modem )
+{
+    return modem->technology;
+}
+
+int
+amodem_set_technology( AModem modem, AModemTech technology )
+{
+    int current = modem->technology;
+    int ret = _amodem_switch_technology(modem, technology, modem->preferred_mask);
+
+    if (ret < 0) {
+        return -1;
+    }
+
+    if (ret != current) {
+        amodem_unsol(modem, "+CTEC: %d\r", ret);
+    }
+
+    return 0;
 }
 
 static int
@@ -1371,10 +1415,24 @@ handleTech( const char*  cmd, AModem  modem )
         cmd += 1;
     }
     if (havenewtech) {
+        int current = modem->technology;
+        int ret;
+
         D( "cmd: %s\n", cmd );
         if (cmd[0] == ',' && ! parsePreferred( ++cmd, &pt ))
             return amodem_printf( modem, "ERROR: invalid preferred mode" );
-        return _amodem_switch_technology( modem, newtech, pt );
+
+        ret = _amodem_switch_technology( modem, newtech, pt );
+
+        if (ret < 0) {
+            return amodem_printf( modem, "ERROR: unable to set preferred mode" );
+        }
+
+        if (ret != current) {
+            return amodem_printf( modem, "+CTEC: %d", ret );
+        }
+
+        return amodem_printf( modem, "+CTEC: DONE" );
     }
     return amodem_printf( modem, "ERROR: %s: Unknown Technology", cmd + 1 );
 }
