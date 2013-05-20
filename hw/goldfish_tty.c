@@ -31,15 +31,44 @@ enum {
     TTY_CMD_READ_BUFFER    = 3,
 };
 
+static struct goldfish_tty {
+    int shared_irq;
+#define DEV_MASK(id)  (0x01UL << (id))
+    uint32_t int_mask;
+    uint32_t int_active;
+} s_tty;
+
 struct tty_state {
     struct goldfish_device dev;
     CharDriverState *cs;
     uint32_t ptr;
     uint32_t ptr_len;
-    uint32_t ready;
     uint8_t data[128];
     uint32_t data_count;
 };
+
+static void goldfish_tty_update_irq(struct tty_state *s)
+{
+    static int current_level = 0;
+    int level;
+
+    level = (s_tty.int_mask & s_tty.int_active) ? 1 : 0;
+    if (level != current_level) {
+        current_level = level;
+        goldfish_device_set_irq(&s->dev, s->dev.irq, level);
+    }
+}
+
+static void goldfish_tty_set_interrupt(struct tty_state *s, int level)
+{
+    if (level) {
+        s_tty.int_active |= DEV_MASK(s->dev.id);
+    } else {
+        s_tty.int_active &= ~DEV_MASK(s->dev.id);
+    }
+
+    goldfish_tty_update_irq(s);
+}
 
 #define  GOLDFISH_TTY_SAVE_VERSION  1
 
@@ -49,7 +78,7 @@ static void  goldfish_tty_save(QEMUFile*  f, void*  opaque)
 
     qemu_put_be32( f, s->ptr );
     qemu_put_be32( f, s->ptr_len );
-    qemu_put_byte( f, s->ready );
+    qemu_put_byte( f, (s_tty.int_mask & DEV_MASK(s->dev.id)) ? 1 : 0 );
     qemu_put_byte( f, s->data_count );
     qemu_put_buffer( f, s->data, s->data_count );
 }
@@ -63,7 +92,9 @@ static int  goldfish_tty_load(QEMUFile*  f, void*  opaque, int  version_id)
 
     s->ptr        = qemu_get_be32(f);
     s->ptr_len    = qemu_get_be32(f);
-    s->ready      = qemu_get_byte(f);
+    if (qemu_get_byte(f)) {
+        s_tty.int_mask |= DEV_MASK(s->dev.id);
+    }
     s->data_count = qemu_get_byte(f);
     qemu_get_buffer(f, s->data, s->data_count);
 
@@ -101,19 +132,15 @@ static void goldfish_tty_write(void *opaque, target_phys_addr_t offset, uint32_t
         case TTY_CMD:
             switch(value) {
                 case TTY_CMD_INT_DISABLE:
-                    if(s->ready) {
-                        if(s->data_count > 0)
-                            goldfish_device_set_irq(&s->dev, 0, 0);
-                        s->ready = 0;
-                    }
+                    s_tty.int_mask &= ~DEV_MASK(s->dev.id);
+                    if (s->data_count > 0)
+                        goldfish_tty_set_interrupt(s, 0);
                     break;
 
                 case TTY_CMD_INT_ENABLE:
-                    if(!s->ready) {
-                        if(s->data_count > 0)
-                            goldfish_device_set_irq(&s->dev, 0, 1);
-                        s->ready = 1;
-                    }
+                    s_tty.int_mask |= DEV_MASK(s->dev.id);
+                    if (s->data_count > 0)
+                        goldfish_tty_set_interrupt(s, 1);
                     break;
 
                 case TTY_CMD_WRITE_BUFFER:
@@ -155,8 +182,8 @@ static void goldfish_tty_write(void *opaque, target_phys_addr_t offset, uint32_t
                     if(s->data_count > s->ptr_len)
                         memmove(s->data, s->data + s->ptr_len, s->data_count - s->ptr_len);
                     s->data_count -= s->ptr_len;
-                    if(s->data_count == 0 && s->ready)
-                        goldfish_device_set_irq(&s->dev, 0, 0);
+                    if (s->data_count == 0)
+                        goldfish_tty_set_interrupt(s, 0);
                     break;
 
                 default:
@@ -190,8 +217,8 @@ static void tty_receive(void *opaque, const uint8_t *buf, int size)
 
     memcpy(s->data + s->data_count, buf, size);
     s->data_count += size;
-    if(s->data_count > 0 && s->ready)
-        goldfish_device_set_irq(&s->dev, 0, 1);
+    if (s->data_count > 0)
+        goldfish_tty_set_interrupt(s, 1);
 }
 
 static CPUReadMemoryFunc *goldfish_tty_readfn[] = {
@@ -212,12 +239,18 @@ int goldfish_tty_add(CharDriverState *cs, int id, uint32_t base, int irq)
     struct tty_state *s;
     static int  instance_id = 0;
 
+    if (irq && s_tty.shared_irq) {
+        //printf("goldfish_tty_add: shared irq already assigned to %d\n",
+        //       s_tty.shared_irq);
+        return -1;
+    }
+
     s = qemu_mallocz(sizeof(*s));
     s->dev.name = "goldfish_tty";
     s->dev.id = id;
     s->dev.base = base;
     s->dev.size = 0x1000;
-    s->dev.irq = irq;
+    s->dev.irq = (irq ? irq : s_tty.shared_irq);
     s->dev.irq_count = 1;
     s->cs = cs;
 
@@ -229,6 +262,9 @@ int goldfish_tty_add(CharDriverState *cs, int id, uint32_t base, int irq)
     if(ret) {
         qemu_free(s);
     } else {
+        if (!s_tty.shared_irq) {
+            s_tty.shared_irq = s->dev.irq;
+        }
         register_savevm( "goldfish_tty", instance_id++, GOLDFISH_TTY_SAVE_VERSION,
                          goldfish_tty_save, goldfish_tty_load, s);
     }
