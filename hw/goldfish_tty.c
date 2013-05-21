@@ -55,7 +55,7 @@ static void goldfish_tty_update_irq(struct tty_state *s)
     level = (s_tty.int_mask & s_tty.int_active) ? 1 : 0;
     if (level != current_level) {
         current_level = level;
-        goldfish_device_set_irq(&s->dev, s->dev.irq, level);
+        goldfish_device_set_irq(&s->dev, 0, level);
     }
 }
 
