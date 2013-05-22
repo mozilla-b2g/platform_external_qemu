@@ -1047,6 +1047,8 @@ static void pc_init1(ram_addr_t ram_size,
     if (android_hw->hw_battery)
         goldfish_battery_init();
 
+    goldfish_rfkill_init();
+
     goldfish_memlog_init(0);
 
 #ifdef CONFIG_NAND

@@ -109,6 +109,8 @@ void bt_device_done(struct bt_device_s *dev);
 
 /* bt-hci.c */
 struct HCIInfo *bt_new_hci(struct bt_scatternet_s *net);
+const char* bt_hci_get(struct HCIInfo *info, const char *query, char *result);
+struct bt_scatternet_s* bt_hci_get_net(struct HCIInfo *info);
 
 /* bt-vhci.c */
 void bt_vhci_init(struct HCIInfo *info);
@@ -132,6 +134,8 @@ void bt_l2cap_device_done(struct bt_l2cap_device_s *dev);
 void bt_l2cap_psm_register(struct bt_l2cap_device_s *dev, int psm,
                 int min_mtu, int (*new_channel)(struct bt_l2cap_device_s *dev,
                         struct bt_l2cap_conn_params_s *params));
+bool bt_l2cap_radd(struct bt_l2cap_device_s *dev,
+                struct bt_scatternet_s *net, char* str);
 
 struct bt_l2cap_device_s {
     struct bt_device_s device;
@@ -529,6 +533,10 @@ typedef struct {
 #define LINK_KEY_REPLY_CP_SIZE 22
 
 #define OCF_LINK_KEY_NEG_REPLY		0x000C
+typedef struct {
+    bdaddr_t    bdaddr;
+} __attribute__ ((packed)) link_key_neg_reply_cp;
+#define LINK_KEY_NEG_REPLY_CP_SIZE 6
 
 #define OCF_PIN_CODE_REPLY		0x000D
 typedef struct {
@@ -662,6 +670,21 @@ typedef struct {
     uint8_t	reason;
 } __attribute__ ((packed)) reject_sync_conn_req_cp;
 #define REJECT_SYNC_CONN_REQ_CP_SIZE 7
+
+#define OCF_IO_CAPABILITY_REQ_REPLY    0x002B
+typedef struct {
+    bdaddr_t    bdaddr;
+    uint8_t     capability;
+    uint8_t     oob_data;
+    uint8_t     authentication;
+} __attribute__ ((packed)) io_capability_req_reply_cp;
+#define IO_CAPABILITY_REQ_REPLY_CP_SIZE 9
+
+#define OCF_USER_CONFIRMATION_REQ_REPLY    0x002C
+typedef struct {
+    bdaddr_t    bdaddr;
+} __attribute__ ((packed)) user_confirmation_req_reply_cp;
+#define USER_CONFIRMATION_REQ_CP_SIZE 6
 
 /* Link Policy */
 #define OGF_LINK_POLICY		0x02
@@ -1632,6 +1655,35 @@ typedef struct {
     uint8_t	data[240];
 } __attribute__ ((packed)) extended_inquiry_info;
 #define EXTENDED_INQUIRY_INFO_SIZE 254
+
+#define EVT_IO_CAPABILITY_REQ      0x31
+typedef struct {
+    bdaddr_t    bdaddr;
+} __attribute__ ((packed)) evt_io_capability_req;
+#define EVT_IO_CAPABILITY_REQ_SIZE 6
+
+#define EVT_IO_CAPABILITY_RESPONSE     0x32
+typedef struct {
+    bdaddr_t    bdaddr;
+    uint8_t     capability;
+    uint8_t     oob_data;
+    uint8_t     authentication;
+} __attribute__ ((packed)) evt_io_capability_response;
+#define EVT_IO_CAPABILITY_RESPONSE_SIZE 9
+
+#define EVT_USER_CONFIRMATION_REQ      0x33
+typedef struct {
+    bdaddr_t    bdaddr;
+    uint32_t    passkey;
+} __attribute__ ((packed)) evt_user_confirmation_req;
+#define EVT_USER_CONFIRMATION_REQ_SIZE 10
+
+#define EVT_SIMPLE_PAIRING_COMPLETE    0x36
+typedef struct {
+    uint8_t     status;
+    bdaddr_t    bdaddr;
+} __attribute__ ((packed)) evt_simple_pairing_complete;
+#define EVT_SIMPLE_PAIRING_COMPLETE_SIZE 7
 
 #define EVT_TESTING			0xFE
 

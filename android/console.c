@@ -26,6 +26,7 @@
 #include "sysemu.h"
 #include "android/android.h"
 #include "cpu.h"
+#include "hw/goldfish_bt.h"
 #include "hw/goldfish_device.h"
 #include "hw/power_supply.h"
 #include "shaper.h"
@@ -3001,6 +3002,176 @@ static const CommandDefRec  cbs_commands[] =
 /********************************************************************************************/
 /********************************************************************************************/
 /*****                                                                                 ******/
+/*****                         R F K I L L    C O M M A N D S                          ******/
+/*****                                                                                 ******/
+/********************************************************************************************/
+/********************************************************************************************/
+
+static const char* rfkill_type_names[RFKILL_TYPE_MAX] = {
+    /* see hw/goldfish_bt.h, enum RfkillTypes */
+    "wlan", "bluetooth", "uwb", "wimax", "wwan"
+};
+
+static int
+do_rfkill_state( ControlClient  client, char*  args )
+{
+    char buf[32];
+    const char *name;
+    uint32_t blocking, hw_block, mask;
+    int type, state, ret = -1;
+
+    blocking = android_rfkill_get_blocking();
+    hw_block = android_rfkill_get_hardware_block();
+
+    for (type = 0; type < RFKILL_TYPE_MAX; type++) {
+        name = rfkill_type_names[type];
+        if (args && strcmp(args, name)) {
+            continue;
+        }
+
+        mask = 0x01UL << type;
+        state = hw_block & mask ? 2 : (blocking & mask ? 0 : 1);
+        if (!args) {
+            snprintf(buf, sizeof buf, "%s: %d\r\n", name, state);
+        } else {
+            snprintf(buf, sizeof buf, "%d\r\n", state);
+        }
+        control_write( client, buf );
+        ret = 0;
+    }
+
+    if (ret < 0) {
+        control_write( client, "KO: unknown <type>\r\n" );
+    }
+
+    return ret;
+}
+
+static int
+do_rfkill_block( ControlClient  client, char*  args )
+{
+    char *p, buf[32];
+    uint32_t hw_block;
+    int len, type = -1;
+
+    p = strchr(args, ' ');
+    len = p ? (p - args) : strlen(args);
+    for (type = 0; type < RFKILL_TYPE_MAX; type++) {
+        if (!strncmp(args, rfkill_type_names[type], len)) {
+            break;
+        }
+    }
+
+    if (type == RFKILL_TYPE_MAX) {
+        control_write( client, "KO: unknown <type>\r\n" );
+        return -1;
+    }
+
+    hw_block = android_rfkill_get_hardware_block();
+
+    if (p) {
+        while (*p && isspace(*p)) p++;
+
+        if (!strcmp(p, "on")) {
+            hw_block |= (0x01UL << type);
+        } else if (!strcmp(p, "off")) {
+            hw_block &= ~(0x01UL << type);
+        } else {
+            control_write( client, "KO: unknown <value>\r\n" );
+            return -1;
+        }
+    } else {
+        hw_block |= (0x01UL << type);
+    }
+
+    android_rfkill_set_hardware_block(hw_block);
+
+    return 0;
+}
+
+static const CommandDefRec  rfkill_commands[] =
+{
+    { "state", "get current blocking state",
+      "'rfkill state [<type>]' echo blocking status of all or specified <type>. '0' as\r\n"
+      "software blocked, '1' as unblocked, '2' as hardware blocked.\r\n", NULL,
+      do_rfkill_state, NULL },
+
+    { "block", "set hardware block",
+      "'rfkill block <type>[ <value>]' turn on/off hardware block on specified <type>.\r\n", NULL,
+      do_rfkill_block, NULL },
+
+    { NULL, NULL, NULL, NULL, NULL, NULL }
+};
+
+/********************************************************************************************/
+/********************************************************************************************/
+/*****                                                                                 ******/
+/*****                         B L U E T O O T H     C O M M A N D S                   ******/
+/*****                                                                                 ******/
+/********************************************************************************************/
+/********************************************************************************************/
+
+static int
+do_bt_get( ControlClient  client, char*  args )
+{
+    char buf[18] = "";
+
+    if(!args) {
+        control_write( client, "KO: no property to get\r\n" );
+        return -1;
+    }
+
+    control_write( client, "%s\r\n", goldfish_bt_get( args, buf ));
+    return 0;
+}
+
+static int
+do_bt_radd( ControlClient  client, char*  args )
+{
+    if(!args) {
+        control_write( client, "KO: empty remote device info\r\n" );
+        return -1;
+    }
+
+    goldfish_bt_radd( args );
+    return 0;
+}
+
+static int
+do_bt_rclr( ControlClient  client, char*  args )
+{
+    goldfish_bt_rclr();
+    return 0;
+}
+
+static const CommandDefRec  bt_commands[] =
+{
+    { "get", "retrieve BT local property",
+      "'bt get <prop>' retrieves BT local properties\r\n"
+      "the <prop> parameter is the property to retrieve\r\n"
+      "   enable              BT is enabled?\r\n"
+      "   addr                BT MAC address\r\n"
+      "   name                BT device name\r\n"
+      "   discoverable        BT device is discoverable?\r\n"
+      "   discovering         BT device is discovering?\r\n", NULL,
+      do_bt_get, NULL },
+
+    { "radd", "insert a remote BT device",
+      "'bt radd <prop_str>' inserts a remote BT device\r\n"
+      "the <prop_str> parameter is the string of device properties,\r\n"
+      "in the form of \"<MAC address>,<device name>\"\r\n", NULL,
+      do_bt_radd, NULL },
+
+    { "rclr", "remove all remote BT devices",
+      "'bt rclr' removes all remote BT devices\r\n", NULL,
+      do_bt_rclr, NULL },
+
+    { NULL, NULL, NULL, NULL, NULL, NULL }
+};
+
+/********************************************************************************************/
+/********************************************************************************************/
+/*****                                                                                 ******/
 /*****                           M A I N   C O M M A N D S                             ******/
 /*****                                                                                 ******/
 /********************************************************************************************/
@@ -3323,8 +3494,8 @@ static const CommandDefRec   main_commands[] =
     { "help|h|?", "print a list of commands", NULL, NULL, do_help, NULL },
 
     { "event", "simulate hardware events",
-    "allows you to send fake hardware events to the kernel\r\n", NULL,
-    NULL, event_commands },
+      "allows you to send fake hardware events to the kernel\r\n", NULL,
+      NULL, event_commands },
 
     { "geo", "Geo-location commands",
       "allows you to change Geo-related settings, or to send GPS NMEA sentences\r\n", NULL,
@@ -3364,16 +3535,16 @@ static const CommandDefRec   main_commands[] =
       NULL, sms_commands },
 
     { "avd", "control virtual device execution",
-    "allows you to control (e.g. start/stop) the execution of the virtual device\r\n", NULL,
-    NULL, vm_commands },
+      "allows you to control (e.g. start/stop) the execution of the virtual device\r\n", NULL,
+      NULL, vm_commands },
 
     { "window", "manage emulator window",
-    "allows you to modify the emulator window\r\n", NULL,
-    NULL, window_commands },
+      "allows you to modify the emulator window\r\n", NULL,
+      NULL, window_commands },
 
     { "qemu", "QEMU-specific commands",
-    "allows to connect to the QEMU virtual machine monitor\r\n", NULL,
-    NULL, qemu_commands },
+      "allows to connect to the QEMU virtual machine monitor\r\n", NULL,
+      NULL, qemu_commands },
 
     { "sensor", "manage emulator sensors",
       "allows you to request the emulator sensors\r\n", NULL,
@@ -3394,6 +3565,14 @@ static const CommandDefRec   main_commands[] =
     { "cbs", "Cell Broadcast related commands",
       "allows you to simulate an inbound CBS\r\n", NULL,
       NULL, cbs_commands },
+
+    { "rfkill", "RFKILL related commands",
+      "allows you to modify/retrieve RFKILL status, hardware blocking\r\n", NULL,
+      NULL, rfkill_commands },
+
+    { "bt", "Bluetooth related commands",
+      "allows you to retrieve BT status, or add remote devices\r\n", NULL,
+      NULL, bt_commands },
 
     { NULL, NULL, NULL, NULL, NULL, NULL }
 };

@@ -1360,3 +1360,71 @@ void bt_l2cap_psm_register(struct bt_l2cap_device_s *dev, int psm, int min_mtu,
     new_psm->next = dev->first_psm;
     dev->first_psm = new_psm;
 }
+
+void bt_l2cap_bdaddr_fromstr(const char *addr_str, bdaddr_t *addr)
+{
+    sscanf(addr_str, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",
+                &addr->b[5], &addr->b[4], &addr->b[3],
+                &addr->b[2], &addr->b[1], &addr->b[0]);
+}
+
+void bt_l2cap_device_parse(struct bt_device_s *dev, char *str)
+{
+    // BD address
+    char *pch = strtok(str, ",");
+    if (pch) {
+        bt_l2cap_bdaddr_fromstr(pch, &dev->bd_addr);
+    }
+
+    // Name
+    pch = strtok(NULL, ",");
+    if(pch) {
+        char* lmp_name = (char *)qemu_mallocz(sizeof(char) * (strlen(pch) + 1));
+        if(lmp_name) {
+            strcpy(lmp_name, pch);
+            dev->lmp_name = lmp_name;
+        }
+    }
+
+    // Misc
+    dev->class[0] = 0x6;
+    dev->class[1] = 0x4;
+    dev->class[2] = 0;
+    dev->clkoff = 0x1234;
+
+    // Point net head back to local adapter. Because function bt_device_init()
+    // called in bt_l2cap_device_init() points net head to this remote device.
+    dev->net->slave = dev->next;
+    dev->next = NULL;
+}
+
+bool bt_l2cap_join_net(struct bt_device_s *dev, struct bt_scatternet_s *net)
+{
+    struct bt_device_s *slave;
+
+    for (slave = net->slave; slave->next; slave = slave->next) {
+        if (!bacmp(&dev->bd_addr, &slave->next->bd_addr)) {
+            if (dev->lmp_name)
+                qemu_free((void *) dev->lmp_name);
+
+            fprintf(stderr, "%s: duplicate BD address! "
+                            "DO NOT add remote device\r\n", __FUNCTION__);
+            return false;
+        }
+    }
+    slave->next = dev;
+
+    return true;
+}
+
+bool bt_l2cap_radd(struct bt_l2cap_device_s *rdev, struct bt_scatternet_s *net, char* str)
+{
+    // Reset remote device
+    bt_l2cap_device_init(rdev, net);
+
+    // Parse str to fill in remote device
+    bt_l2cap_device_parse(&rdev->device, str);
+
+    // Add remote device into scatternet
+    return bt_l2cap_join_net(&rdev->device, net);
+}

@@ -105,6 +105,7 @@
 #ifdef CONFIG_ANDROID
 #include "charpipe.h"
 #include "modem_driver.h"
+#include "hw/goldfish_bt.h"
 #include "android/gps.h"
 #include "android/hw-kmsg.h"
 #include "android/hw-qemud.h"
@@ -599,6 +600,10 @@ static CharDriverState *qemu_chr_open_android_qemud(QemuOpts* opts)
     return android_qemud_get_cs();
 }
 
+static CharDriverState *qemu_chr_open_android_bt(QemuOpts* opts)
+{
+    return goldfish_bt_new_cs(qemu_next_hci());
+}
 
 #ifndef _WIN32
 
@@ -2555,6 +2560,10 @@ QemuOpts *qemu_chr_parse_compat(const char *label, const char *filename)
         qemu_opt_set(opts, "backend", "android-gps");
         return opts;
     }
+    if (strstart(filename, "android-bt", NULL)) {
+        qemu_opt_set(opts, "backend", "android-bt");
+        return opts;
+    }
 #endif /* CONFIG_ANDROID */
 
 fail:
@@ -2590,6 +2599,7 @@ static const struct {
     { .name = "android-kmsg",  .open = qemu_chr_open_android_kmsg },
     { .name = "android-modem", .open = qemu_chr_open_android_modem },
     { .name = "android-gps",   .open = qemu_chr_open_android_gps },
+    { .name = "android-bt",   .open = qemu_chr_open_android_bt },
 #endif
 #ifdef CONFIG_BRLAPI
     { .name = "braille",   .open = chr_baum_init },

@@ -67,6 +67,7 @@ HW_SOURCES := \
     dma.c \
     irq.c \
     goldfish_audio.c \
+    goldfish_bt.c \
     goldfish_device.c \
     goldfish_events_device.c \
     goldfish_fb.c \
@@ -75,6 +76,7 @@ HW_SOURCES := \
     goldfish_memlog.c \
     goldfish_nand.c \
     goldfish_pipe.c \
+    goldfish_rfkill.c \
     goldfish_tty.c \
     msmouse.c \
     pci.c \
