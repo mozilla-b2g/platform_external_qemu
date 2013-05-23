@@ -215,7 +215,7 @@ int qemu_main(int argc, char **argv, char **envp);
 
 #ifdef CONFIG_STANDALONE_CORE
 /* Verbose value used by the standalone emulator core (without UI) */
-unsigned long   android_verbose;
+unsigned long long  android_verbose;
 #endif  // CONFIG_STANDALONE_CORE
 
 #if !defined(CONFIG_STANDALONE_CORE)
@@ -4059,6 +4059,26 @@ int main(int argc, char **argv, char **envp)
         if (bt_parse(bt_opts[i])) {
             PANIC("Unable to parse bluetooth options");
         }
+
+    /* Initialize Bluetooth */
+    if (!nb_hcis && android_hw->hw_bluetooth) {
+        bt_parse("hci,hci");
+    }
+    if (nb_hcis) {
+        const char *fmt = NULL;
+        char buf[32];
+        int index;
+
+        for (i = 0; i < nb_hcis; i++) {
+            if ((index = serial_hds_add("android-bt")) < 0) {
+                continue;
+            }
+
+            fmt = fmt ? ",ttyS%d" : " android.bluetooth=ttyS%d";
+            snprintf(buf, sizeof(buf), fmt, index);
+            stralloc_add_str(kernel_params, buf);
+        }
+    }
 
     /* init the memory */
     if (ram_size == 0) {

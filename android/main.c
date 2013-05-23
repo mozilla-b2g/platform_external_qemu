@@ -83,7 +83,7 @@ extern void  start_tracing(void);
 extern void  stop_tracing(void);
 #endif
 
-unsigned long   android_verbose;
+unsigned long long  android_verbose;
 
 int qemu_main(int argc, char **argv);
 

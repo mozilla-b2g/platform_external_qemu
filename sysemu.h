@@ -203,7 +203,7 @@ void pci_device_hot_remove_success(int pcibus, int slot);
 
 /* serial ports */
 
-#define MAX_SERIAL_PORTS 4
+#define MAX_SERIAL_PORTS 8
 
 extern CharDriverState *serial_hds[MAX_SERIAL_PORTS];
 

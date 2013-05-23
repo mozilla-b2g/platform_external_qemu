@@ -26,6 +26,7 @@
 #include "sysemu.h"
 #include "android/android.h"
 #include "cpu.h"
+#include "hw/goldfish_bt.h"
 #include "hw/goldfish_device.h"
 #include "hw/power_supply.h"
 #include "shaper.h"
@@ -3001,6 +3002,123 @@ static const CommandDefRec  cbs_commands[] =
 /********************************************************************************************/
 /********************************************************************************************/
 /*****                                                                                 ******/
+/*****                         R F K I L L    C O M M A N D S                          ******/
+/*****                                                                                 ******/
+/********************************************************************************************/
+/********************************************************************************************/
+
+static const char* rfkill_type_names[RFKILL_TYPE_MAX] = {
+    /* see hw/goldfish_bt.h, enum RfkillTypes */
+    "wlan", "bluetooth", "uwb", "wimax", "wwan"
+};
+
+static RfkillTypes
+get_rfkill_type_by_name( const char*  name, size_t  len )
+{
+    int type;
+
+    for (type = 0; type < RFKILL_TYPE_MAX; type++) {
+        if (!strncmp(name, rfkill_type_names[type], len)) {
+            return type;
+        }
+    }
+
+    return RFKILL_TYPE_MAX;
+}
+
+static int
+do_rfkill_state( ControlClient  client, char*  args )
+{
+    char buf[32];
+    const char *name;
+    uint32_t blocking, hw_block, mask;
+    int type, state;
+
+    blocking = android_rfkill_get_blocking();
+    hw_block = android_rfkill_get_hardware_block();
+
+    if (args) {
+        type = get_rfkill_type_by_name(args, strlen(args));
+        if (type == RFKILL_TYPE_MAX) {
+            control_write( client, "KO: unknown <type>\r\n" );
+            return -1;
+        }
+
+        mask = RFKILL_TYPE_BIT(type);
+        state = hw_block & mask ? 2 : (blocking & mask ? 0 : 1);
+        snprintf(buf, sizeof buf, "%d\r\n", state);
+        control_write( client, buf );
+        return 0;
+    }
+
+    for (type = 0; type < RFKILL_TYPE_MAX; type++) {
+        name = rfkill_type_names[type];
+        mask = RFKILL_TYPE_BIT(type);
+        state = hw_block & mask ? 2 : (blocking & mask ? 0 : 1);
+        snprintf(buf, sizeof buf, "%s: %d\r\n", name, state);
+        control_write( client, buf );
+    }
+
+    return 0;
+}
+
+static int
+do_rfkill_block( ControlClient  client, char*  args )
+{
+    char *p;
+    int type = RFKILL_TYPE_MAX;
+    uint32_t hw_block;
+
+    if (args) {
+        p = strchr(args, ' ');
+        int len = p ? (p - args) : strlen(args);
+        type = get_rfkill_type_by_name(args, len);
+    }
+
+    if (type == RFKILL_TYPE_MAX) {
+        control_write( client, "KO: unknown <type>\r\n" );
+        return -1;
+    }
+
+    hw_block = android_rfkill_get_hardware_block();
+
+    if (p) {
+        while (*p && isspace(*p)) p++;
+
+        if (!strcmp(p, "on")) {
+            hw_block |= RFKILL_TYPE_BIT(type);
+        } else if (!strcmp(p, "off")) {
+            hw_block &= ~RFKILL_TYPE_BIT(type);
+        } else {
+            control_write( client, "KO: unknown <value>\r\n" );
+            return -1;
+        }
+    } else {
+        hw_block |= RFKILL_TYPE_BIT(type);
+    }
+
+    android_rfkill_set_hardware_block(hw_block);
+
+    return 0;
+}
+
+static const CommandDefRec  rfkill_commands[] =
+{
+    { "state", "get current blocking state",
+      "'rfkill state [<type>]' echo blocking status of all or specified <type>. '0' as\r\n"
+      "software blocked, '1' as unblocked, '2' as hardware blocked.\r\n", NULL,
+      do_rfkill_state, NULL },
+
+    { "block", "set hardware block",
+      "'rfkill block <type>[ <value>]' turn on/off hardware block on specified <type>.\r\n", NULL,
+      do_rfkill_block, NULL },
+
+    { NULL, NULL, NULL, NULL, NULL, NULL }
+};
+
+/********************************************************************************************/
+/********************************************************************************************/
+/*****                                                                                 ******/
 /*****                           M A I N   C O M M A N D S                             ******/
 /*****                                                                                 ******/
 /********************************************************************************************/
@@ -3394,6 +3512,10 @@ static const CommandDefRec   main_commands[] =
     { "cbs", "Cell Broadcast related commands",
       "allows you to simulate an inbound CBS\r\n", NULL,
       NULL, cbs_commands },
+
+    { "rfkill", "RFKILL related commands",
+      "allows you to modify/retrieve RFKILL status, hardware blocking\r\n", NULL,
+      NULL, rfkill_commands },
 
     { NULL, NULL, NULL, NULL, NULL, NULL }
 };
