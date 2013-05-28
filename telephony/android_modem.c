@@ -779,6 +779,7 @@ static int
 amodem_nvram_set( AModem modem, const char *name, const char *value )
 {
     aconfig_set(modem->nvram_config, name, value);
+    aconfig_save_file(modem->nvram_config, modem->nvram_config_filename);
     return 0;
 }
 
