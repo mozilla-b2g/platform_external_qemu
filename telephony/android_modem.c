@@ -100,6 +100,7 @@ int amodem_num_devices = 0;
 static int _amodem_switch_technology(AModem modem, AModemTech newtech, int32_t newpreferred);
 static int _amodem_set_cdma_subscription_source( AModem modem, ACdmaSubscriptionSource ss);
 static int _amodem_set_cdma_prl_version( AModem modem, int prlVersion);
+static int amodem_nvram_set( AModem modem, const char *name, const char *value );
 
 #if DEBUG
 static const char*  quote( const char*  line )
@@ -452,8 +453,7 @@ amodem_load_nvram( AModem modem )
     D("Using config file: %s\n", modem->nvram_config_filename);
     if (aconfig_load_file(root, modem->nvram_config_filename)) {
         D("Unable to load config\n");
-        aconfig_set(root, NV_MODEM_TECHNOLOGY, "gsm");
-        aconfig_save_file(root, modem->nvram_config_filename);
+        amodem_nvram_set(modem, NV_MODEM_TECHNOLOGY, "gsm");
     }
     return root;
 }
@@ -1378,8 +1378,7 @@ handleRoamPref( const char * cmd, AModem modem )
          // (if *endptr is null, it means strtol processed the whole string as a number)
         if(endptr && !*endptr) {
             modem->roaming_pref = roaming_pref;
-            aconfig_set( modem->nvram_config, NV_CDMA_ROAMING_PREF, cmd );
-            aconfig_save_file( modem->nvram_config, modem->nvram_config_filename );
+            amodem_nvram_set( modem, NV_CDMA_ROAMING_PREF, cmd );
             return NULL;
         }
     }
