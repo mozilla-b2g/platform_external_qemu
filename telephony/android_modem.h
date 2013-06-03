@@ -111,6 +111,8 @@ extern AModemTech          android_parse_modem_tech( const char*  tech );
 extern void                amodem_set_cdma_subscription_source( AModem modem, ACdmaSubscriptionSource ssource );
 extern void                amodem_set_cdma_prl_version( AModem modem, int prlVersion);
 
+extern SmsAddress          amodem_get_smsc_address( AModem  modem );
+extern int                 amodem_set_smsc_address( AModem  modem, const char *smsc, unsigned char toa );
 
 /** OPERATOR TYPES
  **/

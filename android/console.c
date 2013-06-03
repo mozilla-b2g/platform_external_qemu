@@ -1775,6 +1775,41 @@ do_sms_sendpdu( ControlClient  client, char*  args )
     return 0;
 }
 
+static int
+do_sms_smsc( ControlClient  client, char*  args )
+{
+    int           ret = 0;
+
+    if (!client->modem) {
+        control_write( client, "KO: modem emulation not running\r\n" );
+        return -1;
+    }
+
+    if (!args) {
+        // Get
+        SmsAddress pSmscRec;
+        char       smsc[32] = {0};
+
+        pSmscRec = amodem_get_smsc_address( client->modem );
+        ret = sms_address_to_str( pSmscRec, smsc, sizeof(smsc) - 1);
+        if (!ret) {
+            control_write( client, "KO: SMSC address unvailable\r\n" );
+            return -1;
+        }
+
+        control_write( client, "\"%s\",%u\r\n", smsc, pSmscRec->toa );
+        return 0;
+    }
+
+    // Set
+    if (amodem_set_smsc_address( client->modem, args, 0 )) {
+        control_write( client, "KO: Failed to set SMSC address\r\n" );
+        return -1;
+    }
+
+    return 0;
+}
+
 static const CommandDefRec  sms_commands[] =
 {
     { "send", "send inbound SMS text message",
@@ -1786,6 +1821,11 @@ static const CommandDefRec  sms_commands[] =
     "(used internally when one emulator sends SMS messages to another instance).\r\n"
     "you probably don't want to play with this at all\r\n", NULL,
     do_sms_sendpdu, NULL },
+
+    { "smsc", "get/set smsc address",
+    "'sms smsc <smscaddress>' allows you to simulate set smsc address\r\n"
+    "'sms smsc' allows you to simulate get smsc address\r\n", NULL,
+    do_sms_smsc, NULL},
 
     { NULL, NULL, NULL, NULL, NULL, NULL }
 };
