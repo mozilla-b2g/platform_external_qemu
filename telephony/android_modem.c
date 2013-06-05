@@ -736,6 +736,8 @@ amodem_set_voice_registration( AModem  modem, ARegistrationState  state )
         modem->oper_index = OPERATOR_HOME_INDEX;
     else if (state == A_REGISTRATION_ROAMING)
         modem->oper_index = OPERATOR_ROAMING_INDEX;
+    else
+        modem->oper_index = -1;
 
     switch (modem->voice_mode) {
         case A_REGISTRATION_UNSOL_ENABLED:
@@ -1477,9 +1479,26 @@ handlePrlVersion( const char* cmd, AModem modem )
     return amodem_printf(modem, "ERROR");
 }
 
+static const void
+radio_state_change_event(AModem modem) {
+    ARadioState state = modem->radio_state;
+
+    switch (state) {
+        case A_RADIO_STATE_OFF:
+            amodem_set_voice_registration(modem, A_REGISTRATION_UNREGISTERED);
+            amodem_set_data_registration(modem, A_REGISTRATION_UNREGISTERED);
+            break;
+        case A_RADIO_STATE_ON:
+            amodem_set_voice_registration(modem, A_REGISTRATION_HOME);
+            break;
+    }
+}
+
 static const char*
 handleRadioPower( const char*  cmd, AModem  modem )
 {
+    ARadioState current = modem->radio_state;
+
     if ( !strcmp( cmd, "+CFUN=0" ) )
     {
         /* turn radio off */
@@ -1490,6 +1509,12 @@ handleRadioPower( const char*  cmd, AModem  modem )
         /* turn radio on */
         modem->radio_state = A_RADIO_STATE_ON;
     }
+
+    if (current != modem->radio_state) {
+        sys_timer_set( sys_timer_create(), sys_time_ms() + 1000,
+                       radio_state_change_event, modem );
+    }
+
     return NULL;
 }
 
