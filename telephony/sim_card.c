@@ -619,10 +619,10 @@ asimcard_ef_init( ASimCard card )
 
     // SIM Service Table(6F38):
     //   File size: 0x0f
-    //   Enabled: 1..4, 7, 9..19, 26, 27, 29, 30, 38, 51..56
+    //   Enabled: 1..4, 7, 9..19, 25..27, 29, 30, 38, 51..56
     // @see 3GPP TS 51.011 section 10.3.7 EFsst (SIM Service Table)
     ef = asimcard_ef_new_dedicated(0x6f38, SIM_FILE_READ_ONLY | SIM_FILE_NEED_PIN);
-    asimcard_ef_update_dedicated(ef, "ff30ffff3f003c0f000c0000f0ff00");
+    asimcard_ef_update_dedicated(ef, "ff30ffff3f003f0f000c0000f0ff00");
     asimcard_ef_add(card, ef);
 
     // Mailbox Identifier(6FC9):
@@ -820,6 +820,16 @@ asimcard_ef_init( ASimCard card )
     // @see 3GPP TS 31.102 section 4.2.14 EFcbmi (Cell Broadcast Message Identifier selection)
     ef = asimcard_ef_new_dedicated(0x6f45, SIM_FILE_READ_ONLY);
     asimcard_ef_update_dedicated(ef, "b000fffff000");
+    asimcard_ef_add(card, ef);
+
+    // Cell Broadcast Message Identifier for Data Download(6F48):
+    //   File size: 0x06
+    //   CB Message Identifier 1: 45056(C001)
+    //   CB Message Identifier 2: 65535(FFFF, not used)
+    //   CB Message Identifier 3: 61440(F001, not settable by MMI)
+    // @see 3GPP TS 31.102 v110.02.0 section 4.2.20 EFcbmid (Cell Broadcast Message Identifier for Data Download)
+    ef = asimcard_ef_new_dedicated(0x6f48, SIM_FILE_READ_ONLY);
+    asimcard_ef_update_dedicated(ef, "c001fffff001");
     asimcard_ef_add(card, ef);
 
     // Cell Broadcast Message Identifier Range selection(6F50):
