@@ -3159,6 +3159,75 @@ static const CommandDefRec  rfkill_commands[] =
 /********************************************************************************************/
 /********************************************************************************************/
 /*****                                                                                 ******/
+/*****                         M O D E M   C O M M A N D                               ******/
+/*****                                                                                 ******/
+/********************************************************************************************/
+/********************************************************************************************/
+
+static void
+help_modem_tech( ControlClient  client )
+{
+    int  nn;
+    control_write( client,
+            "'modem tech': allows you to display the current state of emulator modem.\r\n"
+            "'modem tech <technology>': allows you to change the technology of emulator modem.\r\n"
+            "valid values for <technology> are the following:\r\n\r\n" );
+
+    for (nn = 0; ; nn++) {
+        const char* name = android_get_modem_tech_name(nn);
+
+        if (!name) {
+            break;
+        }
+
+        control_write(client, "  %s\r\n", name);
+    }
+    control_write(client, "\r\n");
+}
+
+static int
+do_modem_tech( ControlClient client, char* args )
+{
+    int  nn;
+
+    if (!client->modem) {
+        control_write(client, "KO: modem emulation not running\r\n");
+        return -1;
+    }
+
+    if (!args) {
+        AModemTech technology = amodem_get_technology(client->modem);
+        control_write(client, "%s\r\n", android_get_modem_tech_name(technology));
+        return 0;
+    }
+
+    AModemTech tech = android_parse_modem_tech(args);
+
+    if (tech == A_TECH_UNKNOWN) {
+        control_write(client, "KO: bad modem technology name, try 'help modem tech' for list of valid values\r\n");
+        return -1;
+    }
+
+    if (amodem_set_technology(client->modem, tech)) {
+        control_write(client, "KO: unable to set modem technology to '%s'\r\n", args);
+        return -1;
+    }
+
+    return 0;
+}
+
+static const CommandDefRec  modem_commands[] =
+{
+    { "tech", "query/switch modem technology",
+      NULL, help_modem_tech,
+      do_modem_tech, NULL },
+
+    { NULL, NULL, NULL, NULL, NULL, NULL }
+};
+
+/********************************************************************************************/
+/********************************************************************************************/
+/*****                                                                                 ******/
 /*****                           M A I N   C O M M A N D S                             ******/
 /*****                                                                                 ******/
 /********************************************************************************************/
@@ -3556,6 +3625,10 @@ static const CommandDefRec   main_commands[] =
     { "rfkill", "RFKILL related commands",
       "allows you to modify/retrieve RFKILL status, hardware blocking\r\n", NULL,
       NULL, rfkill_commands },
+
+    { "modem", "Modem related commands",
+      "allows you to modify/retrieve modem info\r\n", NULL,
+      NULL, modem_commands },
 
     { NULL, NULL, NULL, NULL, NULL, NULL }
 };
