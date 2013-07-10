@@ -83,8 +83,22 @@ typedef enum {
     A_TECH_CDMA,
     A_TECH_EVDO,
     A_TECH_LTE,
-    A_TECH_UNKNOWN // This must always be the last value in the enum
+    A_TECH_UNKNOWN,
+    A_TECH_PREFERRED = 8 // Be used in A_PREFERRED_MASK* as the preferred bit.
 } AModemTech;
+
+typedef enum {
+    A_PREFERRED_MASK_GSM_WCDMA_PREF = 0,
+    A_PREFERRED_MASK_GSM,
+    A_PREFERRED_MASK_WCDMA,
+    A_PREFERRED_MASK_GSM_WCDMA,
+    A_PREFERRED_MASK_CDMA_EVDO,
+    A_PREFERRED_MASK_CDMA,
+    A_PREFERRED_MASK_EVDO,
+    A_PREFERRED_MASK_GSM_WCDMA_CDMA_EVDO,
+    // TODO: Add Lte related preferred mask
+    A_PREFERRED_MASK_UNKNOWN // This must always be the last value in the enum
+} AModemPreferredMask;
 
 typedef enum {
     A_SUBSCRIPTION_NVRAM = 0,
@@ -109,6 +123,8 @@ extern void                amodem_set_data_network_type( AModem  modem, ADataNet
 extern ADataNetworkType    android_parse_network_type( const char*  speed );
 extern AModemTech          android_parse_modem_tech( const char*  tech );
 extern const char*         android_get_modem_tech_name( AModemTech tech );
+extern AModemPreferredMask android_parse_modem_preferred_mask( const char* mask );
+extern const char*         android_get_modem_preferred_mask_name( AModemPreferredMask mask );
 extern void                amodem_set_cdma_subscription_source( AModem modem, ACdmaSubscriptionSource ssource );
 extern void                amodem_set_cdma_prl_version( AModem modem, int prlVersion);
 
@@ -116,7 +132,8 @@ extern SmsAddress          amodem_get_smsc_address( AModem  modem );
 extern int                 amodem_set_smsc_address( AModem  modem, const char *smsc, unsigned char toa );
 
 extern AModemTech          amodem_get_technology( AModem modem );
-extern int                 amodem_set_technology( AModem modem, AModemTech technology );
+extern AModemPreferredMask amodem_get_preferred_mask( AModem modem );
+extern int                 amodem_set_technology( AModem modem, AModemTech technology, AModemPreferredMask preferredMask );
 
 /** OPERATOR TYPES
  **/
