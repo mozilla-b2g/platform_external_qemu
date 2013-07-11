@@ -198,6 +198,12 @@ asimcard_get_pin_retries( ASimCard sim )
     return A_SIM_PIN_RETRIES - sim->pin_retries;
 }
 
+int
+asimcard_get_puk_retries( ASimCard sim )
+{
+    return A_SIM_PUK_RETRIES - sim->puk_retries;
+}
+
 typedef enum {
     SIM_FILE_DM = 0,
     SIM_FILE_DF,

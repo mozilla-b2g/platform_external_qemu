@@ -2049,6 +2049,10 @@ handleGetRemainingRetries( const char* cmd, AModem modem )
       amodem_add_line(modem, "+CPINR: SIM PIN,%d,%d\r\n",
                       asimcard_get_pin_retries(modem->sim),
                       A_SIM_PIN_RETRIES);
+    } else if (!strcmp(cmd, "SIM PUK")) {
+      amodem_add_line(modem, "+CPINR: SIM PUK,%d,%d\r\n",
+                      asimcard_get_puk_retries(modem->sim),
+                      A_SIM_PUK_RETRIES);
     } else {
       // Incorrect parameters
       amodem_add_line( modem, "+CME ERROR: 50\r\n");

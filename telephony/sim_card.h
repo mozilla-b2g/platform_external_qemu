@@ -43,6 +43,7 @@ extern int         asimcard_check_pin( ASimCard  sim, const char*  pin );
 extern int         asimcard_check_puk( ASimCard  sim, const char*  puk, const char*  pin );
 
 extern int         asimcard_get_pin_retries( ASimCard  sim );
+extern int         asimcard_get_puk_retries( ASimCard  sim );
 
 /* Restricted SIM Access command, as defined by 8.18 of 3GPP 27.007 */
 typedef enum {
