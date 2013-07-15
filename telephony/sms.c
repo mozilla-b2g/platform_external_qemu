@@ -473,7 +473,7 @@ sms_address_eq( const SmsAddressRec*  addr1, const SmsAddressRec*  addr2 )
          addr1->len != addr2->len )
         return 0;
 
-    return ( !memcmp( addr1->data, addr2->data, addr1->len ) );
+    return ( !memcmp( addr1->data, addr2->data, (addr1->len + 1) / 2) );
 }
 
 /** SMS PARSER
