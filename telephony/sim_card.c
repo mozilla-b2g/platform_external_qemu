@@ -27,6 +27,8 @@
 
 #define  A_SIM_PIN_SIZE  4
 #define  A_SIM_PUK_SIZE  8
+#define  A_SIM_PIN2_SIZE A_SIM_PIN_SIZE
+#define  A_SIM_PUK2_SIZE A_SIM_PUK_SIZE
 
 #define  SIM_FILE_RECORD_ABSOLUTE_MODE  4
 
@@ -54,17 +56,35 @@
 #define  SIM_RESPONSE_INCORRECT_PARAMETERS  "+CRSM: 106,134"
 
 /* Command not allowed */
+// sw1='69', sw2='83', Authentication/PIN method blocked.
+#define  SIM_RESPONSE_PIN_METHOD_BLOCKED      "+CRSM: 105,131"
 // sw1='69', sw2='85', Conditions of use not satisfied.
 #define  SIM_RESPONSE_CONDITION_NOT_SATISFIED "+CRSM: 105,133"
 
 typedef union SimFileRec_ SimFileRec, *SimFile;
 
+typedef enum ASimPin2 {
+    /* PIN2 has not been unlocked yet */
+    A_SIM_PIN2_LOCKED = 0,
+    /* PIN2 has been already unlocked */
+    A_SIM_PIN2_UNLOCKED,
+    /* PUK2 is now required to unlock PIN2 functionality */
+    A_SIM_PUK2_LOCKED,
+    /* PIN2 functionality is permanently disabled */
+    A_SIM_PIN2_DISABLED
+} ASimPin2;
+
 typedef struct ASimCardRec_ {
     ASimStatus  status;
+    ASimPin2    pin2_status;
     char        pin[ A_SIM_PIN_SIZE+1 ];
     char        puk[ A_SIM_PUK_SIZE+1 ];
+    char        pin2[ A_SIM_PIN_SIZE+1 ];
+    char        puk2[ A_SIM_PUK_SIZE+1 ];
     int         pin_retries;
     int         puk_retries;
+    int         pin2_retries;
+    int         puk2_retries;
     int         port;
     int         instance_id;
 
@@ -84,10 +104,15 @@ asimcard_create(int port, int instance_id)
 {
     ASimCard  card    = &_s_card[instance_id];
     card->status      = A_SIM_STATUS_READY;
+    card->pin2_status = A_SIM_PIN2_LOCKED; /* PIN2 is locked by default */
     card->pin_retries = 0;
     card->puk_retries = 0;
+    card->pin2_retries = 0;
+    card->puk2_retries = 0;
     strncpy( card->pin, "0000", sizeof(card->pin) );
     strncpy( card->puk, "12345678", sizeof(card->puk) );
+    strncpy( card->pin2, "0000", sizeof(card->pin2) );
+    strncpy( card->puk2, "12345678", sizeof(card->puk2) );
     card->port = port;
     card->instance_id = instance_id;
     asimcard_ef_init(card);
@@ -204,6 +229,102 @@ asimcard_get_puk_retries( ASimCard sim )
     return A_SIM_PUK_RETRIES - sim->puk_retries;
 }
 
+const char*
+asimcard_get_pin2( ASimCard  sim )
+{
+    return sim->pin2;
+}
+
+const char*
+asimcard_get_puk2( ASimCard  sim )
+{
+    return sim->puk2;
+}
+
+void
+asimcard_set_pin2( ASimCard  sim, const char*  pin2 )
+{
+    strncpy( sim->pin2, pin2, A_SIM_PIN2_SIZE );
+}
+
+void
+asimcard_set_puk2( ASimCard  sim, const char*  puk2 )
+{
+    strncpy( sim->puk2, puk2, A_SIM_PUK2_SIZE );
+}
+
+int
+asimcard_check_pin2( ASimCard  sim, const char*  pin2 )
+{
+    /* We can unlock PIN2 only if it was explicitly requested, it has not been
+     * already locked with PUK2 or was not permanently locked due to too many
+     * retries */
+    if (sim->pin2_status == A_SIM_PIN2_DISABLED ||
+        sim->pin2_status == A_SIM_PUK2_LOCKED   ||
+        sim->status != A_SIM_STATUS_PIN2        )
+        return 0;
+
+    if ( !strcmp( sim->pin2, pin2 ) ) {
+        sim->status       = A_SIM_STATUS_READY;
+        sim->pin2_status  = A_SIM_PIN2_UNLOCKED;
+        sim->pin2_retries = 0;
+        return 1;
+    }
+
+    if ( ++sim->pin2_retries == A_SIM_PIN2_RETRIES ) {
+        sim->pin2_status = A_SIM_PUK2_LOCKED;
+    }
+
+    /* Return to the ready state even when failing to provide the correct PIN,
+     * see TS 27.007 section 8.3 */
+
+    return 0;
+}
+
+int
+asimcard_check_puk2( ASimCard  sim, const char* puk2, const char*  pin2 )
+{
+    /* We can unlock PUK2 only if it was explicitly requested and not
+     * permanently locked */
+    if (sim->pin2_status == A_SIM_PUK2_LOCKED   ||
+        sim->pin2_status == A_SIM_PIN2_DISABLED ||
+        sim->status != A_SIM_STATUS_PUK2        )
+        return 0;
+
+    if ( !strcmp( sim->puk2, puk2 ) ) {
+        strncpy( sim->puk2, puk2, A_SIM_PUK2_SIZE );
+        strncpy( sim->pin2, pin2, A_SIM_PIN2_SIZE );
+        sim->status       = A_SIM_STATUS_READY;
+        sim->pin2_status  = A_SIM_PIN2_UNLOCKED;
+        sim->puk2_retries = 0;
+        return 1;
+    }
+
+    if ( ++sim->puk2_retries == A_SIM_PUK2_RETRIES ) {
+        /* Failing to provide a PUK2 after the maximum number of retries
+         * permanently locks the PIN2-related functionality */
+        sim->pin2_status = A_SIM_PIN2_DISABLED;
+    }
+
+    /* Return to the ready state even when failing to provide the correct PIN,
+     * see TS 27.007 section 8.3 */
+    sim->status = A_SIM_STATUS_READY;
+
+    return 0;
+}
+
+int
+asimcard_get_pin2_retries( ASimCard sim )
+{
+    return A_SIM_PIN2_RETRIES - sim->pin2_retries;
+}
+
+int
+asimcard_get_puk2_retries( ASimCard sim )
+{
+    return A_SIM_PUK2_RETRIES - sim->puk2_retries;
+}
+
 typedef enum {
     SIM_FILE_DM = 0,
     SIM_FILE_DF,
@@ -213,8 +334,9 @@ typedef enum {
 } SimFileType;
 
 typedef enum {
-    SIM_FILE_READ_ONLY       = (1 << 0),
-    SIM_FILE_NEED_PIN = (1 << 1),
+    SIM_FILE_READ_ONLY = (1 << 0),
+    SIM_FILE_NEED_PIN  = (1 << 1),
+    SIM_FILE_NEED_PIN2 = (1 << 2)
 } SimFileFlags;
 
 /* descriptor for a known SIM File */
@@ -502,6 +624,12 @@ asimcard_io_read_binary( ASimCard sim, int id, int p1, int p2, int p3 )
         return SIM_RESPONSE_WRONG_LENGTH;
     }
 
+    if (ef->any.flags & SIM_FILE_NEED_PIN &&
+        sim->status != A_SIM_STATUS_READY )
+    {
+        return SIM_RESPONSE_PIN_METHOD_BLOCKED;
+    }
+
     sprintf(out, "%s,", SIM_RESPONSE_NORMAL_ENDING);
     out  += strlen(out);
     if (asimcard_ef_read_dedicated(ef, out) < 0) {
@@ -538,6 +666,12 @@ asimcard_io_read_record( ASimCard sim, int id, int p1, int p2, int p3 )
         return SIM_RESPONSE_WRONG_LENGTH;
     }
 
+    if (ef->any.flags & SIM_FILE_NEED_PIN &&
+        sim->status != A_SIM_STATUS_READY )
+    {
+        return SIM_RESPONSE_PIN_METHOD_BLOCKED;
+    }
+
     sprintf(out, "%s,", SIM_RESPONSE_NORMAL_ENDING);
     out += strlen(out);
     if (asimcard_ef_read_linear(ef, p1, out) < 0) {
@@ -564,6 +698,18 @@ asimcard_io_update_record( ASimCard sim, int id, int p1, int p2, int p3, char* d
 
     if (ef->any.flags & SIM_FILE_READ_ONLY) {
         return SIM_RESPONSE_CONDITION_NOT_SATISFIED;
+    }
+
+    if (ef->any.flags & SIM_FILE_NEED_PIN &&
+        sim->status != A_SIM_STATUS_READY )
+    {
+        return SIM_RESPONSE_PIN_METHOD_BLOCKED;
+    }
+
+    if (ef->any.flags & SIM_FILE_NEED_PIN2      &&
+        sim->pin2_status != A_SIM_PIN2_UNLOCKED )
+    {
+        return SIM_RESPONSE_PIN_METHOD_BLOCKED;
     }
 
     if (ef->linear.rec_len < p3) {
@@ -682,7 +828,7 @@ asimcard_ef_init( ASimCard card )
     //   Offset of the image instance in the 4F02 EF:                     0000
     //   Length of image instance data:                                   0016
     // @see 3GPP TS 51.011 section 10.6.1.1, EF-img
-    ef = asimcard_ef_new_linear(0x4f20, 0x00, 0x14);
+    ef = asimcard_ef_new_linear(0x4f20, SIM_FILE_READ_ONLY | SIM_FILE_NEED_PIN, 0x14);
     asimcard_ef_update_linear(ef, 0x01, "010808214f0200000016ffffffffffffffffffff");
     asimcard_ef_update_linear(ef, 0x05, "ffffffffffffffffffffffffffffffffffffffff");
     asimcard_ef_add(card, ef);
@@ -716,7 +862,7 @@ asimcard_ef_init( ASimCard card )
     //       PLMN: 46692
     // @see 3GPP TS 31.102 section 4.2.66 EFspdi (Service Provider Display Information)
     // @see 3GPP TS 51.011 section 9.4.4 Referencing Management
-    ef = asimcard_ef_new_dedicated(0x6fcd, SIM_FILE_READ_ONLY);
+    ef = asimcard_ef_new_dedicated(0x6fcd, SIM_FILE_READ_ONLY | SIM_FILE_NEED_PIN);
     asimcard_ef_update_dedicated(ef, "a30b800932643164269fffffff");
     asimcard_ef_add(card, ef);
 
@@ -806,7 +952,7 @@ asimcard_ef_init( ASimCard card )
     //   Length of BCD number/SSC contents: 7
     //   TON and NPI: 0x81
     // @see 3GPP TS 51.011 section 10.5.2 EFfdn
-    ef = asimcard_ef_new_linear(0x6f3b, SIM_FILE_NEED_PIN, 0x20);
+    ef = asimcard_ef_new_linear(0x6f3b, SIM_FILE_NEED_PIN2, 0x20);
     // Alpha Id(Encoded with GSM 8 bit): "Mozilla", Dialling Number: 15555218201
     asimcard_ef_update_linear(ef, 0x01, "4d6f7a696c6c61ffffffffffffffffffffff07815155258102f1ffffffffffff");
     // Alpha Id(Encoded with UCS2 0x80: "Saßê黃", Dialling Number: 15555218202
@@ -834,7 +980,7 @@ asimcard_ef_init( ASimCard card )
     //   CB Message Identifier 2: 65535(FFFF, not used)
     //   CB Message Identifier 3: 61440(F001, not settable by MMI)
     // @see 3GPP TS 31.102 v110.02.0 section 4.2.20 EFcbmid (Cell Broadcast Message Identifier for Data Download)
-    ef = asimcard_ef_new_dedicated(0x6f48, SIM_FILE_READ_ONLY);
+    ef = asimcard_ef_new_dedicated(0x6f48, SIM_FILE_READ_ONLY | SIM_FILE_NEED_PIN);
     asimcard_ef_update_dedicated(ef, "c001fffff001");
     asimcard_ef_add(card, ef);
 
@@ -845,7 +991,7 @@ asimcard_ef_init( ASimCard card )
     //   CB Message Identifier Range 3: 49153..65535(C001..FFFF, should be ignored)
     //   CB Message Identifier Range 4: 61442..65280(F002..FF00, not settable by MMI)
     // @see 3GPP TS 31.102 section 4.2.14 EFcbmir (Cell Broadcast Message Identifier Range selection)
-    ef = asimcard_ef_new_dedicated(0x6f50, SIM_FILE_READ_ONLY);
+    ef = asimcard_ef_new_dedicated(0x6f50, SIM_FILE_NEED_PIN);
     asimcard_ef_update_dedicated(ef, "b002c000ffffc001c001fffff002ff00");
     asimcard_ef_add(card, ef);
 
@@ -934,6 +1080,8 @@ sim_file_to_hex( SimFile  file, bytes_t  dst )
                     } else {
                         if (file->any.flags & SIM_FILE_NEED_PIN)
                             perm = 0x11;
+                        else if (file->any.flags & SIM_FILE_NEED_PIN2)
+                            perm = 0x12; /* We assume PIN2 is needed only for updates */
                         else
                             perm = 0x00;
                     }

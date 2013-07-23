@@ -1539,6 +1539,8 @@ handleSIMStatusReq( const char*  cmd, AModem  modem )
         case A_SIM_STATUS_NOT_READY: answer = "+CMERROR: NOT READY"; break;
         case A_SIM_STATUS_PIN:       answer = "+CPIN: SIM PIN"; break;
         case A_SIM_STATUS_PUK:       answer = "+CPIN: SIM PUK"; break;
+        case A_SIM_STATUS_PIN2:      answer = "+CPIN: SIM PIN2"; break;
+        case A_SIM_STATUS_PUK2:      answer = "+CPIN: SIM PUK2"; break;
         case A_SIM_STATUS_NETWORK_PERSONALIZATION: answer = "+CPIN: PH-NET PIN"; break;
         default:
             answer = "ERROR: internal error";
@@ -2029,6 +2031,24 @@ handleChangeOrEnterPIN( const char*  cmd, AModem  modem )
             }
             return "+CME ERROR: BAD PUK";
 
+        case A_SIM_STATUS_PIN2:   /* waiting for PIN2 */
+            if ( asimcard_check_pin2( modem->sim, cmd ) )
+                return "+CPIN: READY";
+            else
+                return "+CME ERROR: 16";
+
+        case A_SIM_STATUS_PUK2:   /* waiting for PUK2 */
+            if (strlen(cmd) == 9 && cmd[4] == ',') {
+                char  puk[5];
+                memcpy( puk, cmd, 4 );
+                puk[4] = 0;
+                if ( asimcard_check_puk2( modem->sim, puk, cmd+5 ) )
+                    return "+CPIN: READY";
+                else
+                    return "+CME ERROR: 16";
+            }
+            return "+CME ERROR: 16";
+
         default:
             return "+CPIN: PH-NET PIN";
     }
@@ -2049,10 +2069,18 @@ handleGetRemainingRetries( const char* cmd, AModem modem )
       amodem_add_line(modem, "+CPINR: SIM PIN,%d,%d\r\n",
                       asimcard_get_pin_retries(modem->sim),
                       A_SIM_PIN_RETRIES);
+    } else if (!strcmp(cmd, "SIM PIN2")) {
+      amodem_add_line(modem, "+CPINR: SIM PIN2,%d,%d\r\n",
+                      asimcard_get_pin2_retries(modem->sim),
+                      A_SIM_PIN2_RETRIES);
     } else if (!strcmp(cmd, "SIM PUK")) {
       amodem_add_line(modem, "+CPINR: SIM PUK,%d,%d\r\n",
                       asimcard_get_puk_retries(modem->sim),
                       A_SIM_PUK_RETRIES);
+    } else if (!strcmp(cmd, "SIM PUK2")) {
+      amodem_add_line(modem, "+CPINR: SIM PUK2,%d,%d\r\n",
+                      asimcard_get_puk2_retries(modem->sim),
+                      A_SIM_PUK2_RETRIES);
     } else {
       // Incorrect parameters
       amodem_add_line( modem, "+CME ERROR: 50\r\n");
