@@ -95,6 +95,32 @@ static const struct {
     { NULL,    A_TECH_UNKNOWN }
 };
 
+static const struct {
+    const char*         name;
+    AModemPreferredMask mask;
+    int                 value;
+} preferred_masks[] = {
+    { "gsm/wcdma",
+      A_PREFERRED_MASK_GSM_WCDMA_PREF,      (1 << A_TECH_GSM) | (1 << A_TECH_WCDMA + A_TECH_PREFERRED) },
+    { "gsm",
+      A_PREFERRED_MASK_GSM,                 (1 << A_TECH_GSM) },
+    { "wcdma",
+      A_PREFERRED_MASK_WCDMA,               (1 << A_TECH_WCDMA) },
+    { "gsm/wcdma-auto",
+      A_PREFERRED_MASK_GSM_WCDMA,           (1 << A_TECH_GSM) | (1 << A_TECH_WCDMA) },
+    { "cdma/evdo",
+      A_PREFERRED_MASK_CDMA_EVDO,           (1 << A_TECH_CDMA) | (1 << A_TECH_EVDO) },
+    { "cdma",
+      A_PREFERRED_MASK_CDMA,                (1 << A_TECH_CDMA) },
+    { "evdo",
+      A_PREFERRED_MASK_EVDO,                (1 << A_TECH_EVDO) },
+    { "gsm/wcdma/cdma/evdo",
+      A_PREFERRED_MASK_GSM_WCDMA_CDMA_EVDO, (1 << A_TECH_GSM) | (1 << A_TECH_WCDMA) |
+                                            (1 << A_TECH_CDMA) | (1 << A_TECH_EVDO) },
+    { NULL,
+      A_PREFERRED_MASK_UNKNOWN,             -1 }
+};
+
 int amodem_num_devices = 0;
 
 static int _amodem_switch_technology(AModem modem, AModemTech newtech, int32_t newpreferred);
@@ -159,6 +185,48 @@ android_get_modem_tech_name( AModemTech tech )
     }
     /* not found */
     return NULL;
+}
+
+extern AModemPreferredMask
+android_parse_modem_preferred_mask( const char* maskName )
+{
+    int nn;
+
+    for (nn = 0; techs[nn].name; nn++) {
+        if (!strcmp(maskName, preferred_masks[nn].name)) {
+            return preferred_masks[nn].mask;
+        }
+    }
+    /* not found */
+    return A_PREFERRED_MASK_UNKNOWN;
+}
+
+extern const char*
+android_get_modem_preferred_mask_name( AModemPreferredMask mask )
+{
+    int nn;
+
+    for (nn = 0; preferred_masks[nn].name; nn++) {
+        if (preferred_masks[nn].mask == mask) {
+            return preferred_masks[nn].name;
+        }
+    }
+    /* not found */
+    return NULL;
+}
+
+static AModemPreferredMask
+android_get_modem_preferred_mask(int32_t maskValue)
+{
+    int nn;
+
+    for (nn = 0; preferred_masks[nn].name; nn++) {
+        if (preferred_masks[nn].value == maskValue) {
+            return preferred_masks[nn].mask;
+        }
+    }
+    /* not found */
+    return A_PREFERRED_MASK_UNKNOWN;
 }
 
 extern ADataNetworkType
@@ -825,7 +893,7 @@ amodem_set_data_network_type( AModem  modem, ADataNetworkType   type )
     amodem_set_data_registration( modem, modem->data_state );
     modemTech = tech_from_network_type(type);
     if (modemTech != A_TECH_UNKNOWN) {
-        amodem_set_technology( modem, modemTech );
+        amodem_set_technology( modem, modemTech, 0 );
     }
 }
 
@@ -1233,7 +1301,7 @@ _amodem_switch_technology( AModem modem, AModemTech newtech, int32_t newpreferre
 
     if (modem->technology != newtech) {
         if (!matchPreferredMask(modem->preferred_mask, newtech)) {
-            D("ERROR: Select an unsupported technology");
+            D("ERROR: Select an unsupported technology\n");
             return -1;
         }
         modem->technology = newtech;
@@ -1250,11 +1318,24 @@ amodem_get_technology( AModem modem )
     return modem->technology;
 }
 
+AModemPreferredMask
+amodem_get_preferred_mask( AModem modem )
+{
+    return android_get_modem_preferred_mask(modem->preferred_mask);
+}
+
 int
-amodem_set_technology( AModem modem, AModemTech technology )
+amodem_set_technology( AModem modem, AModemTech technology, AModemPreferredMask preferredMask )
 {
     int current = modem->technology;
-    int ret = _amodem_switch_technology(modem, technology, modem->preferred_mask);
+    int ret;
+
+    if (preferredMask >= A_PREFERRED_MASK_UNKNOWN) {
+        ret = _amodem_switch_technology(modem, technology, modem->preferred_mask);
+    } else {
+        int32_t maskValue = preferred_masks[preferredMask].value;
+        ret = _amodem_switch_technology(modem, technology, maskValue);
+    }
 
     if (ret < 0) {
         return -1;

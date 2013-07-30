@@ -1621,6 +1621,8 @@ static const CommandDefRec  cdma_commands[] =
     { "prl_version", "Dump the current PRL version",
       NULL, NULL,
       do_cdma_prl_version, NULL },
+
+    { NULL, NULL, NULL, NULL, NULL, NULL }
 };
 
 static const CommandDefRec  gsm_commands[] =
@@ -3171,6 +3173,7 @@ help_modem_tech( ControlClient  client )
     control_write( client,
             "'modem tech': allows you to display the current state of emulator modem.\r\n"
             "'modem tech <technology>': allows you to change the technology of emulator modem.\r\n"
+            "'modem tech <technology> <mask>': allows you to change the technology and preferred mask of emulator modem.\r\n\r\n"
             "valid values for <technology> are the following:\r\n\r\n" );
 
     for (nn = 0; ; nn++) {
@@ -3182,13 +3185,36 @@ help_modem_tech( ControlClient  client )
 
         control_write(client, "  %s\r\n", name);
     }
-    control_write(client, "\r\n");
+
+    control_write(client, "\r\nvalid values for <mask> are the following:\r\n\r\n");
+
+    for (nn = 0; ; nn++) {
+        const char* name = android_get_modem_preferred_mask_name(nn);
+
+        if (!name) {
+            break;
+        }
+
+        control_write(client, "  %s\r\n", name);
+    }
+}
+
+static int do_modem_tech_query( ControlClient client, char* args )
+{
+    AModemPreferredMask mask = amodem_get_preferred_mask(client->modem);
+    AModemTech technology = amodem_get_technology(client->modem);
+
+    control_write(client, "%s %s\r\n", android_get_modem_tech_name(technology),
+                                       android_get_modem_preferred_mask_name(mask));
+    return 0;
 }
 
 static int
 do_modem_tech( ControlClient client, char* args )
 {
-    int  nn;
+    char* pnext  = NULL;
+    AModemTech tech = A_TECH_UNKNOWN;
+    AModemPreferredMask mask = A_PREFERRED_MASK_UNKNOWN;
 
     if (!client->modem) {
         control_write(client, "KO: modem emulation not running\r\n");
@@ -3196,19 +3222,29 @@ do_modem_tech( ControlClient client, char* args )
     }
 
     if (!args) {
-        AModemTech technology = amodem_get_technology(client->modem);
-        control_write(client, "%s\r\n", android_get_modem_tech_name(technology));
-        return 0;
+        return do_modem_tech_query(client, args);
     }
 
-    AModemTech tech = android_parse_modem_tech(args);
+    // Parse <technology>
+    pnext = strchr(args, ' ');
+    if (pnext != NULL) {
+        *pnext++ = '\0';
+        while (*pnext && isspace(*pnext)) pnext++;
+    }
+
+    tech = android_parse_modem_tech(args);
 
     if (tech == A_TECH_UNKNOWN) {
         control_write(client, "KO: bad modem technology name, try 'help modem tech' for list of valid values\r\n");
         return -1;
     }
 
-    if (amodem_set_technology(client->modem, tech)) {
+    // Parse <mask>
+    if (pnext && *pnext) {
+        mask = android_parse_modem_preferred_mask(pnext);
+    }
+
+    if (amodem_set_technology(client->modem, tech, mask)) {
         control_write(client, "KO: unable to set modem technology to '%s'\r\n", args);
         return -1;
     }
