@@ -1065,9 +1065,7 @@ amodem_send_stk_unsol_proactive_command( AModem  modem, const char* stkCmdPdu )
 static void
 amodem_send_calls_update( AModem  modem )
 {
-   /* despite its name, this really tells the system that the call
-    * state has changed */
-    amodem_unsol( modem, "RING\r" );
+    amodem_unsol( modem, "CALL STATE CHANGED\r" );
 }
 
 
@@ -1095,7 +1093,7 @@ amodem_add_inbound_call( AModem  modem, const char*  number )
     memcpy( call->number, number, len );
     call->number[len] = 0;
 
-    amodem_send_calls_update( modem );
+    amodem_unsol( modem, "RING\r");
     return 0;
 }
 
@@ -1170,7 +1168,7 @@ int amodem_remote_call_busy( AModem  modem, const char*  number )
         return -1;
 
     amodem_free_call(modem, vcall, CALL_FAIL_BUSY);
-    amodem_send_calls_update(modem);
+    amodem_unsol( modem, "NO CARRIER\r");
     return 0;
 }
 
@@ -1184,7 +1182,7 @@ amodem_disconnect_call( AModem  modem, const char*  number )
         return -1;
 
     amodem_free_call( modem, vcall, CALL_FAIL_NORMAL );
-    amodem_send_calls_update(modem);
+    amodem_unsol( modem, "NO CARRIER\r");
     return 0;
 }
 
@@ -1201,7 +1199,7 @@ amodem_clear_call( AModem modem )
         AVoiceCall call = (AVoiceCall) &vcall->call;
         amodem_free_call( modem, call, CALL_FAIL_NORMAL );
     }
-    amodem_send_calls_update(modem);
+    amodem_unsol( modem, "NO CARRIER\r");
 
     return 0;
 }
@@ -2361,7 +2359,7 @@ remote_voice_call_event( void*  _vcall, int  success )
     if (!success) {
         /* aargh, the remote emulator probably quitted at that point */
         amodem_free_call(modem, vcall, CALL_FAIL_NORMAL);
-        amodem_send_calls_update(modem);
+        amodem_unsol( modem, "NO CARRIER\r");
     }
 }
 
