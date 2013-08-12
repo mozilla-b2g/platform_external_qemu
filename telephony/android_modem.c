@@ -834,6 +834,19 @@ amodem_set_data_registration( AModem  modem, ARegistrationState  state )
 {
     modem->data_state = state;
 
+    /* Any active PDP contexts will be automatically deactivated when the
+       attachment state changes to detached. */
+    if (modem->data_state != A_REGISTRATION_HOME &&
+        modem->data_state != A_REGISTRATION_ROAMING) {
+        int nn;
+        for (nn = 0; nn < MAX_DATA_CONTEXTS; nn++) {
+            ADataContext  data = modem->data_contexts + nn;
+            data->active = 0;
+        }
+        // Trigger an unsol data call list.
+        amodem_unsol(modem, "+CGEV: ME DETACH\r");
+    }
+
     switch (modem->data_mode) {
         case A_REGISTRATION_UNSOL_ENABLED:
             amodem_unsol( modem, "+CGREG: %d,%d\r",
@@ -1223,6 +1236,46 @@ amodem_set_gsm_location( AModem modem, int lac, int ci )
     amodem_set_voice_registration( modem, modem->voice_state );
 }
 
+/** Data
+ **/
+
+static const char*
+amodem_activate_data_call( AModem  modem, int cid, int enable)
+{
+    ADataContext     data;
+    int              id;
+
+    assert( enable ==  0 || enable == 1 );
+
+    id = cid - 1;
+    if (id < 0 || id >= MAX_DATA_CONTEXTS) {
+        // unknown PDP context
+        return "+CME ERROR: 143";
+    }
+
+    data = modem->data_contexts + id;
+    if (data->id <= 0) {
+        // activation rejected, unspecified
+        return "+CME ERROR: 131";
+    }
+
+    if (data->active == enable)
+        return NULL;
+
+    if (enable &&
+        modem->data_state != A_REGISTRATION_HOME &&
+        modem->data_state != A_REGISTRATION_ROAMING) {
+        if (modem->oper_index == OPERATOR_ROAMING_INDEX)
+            amodem_set_data_registration(modem, A_REGISTRATION_ROAMING);
+        else
+            amodem_set_data_registration(modem, A_REGISTRATION_HOME);
+    }
+
+    data->active = enable;
+
+    return NULL;
+}
+
 /** COMMAND HANDLERS
  **/
 
@@ -1570,6 +1623,7 @@ radio_state_change_event(AModem modem) {
             break;
         case A_RADIO_STATE_ON:
             amodem_set_voice_registration(modem, A_REGISTRATION_HOME);
+            amodem_set_data_registration(modem, A_REGISTRATION_HOME);
             break;
     }
 }
@@ -2304,7 +2358,7 @@ handleDefinePDPContext( const char*  cmd, AModem  modem )
         data = modem->data_contexts + id;
 
         data->id     = id + 1;
-        data->active = 1;
+        data->active = 0;
         data->type   = type;
         memcpy( data->apn, apn, sizeof(data->apn) );
     }
@@ -2335,10 +2389,35 @@ handleQueryPDPContext( const char* cmd, AModem modem )
 }
 
 static const char*
+handleActivatePDPContext( const char*  cmd, AModem  modem )
+{
+    int enable, cid, items;
+
+    assert( !memcmp( cmd, "+CGACT=", 7 ) );
+
+    cmd += 7;
+    if (cmd[0] == '?') {
+        // +CGACT=? is used to query the list of supported <state>s.
+        return "+CGACT: (0-1)\r\n";
+    }
+
+    items = sscanf(cmd, "%d,%d", &enable, &cid);
+    if (items != 2) {
+        // activation rejected, unspecified
+        return "+CME ERROR: 131";
+    }
+
+    return amodem_activate_data_call(modem, cid, enable);
+}
+
+static const char*
 handleStartPDPContext( const char*  cmd, AModem  modem )
 {
-    /* XXX: TODO: handle PDP start appropriately */
-    return NULL;
+    /* D*99***<n>#
+     * <n> is the <cid> in the +CGDCONT command
+     */
+    cmd += 7;
+    return amodem_activate_data_call(modem, cmd[0] - '0', 1);
 }
 
 
@@ -2799,7 +2878,7 @@ static const struct {
     { "+CGQREQ=1", NULL, NULL },
     { "+CGQMIN=1", NULL, NULL },
     { "+CGEREP=1,0", NULL, NULL },
-    { "+CGACT=1,0", NULL, NULL },
+    { "!+CGACT=", NULL, handleActivatePDPContext },
     { "D*99***1#", NULL, handleStartPDPContext },
 
     /* see requestDial() */
