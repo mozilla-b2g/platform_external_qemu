@@ -80,6 +80,7 @@ HW_SOURCES := \
     android/goldfish/battery.c \
     android/goldfish/mmc.c   \
     android/goldfish/nand.c \
+    android/goldfish/nfc.c \
     android/goldfish/pipe.c \
     android/goldfish/rfkill.c \
     android/goldfish/tty.c \
