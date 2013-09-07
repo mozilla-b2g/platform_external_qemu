@@ -357,6 +357,9 @@ typedef struct AModemRec_
     AVoiceCallRec       calls[ MAX_CALLS ];
     int                 call_count;
 
+    /* multiparty calls count */
+    int                 multi_count;
+
     /* last call fail cause */
     int                 last_call_fail_cause;
 
@@ -1022,6 +1025,48 @@ amodem_alloc_call( AModem   modem )
 
 
 static void
+acall_set_multi( AVoiceCall  vcall )
+{
+    ACall call = &vcall->call;
+    if (call->multi)
+        return;
+
+    call->multi = 1;
+    vcall->modem->multi_count++;
+}
+
+
+static void
+acall_unset_multi( AVoiceCall  vcall )
+{
+    ACall call = &vcall->call;
+    AModem modem = vcall->modem;
+    int nn;
+
+    if (!call->multi)
+        return;
+
+    call->multi = 0;
+    modem->multi_count--;
+
+    // Remove the dangling multiparty call.
+    if (modem->multi_count == 1) {
+        for (nn = 0; nn < modem->call_count; nn++) {
+            AVoiceCall  vcall = modem->calls + nn;
+            ACall       call  = &vcall->call;
+            if (call->mode != A_CALL_VOICE)
+                continue;
+            if (call->multi) {
+                call->multi = 0;
+                modem->multi_count--;
+                break;
+            }
+        }
+    }
+}
+
+
+static void
 amodem_free_call( AModem  modem, AVoiceCall  call, int  cause )
 {
     int  nn;
@@ -1035,6 +1080,8 @@ amodem_free_call( AModem  modem, AVoiceCall  call, int  cause )
         remote_call_cancel( call->call.number, modem );
         call->is_remote = 0;
     }
+
+    acall_unset_multi( call );
 
     for (nn = 0; nn < modem->call_count; nn++) {
         if ( modem->calls + nn == call )
@@ -2681,25 +2728,77 @@ handleHangup( const char*  cmd, AModem  modem )
                         ACall       call  = &vcall->call;
                         if (call->mode != A_CALL_VOICE)
                             continue;
-                        if (call->state == A_CALL_ACTIVE && call->id != id) {
+                        if (call->id == id) {
+                            if (call->state != A_CALL_ACTIVE)
+                                return "+CME ERROR: 3";
+                        } else if (call->state == A_CALL_HELD)
+                            return "+CME ERROR: 3";
+                    }
+
+                    // Checked, now proceed to set states.
+                    for (nn = 0; nn < modem->call_count; nn++) {
+                        AVoiceCall  vcall = modem->calls + nn;
+                        ACall       call  = &vcall->call;
+                        if (call->mode != A_CALL_VOICE)
+                            continue;
+                        if (call->id == id)
+                            acall_unset_multi( vcall );
+                        else if (call->state == A_CALL_ACTIVE)
                             acall_set_state( vcall, A_CALL_HELD );
-                        }
                     }
                 }
                 break;
 
-            case '3':  /* add a held call to the conversation */
+            case '3': { /* Join a single active call and a single held call together, or
+                         * join a single held call and an active MPTY together, or
+                         * join a single active call and a held MPTY together.
+                         * See 3GPP TS 22.084, clause 1.3.8.1 and 1.3.8.4.
+                         */
+                if (modem->call_count < 2)
+                    return "+CME ERROR: 3";
+
+                if (modem->multi_count >= 5) {
+                    // In gsm, the maximum number of multiparty calls is 5.
+                    // See 3GPP TS 22.084, clause 1.2.1.
+                    return "+CME ERROR: 3";
+                }
+
+                bool  hasHeld = false;
+                int  id = -1;
                 for (nn = 0; nn < modem->call_count; nn++) {
                     AVoiceCall  vcall = modem->calls + nn;
                     ACall       call  = &vcall->call;
                     if (call->mode != A_CALL_VOICE)
                         continue;
                     if (call->state == A_CALL_HELD) {
+                        hasHeld = true;
+                    }
+                    else if (call->state == A_CALL_ACTIVE) {
+                       if (id == -1)
+                           id = call->id;
+                    }
+                }
+
+                if (!hasHeld || id == -1)
+                    return "+CME ERROR: 3";
+
+                // Checked, now proceed to set states.
+                for (nn = 0; nn < modem->call_count; nn++) {
+                    AVoiceCall  vcall = modem->calls + nn;
+                    ACall       call  = &vcall->call;
+                    if (call->mode != A_CALL_VOICE)
+                        continue;
+                    if (call->state == A_CALL_HELD) {
+                        acall_set_multi( vcall );
                         acall_set_state( vcall, A_CALL_ACTIVE );
-                        break;
+                    }
+                    else if (call->state == A_CALL_ACTIVE) {
+                       if (call->id == id)
+                           acall_set_multi( vcall );
                     }
                 }
                 break;
+            }
 
             case '4':  /* connect the two calls */
                 for (nn = 0; nn < modem->call_count; nn++) {
@@ -2714,6 +2813,7 @@ handleHangup( const char*  cmd, AModem  modem )
                 }
                 break;
         }
+        amodem_send_calls_update( modem );
     }
     else
         return "ERROR: BAD COMMAND";
