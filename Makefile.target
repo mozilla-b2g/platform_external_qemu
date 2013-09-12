@@ -86,6 +86,7 @@ HW_SOURCES := \
     android/goldfish/vmem.c \
     android/goldfish/trace.c \
     android/goldfish/profile.c \
+    nfc/hci.c \
     nfc/llcp.c \
     nfc/nci.c \
     nfc/nfc.c \
