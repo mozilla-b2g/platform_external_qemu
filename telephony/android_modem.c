@@ -1247,12 +1247,9 @@ amodem_clear_call( AModem modem )
     if (!modem->call_count)
         return 0;
 
-    AVoiceCall  vcall = modem->calls;
-    AVoiceCall  vend  = vcall + modem->call_count;
-
-    for ( ; vcall < vend; vcall++ ) {
-        AVoiceCall call = (AVoiceCall) &vcall->call;
-        amodem_free_call( modem, call, CALL_FAIL_NORMAL );
+    int nn;
+    for (nn = modem->call_count - 1; nn >= 0; --nn) {
+        amodem_free_call( modem, modem->calls + nn, CALL_FAIL_NORMAL );
     }
     amodem_unsol( modem, "NO CARRIER\r");
 
