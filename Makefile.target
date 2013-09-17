@@ -87,6 +87,7 @@ HW_SOURCES := \
     android/goldfish/trace.c \
     android/goldfish/profile.c \
     nfc/llcp.c \
+    nfc/rf.c \
     pci/pci.c \
     scsi/scsi-disk.c \
     usb/dev-hid.c \
