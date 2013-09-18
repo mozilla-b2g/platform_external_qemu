@@ -1303,16 +1303,10 @@ amodem_activate_data_call( AModem  modem, int cid, int enable)
         return "+CME ERROR: 131";
     }
 
-    if (data->active == enable)
-        return NULL;
-
-    if (enable &&
-        modem->data_state != A_REGISTRATION_HOME &&
+    if (modem->data_state != A_REGISTRATION_HOME &&
         modem->data_state != A_REGISTRATION_ROAMING) {
-        if (modem->oper_index == OPERATOR_ROAMING_INDEX)
-            amodem_set_data_registration(modem, A_REGISTRATION_ROAMING);
-        else
-            amodem_set_data_registration(modem, A_REGISTRATION_HOME);
+        // service option temporarily out of order
+        return "+CME ERROR: 134";
     }
 
     data->active = enable;
