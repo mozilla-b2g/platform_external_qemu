@@ -57,6 +57,13 @@ extern ASimCard    amodem_get_sim( AModem  modem );
 /** VOICE AND DATA NETWORK REGISTRATION
  **/
 
+/* 'mode' for +CREG/+CGREG commands */
+typedef enum {
+    A_REGISTRATION_UNSOL_DISABLED     = 0,
+    A_REGISTRATION_UNSOL_ENABLED      = 1,
+    A_REGISTRATION_UNSOL_ENABLED_FULL = 2
+} ARegistrationUnsolMode;
+
 /* 'stat' for +CREG/+CGREG commands */
 typedef enum {
     A_REGISTRATION_UNREGISTERED = 0,
@@ -112,6 +119,8 @@ typedef enum {
     A_ROAMING_PREF_ANY,
     A_ROAMING_PREF_UNKNOWN // This must always be the last value in the enum
 } ACdmaRoamingPref;
+
+extern ARegistrationUnsolMode  amodem_get_voice_unsol_mode( AModem  modem );
 
 extern ARegistrationState  amodem_get_voice_registration( AModem  modem );
 extern void                amodem_set_voice_registration( AModem  modem, ARegistrationState    state );
