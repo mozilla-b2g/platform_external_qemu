@@ -1589,6 +1589,36 @@ do_gsm_signal( ControlClient  client, char*  args )
       return 0;
   }
 
+static void
+do_gsm_report_creg( ControlClient  client, char*  args)
+{
+    ARegistrationUnsolMode creg = amodem_get_voice_unsol_mode(client->modem);
+
+    control_write( client, "+CREG: %d\r\n", creg);
+}
+
+static int
+do_gsm_report( ControlClient  client, char*  args )
+{
+    char* field;
+
+    if (args) {
+        field = strsep(&args, " ");
+    } else {
+        field = NULL;
+    }
+
+    do {
+        if (!field || !strcmp(field, "creg")) {
+            do_gsm_report_creg(client, args);
+            if (field) {
+                break;
+            }
+        }
+    } while (field);
+
+    return 0;
+}
 
 #if 0
 static const CommandDefRec  gsm_in_commands[] =
@@ -1678,6 +1708,11 @@ static const CommandDefRec  gsm_commands[] =
     "'gsm location [<lac> <ci>]' sets or gets the location area code and cell identification.\r\n"
     "lac range is 0..65535 and ci range is 0..268435455\r\n",
     NULL, do_gsm_location, NULL},
+
+    { "report", "report Modem status",
+    "'gsm report'      report all known fields\r\n"
+    "'gsm report creg' report CREG field\r\n",
+    NULL, do_gsm_report, NULL},
 
     { NULL, NULL, NULL, NULL, NULL, NULL }
 };

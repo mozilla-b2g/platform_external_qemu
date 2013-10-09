@@ -253,13 +253,6 @@ android_parse_network_type( const char*  speed )
     return A_DATA_NETWORK_GPRS;
 }
 
-/* 'mode' for +CREG/+CGREG commands */
-typedef enum {
-    A_REGISTRATION_UNSOL_DISABLED     = 0,
-    A_REGISTRATION_UNSOL_ENABLED      = 1,
-    A_REGISTRATION_UNSOL_ENABLED_FULL = 2
-} ARegistrationUnsolMode;
-
 /* Operator selection mode, see +COPS commands */
 typedef enum {
     A_SELECTION_AUTOMATIC,
@@ -796,6 +789,12 @@ ARegistrationState
 amodem_get_voice_registration( AModem  modem )
 {
     return modem->voice_state;
+}
+
+ARegistrationUnsolMode
+amodem_get_voice_unsol_mode( AModem  modem )
+{
+    return modem->voice_mode;
 }
 
 void
