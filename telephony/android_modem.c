@@ -1321,6 +1321,27 @@ amodem_activate_data_call( AModem  modem, int cid, int enable)
 /** COMMAND HANDLERS
  **/
 
+static void
+amodem_reply(AModem  modem, const char*  answer)
+{
+    if ( !memcmp( answer, "> ", 2 ) ||
+         !memcmp( answer, "OK", 2 ) ||
+         !memcmp( answer, "ERROR", 5 ) ||
+         !memcmp( answer, "+CME ERROR", 6 ) ) {
+        // Don't append "OK".
+    } else if (answer != modem->out_buff) {
+        amodem_printf( modem, "%s\rOK", answer );
+        answer = modem->out_buff;
+    } else
+        strcat( modem->out_buff, "\rOK" );
+
+    R(">> %s\n", quote(answer));
+    if (modem->unsol_func) {
+        modem->unsol_func( modem->unsol_opaque, answer );
+        modem->unsol_func( modem->unsol_opaque, "\r" );
+    }
+}
+
 static const char*
 unknownCommand( const char*  cmd, AModem  modem )
 {
@@ -3034,9 +3055,9 @@ static const struct {
 };
 
 
-#define  REPLY(str)  do { const char*  s = (str); R(">> %s\n", quote(s)); return s; } while (0)
+#define  REPLY(str)  do { amodem_reply(modem, str); return modem->wait_sms; } while (0)
 
-const char*  amodem_send( AModem  modem, const char*  cmd )
+int  amodem_send( AModem  modem, const char*  cmd )
 {
     const char*  answer;
 
@@ -3050,7 +3071,7 @@ const char*  amodem_send( AModem  modem, const char*  cmd )
     /* everything that doesn't start with 'AT' is not a command, right ? */
     if ( cmd[0] != 'A' || cmd[1] != 'T' || cmd[2] == 0 ) {
         /* R( "-- %s\n", quote(cmd) ); */
-        return NULL;
+        return modem->wait_sms;
     }
     R( "<< %s\n", quote(cmd) );
 
@@ -3092,7 +3113,7 @@ const char*  amodem_send( AModem  modem, const char*  cmd )
             ResponseHandler  handler = sDefaultResponses[nn].handler;
 
             if ( answer != NULL ) {
-                REPLY( amodem_printf( modem, "%s\rOK", answer ) );
+                REPLY( answer );
             }
 
             if (handler == NULL) {
@@ -3103,17 +3124,6 @@ const char*  amodem_send( AModem  modem, const char*  cmd )
             if (answer == NULL)
                 REPLY( "OK" );
 
-            if ( !memcmp( answer, "> ", 2 )     ||
-                 !memcmp( answer, "ERROR", 5 )  ||
-                 !memcmp( answer, "+CME ERROR", 6 ) )
-            {
-                REPLY( answer );
-            }
-
-            if (answer != modem->out_buff)
-                REPLY( amodem_printf( modem, "%s\rOK", answer ) );
-
-            strcat( modem->out_buff, "\rOK" );
             REPLY( answer );
         }
     }
