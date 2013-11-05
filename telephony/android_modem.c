@@ -778,12 +778,6 @@ amodem_get_radio_state( AModem modem )
     return modem->radio_state;
 }
 
-void
-amodem_set_radio_state( AModem modem, ARadioState  state )
-{
-    modem->radio_state = state;
-}
-
 ASimCard
 amodem_get_sim( AModem  modem )
 {
@@ -1675,11 +1669,29 @@ handlePrlVersion( const char* cmd, AModem modem )
     return amodem_printf(modem, "ERROR");
 }
 
-static const void
-radio_state_change_event(AModem modem) {
-    ARadioState state = modem->radio_state;
+static const char*
+handleRadioPower( const char*  cmd, AModem  modem )
+{
+    ARadioState radio_state;
 
-    switch (state) {
+    if ( !strcmp( cmd, "+CFUN=0" ) )
+        radio_state = A_RADIO_STATE_OFF;
+    else if ( !strcmp( cmd, "+CFUN=1" ) )
+        radio_state = A_RADIO_STATE_ON;
+    else {
+        // 3GPP TS 27.007 subclause 9.2.1 "General errors":
+        // 50 Incorrect parameters
+        return "+CME ERROR: 50";
+    }
+
+    if (radio_state == modem->radio_state) {
+        return "OK";
+    }
+
+    modem->radio_state = radio_state;
+    amodem_reply(modem, "OK");
+
+    switch (radio_state) {
         case A_RADIO_STATE_OFF:
             amodem_set_voice_registration(modem, A_REGISTRATION_UNREGISTERED);
             amodem_set_data_registration(modem, A_REGISTRATION_UNREGISTERED);
@@ -1689,30 +1701,9 @@ radio_state_change_event(AModem modem) {
             amodem_set_data_registration(modem, A_REGISTRATION_HOME);
             break;
     }
-}
 
-static const char*
-handleRadioPower( const char*  cmd, AModem  modem )
-{
-    ARadioState current = modem->radio_state;
-
-    if ( !strcmp( cmd, "+CFUN=0" ) )
-    {
-        /* turn radio off */
-        modem->radio_state = A_RADIO_STATE_OFF;
-    }
-    else if ( !strcmp( cmd, "+CFUN=1" ) )
-    {
-        /* turn radio on */
-        modem->radio_state = A_RADIO_STATE_ON;
-    }
-
-    if (current != modem->radio_state) {
-        sys_timer_set( sys_timer_create(), sys_time_ms() + 1000,
-                       radio_state_change_event, modem );
-    }
-
-    return "OK";
+    // Return NULL to show we have sent the reply and no further work to do.
+    return NULL;
 }
 
 static const char*
