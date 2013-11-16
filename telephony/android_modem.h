@@ -28,8 +28,8 @@ extern void        amodem_set_legacy( AModem  modem );
 extern void        amodem_destroy( AModem  modem );
 extern AModem      amodem_get_instance( int  instance_id );
 
-/* send a command to the modem */
-extern const char*  amodem_send( AModem  modem, const char*  cmd );
+/* send a command to the modem, returns non-zero if in sms mode */
+extern int          amodem_send( AModem  modem, const char*  cmd );
 
 /* simulate the receipt on an incoming SMS message */
 extern void         amodem_receive_sms( AModem  modem, SmsPDU  pdu );
@@ -45,7 +45,6 @@ typedef enum {
 } ARadioState;
 
 extern ARadioState  amodem_get_radio_state( AModem modem );
-extern void         amodem_set_radio_state( AModem modem, ARadioState  state );
 
 /* Set the received signal strength indicator and bit error rate */
 extern void         amodem_set_signal_strength( AModem modem, int rssi, int ber );

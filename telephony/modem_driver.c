@@ -102,17 +102,7 @@ modem_driver_read( void*  _md, const uint8_t*  src, int  len )
             md->in_pos                = 0;
 
             D( "%s: << %s\n", __FUNCTION__, md->in_buff );
-            answer = amodem_send(md->modem, md->in_buff);
-            if (answer != NULL) {
-                D( "%s: >> %s\n", __FUNCTION__, answer );
-                len = strlen(answer);
-                if (len == 2 && answer[0] == '>' && answer[1] == ' ')
-                    md->in_sms = 1;
-
-                qemu_chr_write(md->cs, (const uint8_t*)answer, len);
-                qemu_chr_write(md->cs, (const uint8_t*)"\r", 1);
-            } else
-                D( "%s: -- NO ANSWER\n", __FUNCTION__ );
+            md->in_sms = amodem_send(md->modem, md->in_buff);
 
             continue;
         }
