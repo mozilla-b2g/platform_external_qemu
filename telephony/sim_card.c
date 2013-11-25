@@ -607,10 +607,12 @@ asimcard_ef_init( ASimCard card )
 
     // ICC Identification(2FE2):
     //   File size: 0x0a
-    //   Identification number: 89014103211118518720
+    //   Identification number: "8901410321111851072" + (sim->instance_id)
+    //                          e.g. "89014103211118510720" for first sim.
     // @see 3GPP TS 11.011 section 10.1.1 EFiccid (ICC Identification)
     ef = asimcard_ef_new_dedicated(0x2fe2, SIM_FILE_READ_ONLY);
-    asimcard_ef_update_dedicated(ef, "98101430121181157002");
+    snprintf(buff, sizeof(buff), "981014301211811570%d2", card->instance_id);
+    asimcard_ef_update_dedicated(ef, buff);
     asimcard_ef_add(card, ef);
 
     // CPHS Call forwarding flags(6F13):
