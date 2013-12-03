@@ -52,6 +52,7 @@ ANDROID_BEGIN_HEADER
     _VERBOSE_TAG(asyncsocket,  "Asynchronous socket") \
     _VERBOSE_TAG(sdkctlsocket, "Socket tethering to SdkControl server") \
     _VERBOSE_TAG(bluetooth,    "emulated Bluetooth") \
+    _VERBOSE_TAG(nfc,          "emulated NFC device") \
 
 #define  _VERBOSE_TAG(x,y)  VERBOSE_##x,
 typedef enum {
