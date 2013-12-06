@@ -28,7 +28,9 @@
 #include <time.h>
 #include <assert.h>
 #include <stdio.h>
+#include <netinet/in.h>
 #include "sms.h"
+#include "net/net.h"
 #include "remote_call.h"
 
 #define  DEBUG  1
@@ -290,6 +292,10 @@ typedef enum {
     A_DATA_PPP
 } ADataType;
 
+typedef struct {
+    struct in_addr  in;
+} AInetAddrRec, *AInetAddr;
+
 #define  A_DATA_APN_SIZE  32
 
 typedef struct {
@@ -297,6 +303,7 @@ typedef struct {
     int        active;
     ADataType  type;
     char       apn[ A_DATA_APN_SIZE ];
+    AInetAddrRec  addr;
 
 } ADataContextRec, *ADataContext;
 
@@ -2420,7 +2427,9 @@ handleListPDPContexts( const char*  cmd, AModem  modem )
     amodem_begin_line( modem );
     for (nn = 0; nn < MAX_DATA_CONTEXTS; nn++) {
         ADataContext  data = modem->data_contexts + nn;
-        if (!data->active)
+        /* The read command returns the current activation states for all the
+         * defined PDP contexts. */
+        if (data->id <= 0)
             continue;
         amodem_add_line( modem, "+CGACT: %d,%d\r\n", data->id, data->active );
     }
@@ -2437,45 +2446,97 @@ handleDefinePDPContext( const char*  cmd, AModem  modem )
          * We only really support IP ones in the emulator, so don't try to
          * fake PPP ones.
          */
-        return "+CGDCONT: (1-1),\"IP\",,,(0-2),(0-4)\r\n";
-    } else {
-        /* template is +CGDCONT=<id>,"<type>","<apn>",,0,0 */
-        int              id = cmd[0] - '0';
-        ADataType        type;
-        char             apn[32];
-        ADataContext     data;
-
-        if ( id <= 0 || id > MAX_DATA_CONTEXTS )
-            goto BadCommand;
-
-        if ( !memcmp( cmd+1, ",\"IP\",\"", 7 ) ) {
-            type = A_DATA_IP;
-            cmd += 8;
-        } else if ( !memcmp( cmd+1, ",\"PPP\",\"", 8 ) ) {
-            type = A_DATA_PPP;
-            cmd += 9;
-        } else
-            goto BadCommand;
-
-        {
-            const char*  p = strchr( cmd, '"' );
-            int          len;
-            if (p == NULL)
-                goto BadCommand;
-            len = (int)( p - cmd );
-            if (len > sizeof(apn)-1 )
-                len = sizeof(apn)-1;
-            memcpy( apn, cmd, len );
-            apn[len] = 0;
-        }
-
-        data = modem->data_contexts + id - 1;
-
-        data->id     = id;
-        data->active = 0;
-        data->type   = type;
-        memcpy( data->apn, apn, sizeof(data->apn) );
+        amodem_begin_line( modem );
+        amodem_add_line( modem, "+CGDCONT: (1-%d),\"IP\",,,(0-2),(0-4)",
+                         MAX_DATA_CONTEXTS );
+        return amodem_end_line( modem );
     }
+
+    /* Template is +CGDCONT=[<cid>[,<PDP_type>[,<APN>[,<PDP_addr>[...]]]]] */
+    int           cid;
+    ADataContext  data;
+    ADataType     type;
+    char          apn[A_DATA_APN_SIZE];
+    char          addr[INET_ADDRSTRLEN];
+    const char*   p;
+    int           len;
+
+    /* <cid> */
+
+    /* 3GPP TS 27.007 subclause 10.1.1 says that <cid> is optional but doesn't
+     * mention how to handle that correctly.
+     */
+    if ( 1 != sscanf( cmd, "%d", &cid ) )
+        goto BadCommand;
+
+    if ( cid <= 0 || cid > MAX_DATA_CONTEXTS )
+        goto BadCommand;
+
+    data = modem->data_contexts + cid - 1;
+    if (data->active) {
+        /* Data connection in use. Operation not allowed. */
+        return "+CME ERROR: 3";
+    }
+
+    cmd += 1;
+    if ( !*cmd ) {
+        /* No additional parameters. Undefine the specified PDP context. */
+        data->id = -1;
+        return "OK";
+    }
+
+    /* <PDP_type> */
+
+    if ( !memcmp( cmd, ",\"IP\"", 5 ) ) {
+        type = A_DATA_IP;
+        cmd += 5;
+    } else
+        goto BadCommand;
+
+    /* <APN> */
+
+    if ( ',' != cmd[0] || '"' != cmd[1] )
+        goto BadCommand;
+
+    cmd += 2;
+    p = strchr(cmd, '"');
+    if ( p == NULL )
+        goto BadCommand;
+
+    len = p - cmd;
+    if ( !len || len >= sizeof(apn) )
+        goto BadCommand;
+
+    memcpy( apn, cmd, len );
+    apn[len] = '\0';
+
+    /* <PDP_addr> */
+
+    cmd = p + 1;
+    addr[0] = '\0';
+    if ( ',' == cmd[0] && '"' == cmd[1] ) {
+        cmd += 2;
+        p = strchr(cmd, '"');
+        if ( p == NULL )
+            goto BadCommand;
+
+        len = p - cmd;
+        if ( !len || len >= sizeof(addr) )
+            goto BadCommand;
+
+        memcpy( addr, cmd, len );
+        addr[len] = '\0';
+        cmd = p + 1;
+    }
+
+    data->id     = cid;
+    data->active = 0;
+    data->type   = type;
+    strcpy( data->apn, apn );
+    if (inet_pton( AF_INET, addr, &data->addr.in.s_addr) <= 0) {
+        data->addr.in.s_addr = 0;
+    }
+
     return "OK";
 BadCommand:
     return "ERROR: BAD COMMAND";
@@ -2488,16 +2549,22 @@ handleQueryPDPContext( const char* cmd, AModem modem )
     amodem_begin_line(modem);
     for (nn = 0; nn < MAX_DATA_CONTEXTS; nn++) {
         ADataContext  data = modem->data_contexts + nn;
-        if (!data->active)
+        char          addr[INET_ADDRSTRLEN];
+
+        if (data->id <= 0)
             continue;
+
+        /* The read command returns current settings for each defined context. */
+        if (data->addr.in.s_addr) {
+            inet_ntop( AF_INET, &data->addr.in, addr, sizeof addr);
+        } else {
+            addr[0] = '\0';
+        }
         amodem_add_line( modem, "+CGDCONT: %d,\"%s\",\"%s\",\"%s\",0,0\r\n",
                          data->id,
                          data->type == A_DATA_IP ? "IP" : "PPP",
                          data->apn,
-                         /* Note: For now, hard-code the IP address of our
-                          *       network interface
-                          */
-                         data->type == A_DATA_IP ? "10.0.2.15" : "");
+                         addr );
     }
     return amodem_end_line(modem);
 }
