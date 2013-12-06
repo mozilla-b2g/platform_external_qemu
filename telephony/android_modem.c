@@ -2696,6 +2696,101 @@ handleQueryPDPContext( const char* cmd, AModem modem )
 }
 
 static const char*
+handleQueryPDPDynamicProp( const char* cmd, AModem modem )
+{
+    int i, entries;
+
+    assert( !memcmp( cmd, "+CGCONTRDP=?", 12 ) );
+
+    entries = 0;
+    amodem_begin_line( modem );
+    amodem_add_line( modem, "+CGCONTRDP: (" );
+
+    for ( i = 0; i < MAX_DATA_CONTEXTS; i++ ) {
+        ADataContext context = modem->data_contexts + i;
+
+        /* Returns the relevant information for an/all active non secondary PDP
+         * contexts. */
+        if ( !context->active )
+            continue;
+
+        ++entries;
+        amodem_add_line( modem, ( entries == 1 ? "%d" : ",%d" ), context->id );
+    }
+
+    amodem_add_line(modem, ")");
+
+    return amodem_end_line( modem );
+}
+
+static const char*
+handleListPDPDynamicProp( const char* cmd, AModem modem )
+{
+    int cid = -1;
+    int i, j, entries;
+
+    assert( !memcmp( cmd, "+CGCONTRDP", 10 ) );
+
+    cmd += 10;
+    if ( '\0' == *cmd ) {
+        // List all.
+    } else if ( sscanf( cmd, "=%d", &cid ) != 1 ||
+                cid <= 0 ) {
+        return "+CME ERROR: 50"; // Incorrect parameters.
+    }
+
+    entries = 0;
+    amodem_begin_line( modem );
+
+    for ( i = 0; i < MAX_DATA_CONTEXTS; i++ ) {
+        ADataContext context = modem->data_contexts + i;
+
+        /* Returns the relevant information for an/all active non secondary PDP
+         * contexts. */
+        if ( !context->active )
+            continue;
+
+        if ( cid > 0 && context->id != cid )
+            continue;
+
+        ++entries;
+
+        ADataNet net = context->net;
+        char     addr[INET_ADDRSTRLEN];
+
+        /* This is a dirty hack for passing kernel netif num to rild. */
+        const char* bearer_id = net->nd->name + strlen("rmnet.");
+        amodem_add_line( modem, "+CGCONTRDP: %d,%s,\"%s\"",
+                         context->id, bearer_id, context->apn );
+
+        inet_ntop( AF_INET, &net->addr.in, addr, sizeof addr);
+        amodem_add_line( modem, ",\"%s/24\"", addr );
+        inet_ntop( AF_INET, &net->gw.in, addr, sizeof addr);
+        amodem_add_line( modem, ",\"%s\"", addr );
+        for ( j = 0; j < NUM_DNS_PER_RMNET; j++ ) {
+            if (!net->dns[j].in.s_addr) {
+                break;
+            }
+            inet_ntop( AF_INET, &net->dns[j].in, addr, sizeof addr);
+            amodem_add_line( modem, ",\"%s\"", addr );
+        }
+
+        amodem_add_line( modem, "\r\n" );
+    }
+
+    if ( cid > 0 && !entries ) {
+        return "+CME ERROR: 50"; // Incorrect parameters.
+    }
+
+    if ( entries ) {
+        // Remove the trailing "\r\n"
+        modem->out_size -= 2;
+    }
+
+    return amodem_end_line( modem );
+}
+
+static const char*
 handleActivatePDPContext( const char*  cmd, AModem  modem )
 {
     int enable, cid, items;
@@ -3243,7 +3338,8 @@ static const struct {
 
     { "!+CGDCONT=", NULL, handleDefinePDPContext },
     { "+CGDCONT?", NULL, handleQueryPDPContext },
-
+    { "+CGCONTRDP=?", NULL, handleQueryPDPDynamicProp },
+    { "!+CGCONTRDP", NULL, handleListPDPDynamicProp },
     { "+CGQREQ=1", NULL, NULL },
     { "+CGQMIN=1", NULL, NULL },
     { "+CGEREP=1,0", NULL, NULL },
