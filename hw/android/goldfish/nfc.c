@@ -128,11 +128,13 @@ goldfish_nfc_process_ctrl(struct nfc_state* s)
       if (s->status&(STATUS_NCI_RESP|STATUS_HCI_RESP))
           return; /* previous response still loaded, do nothing */
 
+      s->status |= STATUS_NCI_CMND;
+
       memset(s->resp, 0, sizeof(s->resp));
       res = nfc_process_nci_msg((const union nci_packet*)s->cmnd, &s->nfc,
                                 (union nci_packet*)s->resp);
 
-      s->status ^= STATUS_NCI_CMND;
+      s->status &= ~STATUS_NCI_CMND;
       s->status |= STATUS_NCI_RESP * !!res;
 
       s->status |= STATUS_INTR;
@@ -142,11 +144,13 @@ goldfish_nfc_process_ctrl(struct nfc_state* s)
       if (s->status&(STATUS_NCI_RESP|STATUS_HCI_RESP))
           return; /* previous response still loaded, do nothing */
 
+      s->status |= STATUS_HCI_CMND;
+
       memset(s->resp, 0, sizeof(s->resp));
       res = nfc_process_hci_cmd((const union hci_packet*)s->cmnd, &s->nfc,
                                 (struct hci_answer*)s->resp);
 
-      s->status ^= STATUS_HCI_CMND;
+      s->status &= ~STATUS_HCI_CMND;
       s->status |= STATUS_HCI_RESP * !!res;
 
       s->status |= STATUS_INTR;
