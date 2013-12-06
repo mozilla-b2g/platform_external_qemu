@@ -2440,12 +2440,12 @@ handleDefinePDPContext( const char*  cmd, AModem  modem )
         return "+CGDCONT: (1-1),\"IP\",,,(0-2),(0-4)\r\n";
     } else {
         /* template is +CGDCONT=<id>,"<type>","<apn>",,0,0 */
-        int              id = cmd[0] - '1';
+        int              id = cmd[0] - '0';
         ADataType        type;
         char             apn[32];
         ADataContext     data;
 
-        if ((unsigned)id > 3)
+        if ( id <= 0 || id > MAX_DATA_CONTEXTS )
             goto BadCommand;
 
         if ( !memcmp( cmd+1, ",\"IP\",\"", 7 ) ) {
@@ -2469,9 +2469,9 @@ handleDefinePDPContext( const char*  cmd, AModem  modem )
             apn[len] = 0;
         }
 
-        data = modem->data_contexts + id;
+        data = modem->data_contexts + id - 1;
 
-        data->id     = id + 1;
+        data->id     = id;
         data->active = 0;
         data->type   = type;
         memcpy( data->apn, apn, sizeof(data->apn) );
