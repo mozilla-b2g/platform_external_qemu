@@ -3299,6 +3299,123 @@ static const CommandDefRec  modem_commands[] =
 /********************************************************************************************/
 /********************************************************************************************/
 /*****                                                                                 ******/
+/*****                      B L U E T O O T H   C O M M A N D S                        ******/
+/*****                                                                                 ******/
+/********************************************************************************************/
+/********************************************************************************************/
+
+/* Max size of device friendly name: 248 bytes */
+#define MAX_BD_NAME_SIZE 248
+
+static int do_bluetooth_add_remove_remote( ControlClient client, char* args )
+{
+    if (!args)
+        goto exit_invalid_arg_error;
+
+    char* command = strtok(args, " ");
+    if (command == NULL)
+        goto exit_invalid_arg_error;
+
+    char* address = strtok(NULL, " ");
+    if (address == NULL)
+        goto exit_invalid_arg_error;
+
+    if (!strcmp(command, "add")) {
+        if (!goldfish_bt_add_remote(address)) {
+            control_write(client,
+                "KO: [Add Remote] Failed to add a replicate remote.\n");
+            return -1;
+        }
+    } else if (!strcmp(command, "remove")) {
+        goldfish_bt_remove_remote(address);
+    } else {
+        goto exit_invalid_arg_error;
+    }
+
+    return 0;
+
+exit_invalid_arg_error:
+    control_write(client, "KO: [Add/Remove Remote] Invalid argument\n");
+    return -1;
+}
+
+static int do_bluetooth_get_set_property( ControlClient client, char* args )
+{
+    if (!args)
+        goto exit_invalid_arg_error;
+
+    char* address = strtok(args, " ");
+    if (address == NULL)
+        goto exit_invalid_arg_error;
+
+    char* property = strtok(NULL, " ");
+    if (property == NULL)
+        goto exit_invalid_arg_error;
+
+    char* value = strtok(NULL, " ");
+    if (value == NULL) {
+        // Property getter
+        // Bluetooth device name is the property which needs the largest buffer
+        char result[MAX_BD_NAME_SIZE + 2 + 1] = {0}; // For "\r\n" and "\0"
+        if (!goldfish_bt_get_property(address, property, result)) {
+            control_write(client, "KO: [Property] Failed to get property.\n");
+            return -1;
+        }
+
+        strcat(result, "\r\n");
+        control_write(client, result);
+    } else {
+        // Property setter
+        if (!goldfish_bt_set_remote_property(address, property, value)) {
+            control_write(client,
+                "KO: [Property] Failed to set remote property\n");
+            return -1;
+        }
+    }
+
+    return 0;
+
+exit_invalid_arg_error:
+    control_write(client, "KO: [Property] Invalid argument\n");
+    return -1;
+}
+
+static const CommandDefRec bt_commands[] =
+{
+  { "remote", "add/remove a remote device",
+    "using 'bt remote add <bd_addr>' to add a virtual Bluetooth remote\r\n"
+    "device and set it to discoverable.\r\n"
+    "using 'bt remote remove <bd_addr>|all' to remove a Bluetooth remote\r\n"
+    "device or all Bluetooth remote devices within the scatternet.\r\n"
+    "The format of <bd_addr> is xx:xx:xx:xx:xx:xx\r\n",
+    NULL, do_bluetooth_add_remove_remote, NULL },
+
+  { "property", "get/set device property",
+    "using 'bt property <bd_addr>|local <prop>[ <value>]' to get device\r\n"
+    "property or set device property if <value> is provided.\r\n"
+    "The format of <bd_addr> is xx:xx:xx:xx:xx:xx\r\n"
+    "Set device property (only works for remote devices):\r\n"
+    "<prop>:\r\n"
+    "    name            <str>          Change device name (<= 248 bytes)\r\n"
+    "    discoverable    true|false     Enable/Disable inquiry scan\r\n"
+    "                                                              \r\n"
+    "Get device property (more properties are supported for local device)\r\n"
+    "common <prop>:\r\n"
+    "    cod                            Class of Device      \r\n"
+    "    discoverable                   State of inquiry scan\r\n"
+    "    name                           Device friendly name \r\n"
+    "                                                        \r\n"
+    "local-device-only <prop>:\r\n"
+    "    address                        Local device address \r\n"
+    "    discovering                    Inquiry state        \r\n",
+    NULL, do_bluetooth_get_set_property, NULL },
+
+  { NULL, NULL, NULL, NULL, NULL, NULL }
+};
+
+/********************************************************************************************/
+/********************************************************************************************/
+/*****                                                                                 ******/
 /*****                           M A I N   C O M M A N D S                             ******/
 /*****                                                                                 ******/
 /********************************************************************************************/
@@ -3700,6 +3817,10 @@ static const CommandDefRec   main_commands[] =
     { "modem", "Modem related commands",
       "allows you to modify/retrieve modem info\r\n", NULL,
       NULL, modem_commands },
+
+    { "bt", "Bluetooth related commands",
+      "allows you to retrieve BT status or add/remove remote devices\r\n", NULL,
+      NULL, bt_commands },
 
     { NULL, NULL, NULL, NULL, NULL, NULL }
 };
