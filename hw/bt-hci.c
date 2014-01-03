@@ -585,6 +585,7 @@ static void bt_hci_inquiry_start(struct bt_hci_s *hci, int length)
     struct bt_device_s *slave;
 
     hci->lm.inquiry_length = length;
+
     for (slave = hci->device.net->slave; slave; slave = slave->next)
         /* Don't uncover ourselves.  */
         if (slave != &hci->device)
@@ -2218,4 +2219,227 @@ static void bt_hci_done(struct HCIInfo *info)
     qemu_free_timer(hci->conn_accept_timer);
 
     qemu_free(hci);
+}
+
+static void str_to_bdaddr(const char *addr, bdaddr_t *ret)
+{
+    sscanf(addr, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",
+           &ret->b[5], &ret->b[4], &ret->b[3],
+           &ret->b[2], &ret->b[1], &ret->b[0]);
+}
+
+static void bdaddr_to_str(const bdaddr_t *addr, char *ret)
+{
+    sprintf(ret, "%02x:%02x:%02x:%02x:%02x:%02x",
+            (int)addr->b[5],(int)addr->b[4],(int)addr->b[3],
+            (int)addr->b[2],(int)addr->b[1],(int)addr->b[0]);
+}
+
+static struct bt_device_s* find_remote(struct bt_scatternet_s *net,
+                                       const bdaddr_t *addr)
+{
+    struct bt_device_s* slave = net->slave;
+    while (slave) {
+        if (!bacmp(&slave->bd_addr, addr))
+            return slave;
+
+        slave = slave->next;
+    }
+
+    return NULL;
+}
+
+bool bt_add_remote(struct HCIInfo *info, char *address)
+{
+    struct bt_hci_s* hci = hci_from_info(info);
+
+    bdaddr_t addr;
+    str_to_bdaddr(address, &addr);
+
+    if (find_remote(hci->device.net, &addr)) {
+        /* Device already exists */
+        return false;
+    }
+
+    struct bt_device_s* remote = qemu_mallocz(sizeof(struct bt_device_s));
+    memset(remote, 0, sizeof(*remote));
+    bacpy(&remote->bd_addr, &addr);
+
+    /* Default: enable inquiry scan and page scan */
+    remote->inquiry_scan = 1;
+    remote->page_scan = 1;
+
+    /* Simple slave-only devices need to implement only .lmp_acl_data */
+    remote->lmp_acl_data = bt_hci_lmp_acl_data_slave;
+
+    remote->net = hci->device.net;
+    remote->next = NULL;
+
+    /* Append remote to the scatternet */
+    struct bt_device_s* slave = hci->device.net->slave;
+    if (!slave)
+        /* Actually this is impossible. The first device on the statternet
+         * must be the host itself. */
+        return false;
+
+    while (slave->next)
+        slave = slave->next;
+    slave->next = remote;
+
+    return true;
+}
+
+void bt_remove_remote(struct HCIInfo *info, char *address)
+{
+    struct bt_hci_s* hci = hci_from_info(info);
+    struct bt_device_s* prev_slave = hci->device.net->slave;
+    struct bt_device_s* slave = hci->device.net->slave->next;
+
+    bdaddr_t addr;
+    str_to_bdaddr(address, &addr);
+
+    /* The first slave in the slave linked list should be the local device. */
+    /* Therefore start from the second slave.                               */
+    while (slave) {
+        if (!bacmp(&slave->bd_addr, &addr)) {
+            prev_slave->next = slave->next;
+
+            if (slave->lmp_name) {
+                qemu_free((void *) slave->lmp_name);
+            }
+            qemu_free(slave);
+            break;
+        }
+
+        prev_slave = slave;
+        slave = slave->next;
+    }
+}
+
+void bt_remove_all_remotes(struct HCIInfo *info)
+{
+    struct bt_hci_s* hci = hci_from_info(info);
+
+    /* The first slave in the slave linked list should be the local device. */
+    /* Therefore start from the second slave.                               */
+    struct bt_device_s* slave = hci->device.net->slave->next;
+
+    while (slave) {
+        struct bt_device_s* next = slave->next;
+
+        if (slave->lmp_name)
+            qemu_free((void *) slave->lmp_name);
+        qemu_free(slave);
+
+        slave = next;
+    }
+
+    /* Keep local device and clear all slaves by setting next to NULL */
+    hci->device.net->slave->next = NULL;
+}
+
+bool bt_set_remote_property(
+    struct HCIInfo *info, char *address, char *property, char *value)
+{
+    bdaddr_t addr;
+    str_to_bdaddr(address, &addr);
+
+    struct bt_hci_s* hci = hci_from_info(info);
+    struct bt_device_s* slave = find_remote(hci->device.net, &addr);
+
+    if (!slave) {
+      fprintf(stderr, "Requested remote device doesn't exist.\n");
+      return false;
+    }
+
+    if (!strcmp(property, "name")) {
+        if (slave->lmp_name) {
+            qemu_free((void *) slave->lmp_name);
+        }
+        slave->lmp_name = qemu_strdup(value);
+    } else if (!strcmp(property, "discoverable")) {
+        if (!strcmp(value, "true")) {
+            slave->inquiry_scan = 1;
+        } else if (!strcmp(value, "false")) {
+            slave->inquiry_scan = 0;
+        } else {
+            /* Invalue argument. Do nothing. */
+        }
+    } else {
+        return false;
+    }
+
+    return true;
+}
+
+bool bt_get_local_property(struct HCIInfo *info, char *property, char *ret)
+{
+    struct bt_hci_s* hci = hci_from_info(info);
+    struct bt_device_s* host = &hci->device;
+
+    if (!host) {
+        fprintf(stderr, "Host doesn't exist.\n");
+        return false;
+    }
+
+    if (!strcmp(property, "address")) {
+        bdaddr_to_str(&host->bd_addr, ret);
+    } else if (!strcmp(property, "name")) {
+        if (!host->lmp_name)
+            return true;
+
+        int length = strlen(host->lmp_name);
+        if (length > 248)
+            return false;
+
+        strncpy(ret, host->lmp_name, length);
+    } else if (!strcmp(property, "discoverable")) {
+        strcpy(ret, host->inquiry_scan > 0 ? "true" : "false");
+    } else if (!strcmp(property, "discovering")) {
+        strcpy(ret, (hci->lm.inquire || hci->lm.periodic) ? "true" : "false");
+    } else if (!strcmp(property, "cod")) {
+        sprintf(ret, "0x%02x%02x%02x",
+                host->class[2], host->class[1], host->class[0]);
+    } else {
+        fprintf(stderr, "Unhandled property: %s", property);
+        return false;
+    }
+
+    return true;
+}
+
+bool bt_get_remote_property(
+    struct HCIInfo *info, char *address, char *property, char *ret)
+{
+    bdaddr_t addr;
+    str_to_bdaddr(address, &addr);
+
+    struct bt_hci_s* hci = hci_from_info(info);
+    struct bt_device_s* slave = find_remote(hci->device.net, &addr);
+
+    if (!slave) {
+        fprintf(stderr, "Requested remote device doesn't exist.\n");
+        return false;
+    }
+
+    if (!strcmp(property, "name")) {
+        if (!slave->lmp_name)
+            return true;
+
+        int length = strlen(slave->lmp_name);
+        if (length > 248)
+            return false;
+
+        strncpy(ret, slave->lmp_name, length);
+    } else if (!strcmp(property, "discoverable")) {
+        strcpy(ret, slave->inquiry_scan == 0 ? "false" : "true");
+    } else if (!strcmp(property, "cod")) {
+        sprintf(ret, "0x%02x%02x%02x",
+                slave->class[2], slave->class[1], slave->class[0]);
+    } else {
+        fprintf(stderr, "Unhandled property: %s", property);
+        return false;
+    }
+
+    return true;
 }
