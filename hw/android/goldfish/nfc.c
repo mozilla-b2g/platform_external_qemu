@@ -148,7 +148,7 @@ goldfish_nfc_process_ctrl(struct nfc_state* s)
 
       memset(s->resp, 0, sizeof(s->resp));
       res = nfc_process_hci_cmd((const union hci_packet*)s->cmnd, &s->nfc,
-                                (struct hci_answer*)s->resp);
+                                (union hci_answer*)s->resp);
 
       s->status &= ~STATUS_HCI_CMND;
       s->status |= STATUS_HCI_RESP * !!res;

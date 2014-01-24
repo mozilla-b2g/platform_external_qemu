@@ -29,11 +29,8 @@ enum hci_message_type {
 };
 
 enum hci_command {
+    HCI_BCM2079x_EVT_CMD_COMPLETE = 0x0e,
     HCI_BCM2079x_CMD_WRITE_SLEEP_MODE = 0x3c
-};
-
-enum hci_event {
-    HCI_BCM2079x_EVT_CMD_COMPLETE = 0x0e
 };
 
 enum hci_status_code {
@@ -58,13 +55,20 @@ union hci_packet {
     struct hci_control_packet control;
 };
 
-struct hci_answer {
-    uint8_t service;
+struct hci_bcm2079x_common_evt {
+    uint8_t cmd;
     uint8_t l;
-    uint8_t payload[];
 };
 
 /* HCI_BRCM2079x_WRITE_SLEEP_MODE */
+
+struct hci_bcm2079x_evt_cmd_complete {
+    struct hci_bcm2079x_common_evt common;
+    uint8_t npackets;
+    uint8_t service;
+    uint8_t cmd;
+    uint8_t status;
+};
 
 struct hci_bcm2079x_write_sleep_mode_cmd {
     uint8_t snooze_mode;
@@ -75,8 +79,17 @@ struct hci_bcm2079x_write_sleep_mode_cmd {
     uint8_t rfu[7];
 };
 
+union hci_event {
+    struct hci_bcm2079x_common_evt common;
+    struct hci_bcm2079x_evt_cmd_complete cmd_complete;
+};
+
+union hci_answer {
+    union hci_event evt;
+};
+
 int
 nfc_process_hci_cmd(const union hci_packet* cmd, struct nfc_device* nfc,
-                    struct hci_answer* rsp);
+                    union hci_answer* rsp);
 
 #endif
