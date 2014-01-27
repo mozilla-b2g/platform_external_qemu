@@ -50,6 +50,7 @@ void goldfish_mmc_init(uint32_t base, int id, BlockDriverState* bs);
 void *goldfish_switch_add(char *name, uint32_t (*writefn)(void *opaque, uint32_t state), void *writeopaque, int id);
 void goldfish_switch_set_state(void *opaque, uint32_t state);
 void goldfish_rfkill_init();
+void goldfish_nfc_init();
 
 // these do not add a device
 void trace_dev_init();

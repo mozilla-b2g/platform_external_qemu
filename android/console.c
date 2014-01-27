@@ -26,8 +26,13 @@
 #include "sysemu.h"
 #include "android/android.h"
 #include "cpu.h"
+#include "hw/llcp.h"
 #include "hw/goldfish_bt.h"
 #include "hw/goldfish_device.h"
+#include "hw/goldfish_nfc.h"
+#include "hw/nfc-re.h"
+#include "hw/nfc.h"
+#include "hw/nfc-nci.h"
 #include "hw/power_supply.h"
 #include "shaper.h"
 #include "modem_driver.h"
@@ -3196,6 +3201,164 @@ static const CommandDefRec  rfkill_commands[] =
 /********************************************************************************************/
 /********************************************************************************************/
 /*****                                                                                 ******/
+/*****                            N F C    C O M M A N D S                             ******/
+/*****                                                                                 ******/
+/********************************************************************************************/
+/********************************************************************************************/
+
+static size_t
+nfc_rf_discovery_ntf_cb(void* data,
+                        struct nfc_device* nfc,
+                        union nci_packet* ntf)
+{
+    return nfc_create_rf_discovery_ntf(data, nfc, ntf);
+}
+
+static size_t
+nfc_rf_intf_activated_ntf_cb(void* data,
+                             struct nfc_device* nfc,
+                             union nci_packet* ntf)
+{
+    return nfc_create_rf_intf_activated_ntf(data, nfc, ntf);
+}
+
+static int
+do_nfc_ntf( ControlClient  client, char*  args )
+{
+    char *p;
+
+    if (!args) {
+        return -1;
+    }
+
+    /* read notification type */
+    p = strsep(&args, " ");
+
+    if (!p) {
+        return -1;
+    }
+
+    if (!strcmp(p, "rf_discover")) {
+        /* read remote-endpoint index */
+        p = strsep(&args, " ");
+
+        if (!p) {
+            return -1;
+        }
+
+        errno = 0;
+        size_t i = strtoul(p, NULL, 0);
+
+        if (errno || !(i < sizeof(nfc_res)/sizeof(nfc_res[0])) ) {
+            return -1;
+        }
+
+        goldfish_nfc_send_ntf(nfc_rf_discovery_ntf_cb, nfc_res+i);
+    } else if (!strcmp(p, "rf_intf_activated")) {
+        struct nfc_re *re = NULL;
+
+        /* read remote-endpoint index */
+        p = strsep(&args, " ");
+
+        if (p) {
+            errno = 0;
+            size_t i = strtoul(p, NULL, 0);
+
+            if (errno || !(i < sizeof(nfc_res)/sizeof(nfc_res[0])) ) {
+                return -1;
+            }
+
+            re = nfc_res + i;
+        }
+
+        /* if re == NULL, active RE will be used */
+        goldfish_nfc_send_ntf(nfc_rf_intf_activated_ntf_cb, re);
+    }
+
+    return 0;
+}
+
+struct nfc_dta_write_param {
+  uint8_t connid;
+  size_t len;
+  const void* data;
+};
+
+static size_t
+nfc_dta_write_cb(void* data, struct nfc_device* nfc,
+                 union nci_packet* packet)
+{
+  const struct nfc_dta_write_param* param;
+
+  param = data;
+
+  return nfc_create_dta(param->data, param->len, nfc, packet);
+}
+
+static int
+do_nfc_dta( ControlClient  client, char*  args )
+{
+    char *p;
+
+    if (!args) {
+        return -1;
+    }
+
+    /* read notification type */
+    p = strsep(&args, " ");
+
+    if (!p) {
+        return -1;
+    }
+
+    if (!strcmp(p, "s") || !strcmp(p, "send") ||
+        !strcmp(p, "w") || !strcmp(p, "wr") || !strcmp(p, "write")) {
+
+        struct nfc_dta_write_param param;
+
+        /* read connection id */
+        p = strsep(&args, " ");
+
+        if (!p) {
+            return -1;
+        }
+
+        errno = 0;
+        param.connid = strtoul(p, NULL, 0);
+
+        if (errno || !param.connid || (param.connid > 254)) {
+            return -1;
+        }
+
+        param.len = strlen(args);
+        param.data = args;
+
+        goldfish_nfc_send_dta(nfc_dta_write_cb, &param);
+    }
+
+    return 0;
+}
+
+static const CommandDefRec  nfc_commands[] =
+{
+    { "ntf", "send NCI notification",
+      "'nfc ntf rf_discover <i>' send RC_DISCOVER_NTF for Remote Endpoint <i>\r\n"
+      "'nfc ntf rf_intf_activated' send RC_DISCOVER_NTF for selected Remote Endpoint\r\n"
+      "'nfc ntf rf_intf_activated <i>' send RC_DISCOVER_NTF for Remote Endpoint <i>\r\n",
+      NULL,
+      do_nfc_ntf, NULL },
+
+    { "data", "send and receive NCI data packets",
+      "'nfc data s|send|w|wr|write <connid> <data>' send <data> via active Remote Endpoint's connection <connid>\r\n",
+      NULL,
+      do_nfc_dta, NULL },
+
+    { NULL, NULL, NULL, NULL, NULL, NULL }
+};
+
+/********************************************************************************************/
+/********************************************************************************************/
+/*****                                                                                 ******/
 /*****                         M O D E M   C O M M A N D                               ******/
 /*****                                                                                 ******/
 /********************************************************************************************/
@@ -3696,6 +3859,10 @@ static const CommandDefRec   main_commands[] =
     { "rfkill", "RFKILL related commands",
       "allows you to modify/retrieve RFKILL status, hardware blocking\r\n", NULL,
       NULL, rfkill_commands },
+
+    { "nfc", "NFC related commands",
+      "allows you to modify/retrieve NFC states and send notifications\r\n", NULL,
+      NULL, nfc_commands },
 
     { "modem", "Modem related commands",
       "allows you to modify/retrieve modem info\r\n", NULL,
