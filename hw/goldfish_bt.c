@@ -265,3 +265,38 @@ goldfish_bt_new_cs(struct HCIInfo *hci)
 
     return cs;
 }
+
+bool goldfish_bt_add_remote(char *address)
+{
+    ABluetooth bt = &_android_bluetooth[0];
+    return bt_add_remote(bt->hci, address);
+}
+
+void goldfish_bt_remove_remote(char *address)
+{
+    ABluetooth bt = &_android_bluetooth[0];
+
+    if (!strcmp(address, "all")) {
+        bt_remove_all_remotes(bt->hci);
+    } else {
+        bt_remove_remote(bt->hci, address);
+    }
+}
+
+bool goldfish_bt_set_remote_property(char *address, char *property, char *value)
+{
+    ABluetooth bt = &_android_bluetooth[0];
+    return bt_set_remote_property(bt->hci, address, property, value);
+}
+
+bool goldfish_bt_get_property(char *address, char *property, char *ret)
+{
+    ABluetooth bt = &_android_bluetooth[0];
+
+    if (!strcmp(address, "local")) {
+        return bt_get_local_property(bt->hci, property, ret);
+    } else {
+        return bt_get_remote_property(bt->hci, address, property, ret);
+    }
+}
+
