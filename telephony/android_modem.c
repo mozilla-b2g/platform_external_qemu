@@ -126,6 +126,7 @@ int amodem_num_devices = 0;
 static int _amodem_switch_technology(AModem modem, AModemTech newtech, int32_t newpreferred);
 static int _amodem_set_cdma_subscription_source( AModem modem, ACdmaSubscriptionSource ss);
 static int _amodem_set_cdma_prl_version( AModem modem, int prlVersion);
+static const char* handleSignalStrength( const char*  cmd, AModem  modem);
 
 #if DEBUG
 static const char*  quote( const char*  line )
@@ -394,16 +395,22 @@ typedef struct AModemRec_
 
 
 static void
-amodem_unsol( AModem  modem, const char* format, ... )
+amodem_unsol_buffered( AModem  modem, const char* message )
 {
     if (modem->unsol_func) {
-        va_list  args;
-        va_start(args, format);
-        vsnprintf( modem->out_buff, sizeof(modem->out_buff), format, args );
-        va_end(args);
-
-        modem->unsol_func( modem->unsol_opaque, modem->out_buff );
+        modem->unsol_func( modem->unsol_opaque, message );
     }
+}
+
+static void
+amodem_unsol( AModem  modem, const char* format, ... )
+{
+    va_list  args;
+    va_start(args, format);
+    vsnprintf( modem->out_buff, sizeof(modem->out_buff), format, args );
+    va_end(args);
+
+    amodem_unsol_buffered( modem, modem->out_buff );
 }
 
 void
@@ -1171,6 +1178,8 @@ amodem_set_signal_strength( AModem modem, int rssi, int ber )
 {
     modem->rssi = rssi;
     modem->ber = ber;
+
+    amodem_unsol_buffered( modem, handleSignalStrength(NULL, modem) );
 }
 
 static void
@@ -2665,7 +2674,7 @@ handleSignalStrength( const char*  cmd, AModem  modem )
     int ber = modem->ber;
     rssi = (0 > rssi && rssi > 31) ? 99 : rssi ;
     ber = (0 > ber && ber > 7 ) ? 99 : ber;
-    amodem_add_line( modem, "+CSQ: %i,%i,85,130,90,6,4,25,9,50,68,12\r\n", rssi, ber );
+    amodem_add_line( modem, "+CSQ: %i,%i,85,130,90,6,4,99,2147483647,2147483647,2147483647,2147483647\r\n", rssi, ber);
     return amodem_end_line( modem );
 }
 
