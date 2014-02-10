@@ -126,6 +126,7 @@ int amodem_num_devices = 0;
 static int _amodem_switch_technology(AModem modem, AModemTech newtech, int32_t newpreferred);
 static int _amodem_set_cdma_subscription_source( AModem modem, ACdmaSubscriptionSource ss);
 static int _amodem_set_cdma_prl_version( AModem modem, int prlVersion);
+static const char* handleSignalStrength( const char*  cmd, AModem  modem);
 
 #if DEBUG
 static const char*  quote( const char*  line )
@@ -394,16 +395,22 @@ typedef struct AModemRec_
 
 
 static void
-amodem_unsol( AModem  modem, const char* format, ... )
+amodem_unsol_buffered( AModem  modem, const char* message )
 {
     if (modem->unsol_func) {
-        va_list  args;
-        va_start(args, format);
-        vsnprintf( modem->out_buff, sizeof(modem->out_buff), format, args );
-        va_end(args);
-
-        modem->unsol_func( modem->unsol_opaque, modem->out_buff );
+        modem->unsol_func( modem->unsol_opaque, message );
     }
+}
+
+static void
+amodem_unsol( AModem  modem, const char* format, ... )
+{
+    va_list  args;
+    va_start(args, format);
+    vsnprintf( modem->out_buff, sizeof(modem->out_buff), format, args );
+    va_end(args);
+
+    amodem_unsol_buffered( modem, modem->out_buff );
 }
 
 void
@@ -1118,11 +1125,12 @@ amodem_send_calls_update( AModem  modem )
 
 
 int
-amodem_add_inbound_call( AModem  modem, const char*  number )
+amodem_add_inbound_call( AModem  modem, const char*  number, const int  numPresentation, const char*  name, const int  namePresentation )
 {
     AVoiceCall  vcall = amodem_alloc_call( modem );
     ACall       call  = &vcall->call;
     int         len;
+    char        cnapName[ A_CALL_NAME_MAX_SIZE+1 ];
 
     if (call == NULL)
         return -1;
@@ -1141,7 +1149,19 @@ amodem_add_inbound_call( AModem  modem, const char*  number )
     memcpy( call->number, number, len );
     call->number[len] = 0;
 
+    call->numberPresentation = numPresentation;
+
+    if (namePresentation == 0) {
+      len  = strlen(name);
+      if (len >= sizeof(cnapName))
+          len = sizeof(cnapName)-1;
+      memcpy( cnapName, name, len );
+    }
+
+    cnapName[len] = 0;
+
     amodem_unsol( modem, "RING\r");
+    amodem_unsol( modem, "+CNAP: \"%s\",%d\r", cnapName, namePresentation);
     return 0;
 }
 
@@ -1166,6 +1186,8 @@ amodem_set_signal_strength( AModem modem, int rssi, int ber )
 {
     modem->rssi = rssi;
     modem->ber = ber;
+
+    amodem_unsol_buffered( modem, handleSignalStrength(NULL, modem) );
 }
 
 static void
@@ -2254,9 +2276,11 @@ handleListCurrentCalls( const char*  cmd, AModem  modem )
         AVoiceCall  vcall = modem->calls + nn;
         ACall       call  = &vcall->call;
         if (call->mode == A_CALL_VOICE)
-            amodem_add_line( modem, "+CLCC: %d,%d,%d,%d,%d,\"%s\",%d\r\n",
+            /* see TS 22.067 Table 1 for the definition priority */
+            /* +CLCC: <ccid1>,<dir>,<stat>,<mode>,<mpty>,<number>,<type>,<alpha>,<priority>,<CLI validity> */
+            amodem_add_line( modem, "+CLCC: %d,%d,%d,%d,%d,\"%s\",%d,\"\",2,%d\r\n",
                              call->id, call->dir, call->state, call->mode,
-                             call->multi, call->number, 129 );
+                             call->multi, call->number, 129 , call->numberPresentation);
     }
     return amodem_end_line( modem );
 }
@@ -2660,7 +2684,7 @@ handleSignalStrength( const char*  cmd, AModem  modem )
     int ber = modem->ber;
     rssi = (0 > rssi && rssi > 31) ? 99 : rssi ;
     ber = (0 > ber && ber > 7 ) ? 99 : ber;
-    amodem_add_line( modem, "+CSQ: %i,%i,85,130,90,6,4,25,9,50,68,12\r\n", rssi, ber );
+    amodem_add_line( modem, "+CSQ: %i,%i,85,130,90,6,4,99,2147483647,2147483647,2147483647,2147483647\r\n", rssi, ber);
     return amodem_end_line( modem );
 }
 

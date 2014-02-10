@@ -195,6 +195,8 @@ typedef enum {
 } ACallMode;
 
 #define  A_CALL_NUMBER_MAX_SIZE  16
+/* TS 24.096 clause 4.1 */
+#define  A_CALL_NAME_MAX_SIZE  80
 
 #define CALL_FAIL_UNOBTAINABLE_NUMBER 1
 #define CALL_FAIL_NORMAL 16
@@ -207,12 +209,13 @@ typedef struct {
     ACallMode   mode;
     int         multi;
     char        number[ A_CALL_NUMBER_MAX_SIZE+1 ];
+    int         numberPresentation;
 } ACallRec, *ACall;
 
 extern int    amodem_get_call_count( AModem  modem );
 extern ACall  amodem_get_call( AModem  modem,  int  index );
 extern ACall  amodem_find_call_by_number( AModem  modem, const char*  number );
-extern int    amodem_add_inbound_call( AModem  modem, const char*  number );
+extern int    amodem_add_inbound_call( AModem  modem, const char*  number, const int  numPresentation, const char*  name, const int  namePresentation );
 extern int    amodem_update_call( AModem  modem, const char*  number, ACallState  state );
 extern int    amodem_disconnect_call( AModem  modem, const char*  number );
 extern int    amodem_remote_call_busy( AModem  modem, const char*  number );

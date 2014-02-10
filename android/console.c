@@ -1345,22 +1345,73 @@ do_send_stkCmd( ControlClient  client, char*  args  )
 static int
 do_gsm_call( ControlClient  client, char*  args )
 {
-    /* check that we have a phone number made of digits */
+    enum { NUMBER = 0, NUMBER_PRESENTATION, NAME, NAME_PRESENTATION, NUM_CALL_PARAMS };
+    int     top_param = 0;
+    char*   params[ NUM_CALL_PARAMS ];
+    char*   number = "";
+    int     number_presentation = 0;
+    char*   name = "";
+    int     name_presentation = 0;
+    char*   end;
+
+    /* check that we have a valid input */
     if (!args) {
-        control_write( client, "KO: missing argument, try 'gsm call <phonenumber>'\r\n" );
+        control_write( client, "KO: missing argument, try 'gsm call <phonenumber> [<numPresentation> [<name> [<namePresentation]]]'\r\n" );
         return -1;
     }
 
-    if (gsm_check_number(args)) {
+    params[top_param] = strtok (args, " \t");
+    while (params[top_param] != NULL) {
+      top_param++;
+      if (top_param > NUM_CALL_PARAMS) {
+          control_write( client, "KO: too many arguments, try 'gsm call <phonenumber> [<numPresentation> [<name> [<namePresentation]]]'\r\n" );
+          return -1;
+      }
+      params[top_param] = strtok (NULL, " \t");
+    }
+
+    if (gsm_check_number(params[NUMBER])) {
         control_write( client, "KO: bad phone number format, use digits, # and + only\r\n" );
         return -1;
+    }
+    number = params[NUMBER];
+
+    if (params[NUMBER_PRESENTATION]) {
+        number_presentation = strtol( params[NUMBER_PRESENTATION], &end, 10 );
+        if (*end != NULL) {
+            control_write( client, "KO: argument '%s' is not a number\n", end );
+            return -1;
+        }
+
+        if (number_presentation < 0 || number_presentation > 3) {
+            control_write( client, "KO: number presentation should be ranged between 0 and 3\n" );
+            return -1;
+        }
+    }
+
+    if (params[NAME]) {
+        name = params[NAME];
+    }
+
+    if (params[NAME_PRESENTATION]) {
+        name_presentation = strtol( params[NAME_PRESENTATION], &end, 10 );
+        if (*end != NULL) {
+            control_write( client, "KO: argument '%s' is not a number\n", end );
+            return -1;
+        }
+
+        if (name_presentation < 0 || name_presentation > 3) {
+            control_write( client, "KO: name presentation should be ranged between 0 and 3\n" );
+            return -1;
+        }
     }
 
     if (!client->modem) {
         control_write( client, "KO: modem emulation not running\r\n" );
         return -1;
     }
-    amodem_add_inbound_call( client->modem, args );
+    amodem_add_inbound_call( client->modem, number, number_presentation, name, name_presentation );
+
     return 0;
 }
 
@@ -1662,8 +1713,12 @@ static const CommandDefRec  gsm_commands[] =
     do_gsm_list, NULL },
 
     { "call", "create inbound phone call",
-    "'gsm call <phonenumber>' allows you to simulate a new inbound call\r\n", NULL,
-    do_gsm_call, NULL },
+    "'gsm call <phonenumber> [<numPresentation> [<name> [<namePresentation]]]' allows you to simulate a new inbound call\r\n"
+    "phonenumber is the inbound call number\r\n"
+    "numPresentation range is 0..3\r\n"
+    "name is the inbound call name\r\n"
+    "namePresentation range is 0..3\r\n",
+    NULL, do_gsm_call, NULL },
 
     { "busy", "close waiting outbound call as busy",
     "'gsm busy <remoteNumber>' closes an outbound call, reporting\r\n"
