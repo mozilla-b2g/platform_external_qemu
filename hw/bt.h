@@ -106,9 +106,23 @@ struct bt_device_s {
 /* bt.c */
 void bt_device_init(struct bt_device_s *dev, struct bt_scatternet_s *net);
 void bt_device_done(struct bt_device_s *dev);
+bool bt_device_get_property(
+    struct bt_device_s *dev, const char *property, char *ret);
+bool bt_device_set_property(
+    struct bt_device_s *dev, const char *property, char *value);
 
 /* bt-hci.c */
+#define MAX_BD_NAME_SIZE 248
+
 struct HCIInfo *bt_new_hci(struct bt_scatternet_s *net);
+bool bt_add_remote(struct HCIInfo *info, char *address);
+void bt_remove_remote(struct HCIInfo *info, char *address);
+void bt_remove_all_remotes(struct HCIInfo *info);
+bool bt_set_remote_property(
+    struct HCIInfo *info, char *address, char *property, char *value);
+bool bt_get_local_property(struct HCIInfo *info, char *property, char *ret);
+bool bt_get_remote_property(
+    struct HCIInfo *info, char *address, char *property, char *ret);
 
 /* bt-vhci.c */
 void bt_vhci_init(struct HCIInfo *info);

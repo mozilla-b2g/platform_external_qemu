@@ -119,3 +119,65 @@ void bt_device_done(struct bt_device_s *dev)
 
     *p = dev->next;
 }
+
+bool bt_device_get_property(
+    struct bt_device_s *dev, const char *property, char *ret)
+{
+    if (!dev) {
+        fprintf(stderr, "Device doesn't exist.\n");
+        return false;
+    }
+
+    if (!strcmp(property, "name")) {
+        if (!dev->lmp_name)
+            return true;
+
+        int length = strlen(dev->lmp_name);
+        if (length > MAX_BD_NAME_SIZE) {
+            fprintf(stderr, "Device name exceeds the max size (248 bytes).\n");
+            return false;
+        }
+
+        strncpy(ret, dev->lmp_name, length);
+    } else if (!strcmp(property, "discoverable")) {
+        strcpy(ret, dev->inquiry_scan == 0 ? "false" : "true");
+    } else if (!strcmp(property, "cod")) {
+        sprintf(ret, "0x%02x%02x%02x",
+            dev->class[2], dev->class[1], dev->class[0]);
+    } else {
+        fprintf(stderr, "Unhandled property: %s", property);
+        return false;
+    }
+
+    return true;
+}
+
+bool bt_device_set_property(
+    struct bt_device_s *dev, const char *property, char *value)
+{
+    if (!dev) {
+        fprintf(stderr, "Device doesn't exist.\n");
+        return false;
+    }
+
+    if (!strcmp(property, "name")) {
+        if (dev->lmp_name) {
+            qemu_free((void *) dev->lmp_name);
+        }
+        dev->lmp_name = qemu_strdup(value);
+    } else if (!strcmp(property, "discoverable")) {
+        if (!strcmp(value, "true")) {
+            dev->inquiry_scan = 1;
+        } else if (!strcmp(value, "false")) {
+            dev->inquiry_scan = 0;
+        } else {
+            /* Invalue argument. Do nothing. */
+        }
+    } else {
+        fprintf(stderr, "Unhandled property: %s", property);
+        return false;
+    }
+
+    return true;
+}
+
