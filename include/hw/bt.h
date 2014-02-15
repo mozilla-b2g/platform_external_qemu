@@ -114,6 +114,9 @@ struct bt_device_s {
 void bt_device_init(struct bt_device_s *dev, struct bt_scatternet_s *net);
 void bt_device_done(struct bt_device_s *dev);
 
+struct bt_device_s *bt_scatternet_find_slave(struct bt_scatternet_s *net,
+                const bdaddr_t *addr);
+
 /* bt-hci.c */
 struct HCIInfo *bt_new_hci(struct bt_scatternet_s *net);
 

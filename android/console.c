@@ -3698,6 +3698,137 @@ static const CommandDefRec  modem_commands[] =
 /********************************************************************************************/
 /********************************************************************************************/
 /*****                                                                                 ******/
+/*****                      B L U E T O O T H   C O M M A N D S                        ******/
+/*****                                                                                 ******/
+/********************************************************************************************/
+/********************************************************************************************/
+
+static int
+validate_bt_args_local( ControlClient         client,
+                        char                 *args,
+                        struct bt_device_s  **dev )
+{
+    if (!client->bt) {
+        control_write(client, "KO: bluetooth emulation not running\r\n");
+        return -1;
+    }
+
+    *dev = abluetooth_get_bt_device(client->bt);
+    if (!*dev) {
+        control_write(client, "KO: local device is not configurable\r\n");
+        return -1;
+    }
+
+    return 0;
+}
+
+static int
+validate_bt_args_bdaddr( ControlClient        client,
+                         char                *args,
+                         struct bt_device_s **dev,
+                         bdaddr_t            *addr,
+                         const bdaddr_t      *default_addr )
+{
+    char *p;
+
+    if (validate_bt_args_local(client, args, dev) < 0) {
+        return -1;
+    }
+
+    if (!args || !(p = strtok(args, " "))) {
+        if (!default_addr) {
+            control_write(client, "KO: missing bluetooth address\r\n");
+            return -1;
+        }
+        bacpy(addr, default_addr);
+    } else if (ba_from_str(addr, p)) {
+        control_write(client, "KO: invalid bluetooth address\r\n");
+        return -1;
+    }
+
+    return 0;
+}
+
+static int
+validate_bt_args_device( ControlClient         client,
+                         char                 *args,
+                         struct bt_device_s  **local,
+                         struct bt_device_s  **dev,
+                         bdaddr_t             *addr,
+                         const bdaddr_t       *default_addr,
+                         int                   accept_all )
+{
+    if (validate_bt_args_bdaddr(client, args, local, addr, default_addr) < 0) {
+        return -1;
+    }
+
+    if ((accept_all && !bacmp(addr, BDADDR_ALL)) ||
+        !bacmp(addr, BDADDR_LOCAL) ||
+        !bacmp(addr, &(*local)->bd_addr)) {
+        *dev = *local;
+        return 0;
+    }
+
+    *dev = bt_scatternet_find_slave((*local)->net, addr);
+    if (!*dev) {
+        control_write(client, "KO: device not found\r\n");
+        return -1;
+    }
+
+    return 0;
+}
+
+static void
+do_bt_list_device( ControlClient        client,
+                   struct bt_device_s  *local,
+                   struct bt_device_s  *dev )
+{
+    char buf[BDADDR_BUF_LEN], type;
+
+    type = dev == local ? '*' : 'L';
+    ba_to_str(buf, &dev->bd_addr);
+    control_write(client, "%c %s\r\n", type, buf);
+}
+
+static int
+do_bt_list( ControlClient client, char* args )
+{
+    struct bt_device_s *local, *dev;
+    bdaddr_t addr;
+
+    if (validate_bt_args_device(client, args, &local, &dev,
+                     &addr, BDADDR_ALL, 1) < 0) {
+        return -1;
+    }
+
+    if (!bacmp(&addr, BDADDR_ALL)) {
+        dev = local->net->slave;
+        while (dev) {
+           do_bt_list_device(client, local, dev);
+           dev = dev->next;
+        }
+
+        return 0;
+    }
+
+    do_bt_list_device(client, local, dev);
+    return 0;
+}
+
+static const CommandDefRec bt_commands[] =
+{
+    { "list", "list scatternet devices",
+    "'bt list [<bd_addr>]':\r\n"
+    "List a device within the same scatternet with current local device. If <bd_addr>\r\n"
+    "is omitted, Bluetooth ALL address ff:ff:ff:ff:ff:ff is assumed.\r\n",
+    NULL, do_bt_list, NULL },
+
+    { NULL, NULL, NULL, NULL, NULL, NULL }
+};
+
+/********************************************************************************************/
+/********************************************************************************************/
+/*****                                                                                 ******/
 /*****                           M A I N   C O M M A N D S                             ******/
 /*****                                                                                 ******/
 /********************************************************************************************/
@@ -4089,6 +4220,10 @@ static const CommandDefRec   main_commands[] =
     { "modem", "Modem related commands",
       "allows you to modify/retrieve modem info\r\n", NULL,
       NULL, modem_commands },
+
+    { "bt", "Bluetooth related commands",
+      "allows you to retrieve BT status or add/remove remote devices\r\n", NULL,
+      NULL, bt_commands },
 
     { NULL, NULL, NULL, NULL, NULL, NULL }
 };

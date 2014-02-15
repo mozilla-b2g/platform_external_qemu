@@ -133,3 +133,20 @@ void bt_device_done(struct bt_device_s *dev)
 
     *p = dev->next;
 }
+
+struct bt_device_s *bt_scatternet_find_slave(struct bt_scatternet_s *net,
+                const bdaddr_t *addr)
+{
+    struct bt_device_s *slave;
+
+    slave = net->slave;
+    while (slave) {
+        if (!bacmp(&slave->bd_addr, addr)) {
+            break;
+        }
+
+        slave = slave->next;
+    }
+
+    return slave;
+}
