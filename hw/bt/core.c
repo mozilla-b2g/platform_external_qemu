@@ -134,6 +134,129 @@ void bt_device_done(struct bt_device_s *dev)
     *p = dev->next;
 }
 
+int _bt_device_enumerate_properties_loop(struct bt_device_s *dev,
+                int(*callback)(void*, const char*, const char*), void *opaque,
+                const char **enumerables, size_t len)
+{
+    char buf[1024];
+    const char *prop;
+    size_t i;
+    int ret;
+
+    for (i = 0; i < len; i++) {
+        prop = enumerables[i];
+        if (bt_device_get_property(dev, prop, buf, sizeof buf) < 0) {
+            continue;
+        }
+
+        ret = callback(opaque, prop, buf);
+        if (ret < 0) {
+            return ret;
+        }
+    }
+
+    return 0;
+}
+
+int bt_device_enumerate_properties(struct bt_device_s *dev,
+                int(*callback)(void*, const char*, const char*), void *opaque)
+{
+    static const char *enumerables[] = {
+        "address", "cod", "discoverable", "name"
+    };
+
+    int ret;
+
+    ret = _bt_device_enumerate_properties_loop(dev, callback, opaque,
+                    enumerables, ARRAY_SIZE(enumerables));
+    if (ret < 0) {
+        return ret;
+    }
+
+    if (dev->enumerate_properties) {
+        return (dev->enumerate_properties)(dev, callback, opaque);
+    }
+
+    return 0;
+}
+
+int bt_device_get_property(struct bt_device_s *dev, const char *property,
+                char *out_buf, size_t out_len)
+{
+    if (!strcmp(property, "address")) {
+        char str[BDADDR_BUF_LEN];
+
+        ba_to_str(str, &dev->bd_addr);
+        return snprintf(out_buf, out_len, str);
+    }
+
+    if (!strcmp(property, "cod")) {
+        return snprintf(out_buf, out_len, "0x%02x%02x%02x",
+                        dev->class[2], dev->class[1], dev->class[0]);
+    }
+
+    if (!strcmp(property, "discoverable")) {
+        const char *ret;
+
+        ret = dev->inquiry_scan == 0 ? "false" : "true";
+        return snprintf(out_buf, out_len, ret);
+    }
+
+    if (!strcmp(property, "name")) {
+        if (!dev->lmp_name) {
+            if (out_len) *out_buf = '\0';
+            return 0;
+        }
+
+        return snprintf(out_buf, out_len, dev->lmp_name);
+    }
+
+    if (dev->get_property) {
+        return dev->get_property(dev, property, out_buf, out_len);
+    }
+
+    fprintf(stderr, "%s: getting unknown property \"%s\" to bt device \"%s\"\n",
+                    __FUNCTION__, property, dev->lmp_name ?: "(null)");
+    return -1;
+}
+
+int bt_device_set_property(struct bt_device_s *dev, const char *property,
+                const char *value)
+{
+    if (!strcmp(property, "discoverable")) {
+        if (!strcmp(value, "true")) {
+            dev->inquiry_scan = 1;
+        } else if (!strcmp(value, "false")) {
+            dev->inquiry_scan = 0;
+        } else {
+            return -1;
+        }
+
+        return 0;
+    }
+
+    if (!strcmp(property, "name")) {
+        if (dev->lmp_name) {
+            g_free((void *) dev->lmp_name);
+        }
+        if (value) {
+            dev->lmp_name = g_strdup(value);
+        } else {
+            dev->lmp_name = NULL;
+        }
+
+        return 0;
+    }
+
+    if (dev->set_property) {
+        return dev->set_property(dev, property, value);
+    }
+
+    fprintf(stderr, "%s: setting unknown property \"%s\" to bt device \"%s\"\n",
+                    __FUNCTION__, property, dev->lmp_name ?: "(null)");
+    return -1;
+}
+
 struct bt_device_s *bt_scatternet_find_slave(struct bt_scatternet_s *net,
                 const bdaddr_t *addr)
 {

@@ -2133,6 +2133,33 @@ static int bt_hci_bdaddr_set(struct HCIInfo *info, const uint8_t *bd_addr)
     return 0;
 }
 
+static int bt_hci_enumerate_properties(struct bt_device_s *dev,
+                int(*callback)(void*, const char*, const char*), void *opaque)
+{
+    static const char *enumerables[] = {
+        "discovering"
+    };
+
+    return _bt_device_enumerate_properties_loop(dev, callback, opaque,
+                    enumerables, ARRAY_SIZE(enumerables));
+}
+
+static int bt_hci_get_property(struct bt_device_s *dev, const char *property,
+                char *out_buf, size_t out_len)
+{
+    struct bt_hci_s* hci;
+
+    hci = hci_from_device(dev);
+    if (!strcmp(property, "discovering")) {
+        const char *ret;
+
+        ret = (hci->lm.inquire || hci->lm.periodic) ? "true" : "false";
+        return snprintf(out_buf, out_len, ret);
+    }
+
+    return -1;
+}
+
 static void bt_hci_done(struct HCIInfo *info);
 static void bt_hci_destroy(struct bt_device_s *dev)
 {
@@ -2175,6 +2202,9 @@ struct HCIInfo *bt_new_hci(struct bt_scatternet_s *net)
     s->info.acl_send = bt_submit_acl;
     s->info.bdaddr_set = bt_hci_bdaddr_set;
     s->info.device = &s->device;
+
+    s->device.enumerate_properties = bt_hci_enumerate_properties;
+    s->device.get_property = bt_hci_get_property;
 
     s->device.handle_destroy = bt_hci_destroy;
 

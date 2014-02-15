@@ -101,6 +101,13 @@ struct bt_device_s {
                     int start, int len);
     void (*lmp_mode_change)(struct bt_link_s *link);
 
+    int (*enumerate_properties)(struct bt_device_s *dev,
+                int(*callback)(void*, const char*, const char*), void *opaque);
+    int (*get_property)(struct bt_device_s *device, const char *property,
+                    char *out_buf, size_t out_len);
+    int (*set_property)(struct bt_device_s *dev, const char *property,
+                    const char *value);
+
     void (*handle_destroy)(struct bt_device_s *device);
     struct bt_device_s *next;	/* Next in the piconet/scatternet */
 
@@ -113,6 +120,16 @@ struct bt_device_s {
 /* bt.c */
 void bt_device_init(struct bt_device_s *dev, struct bt_scatternet_s *net);
 void bt_device_done(struct bt_device_s *dev);
+
+int  _bt_device_enumerate_properties_loop(struct bt_device_s *dev,
+                int(*callback)(void*, const char*, const char*), void *opaque,
+                const char **enumerables, size_t len);
+int  bt_device_enumerate_properties(struct bt_device_s *dev,
+                int(*callback)(void*, const char*, const char*), void *opaque);
+int  bt_device_get_property(struct bt_device_s *dev, const char *property,
+                char *out_buf, size_t out_len);
+int  bt_device_set_property(struct bt_device_s *dev, const char *property,
+                const char *value);
 
 struct bt_device_s *bt_scatternet_find_slave(struct bt_scatternet_s *net,
                 const bdaddr_t *addr);

@@ -3815,6 +3815,50 @@ do_bt_list( ControlClient client, char* args )
     return 0;
 }
 
+static int
+enum_prop_callback(void *opaque, const char *prop, const char *value)
+{
+    control_write((ControlClient)opaque, "%s: %s\r\n", prop, value);
+    return 0;
+}
+
+static int
+do_bt_property( ControlClient client, char* args )
+{
+    struct bt_device_s *local, *dev;
+    bdaddr_t addr;
+    char *p, *v;
+
+    if (validate_bt_args_device(client, args, &local, &dev,
+                    &addr, BDADDR_LOCAL, 0) < 0) {
+        return -1;
+    }
+
+    p = strtok(NULL, " ");
+    if (!p) {
+        return bt_device_enumerate_properties(dev, enum_prop_callback, client);
+    }
+
+    v = strtok(NULL, " ");
+    if (!v) {
+        char buf[1024];
+        if (bt_device_get_property(dev, p, buf, sizeof buf) < 0) {
+            control_write(client, "KO: invalid property '%s'\r\n", p);
+            return -1;
+        }
+
+        control_write(client, "%s: %s\r\n", p, buf);
+        return 0;
+    }
+
+    if (bt_device_set_property(dev, p, v) < 0) {
+        control_write(client, "KO: invalid property '%s' or value '%s'\r\n", p, v);
+        return -1;
+    }
+
+    return 0;
+}
+
 static const CommandDefRec bt_commands[] =
 {
     { "list", "list scatternet devices",
@@ -3822,6 +3866,15 @@ static const CommandDefRec bt_commands[] =
     "List a device within the same scatternet with current local device. If <bd_addr>\r\n"
     "is omitted, Bluetooth ALL address ff:ff:ff:ff:ff:ff is assumed.\r\n",
     NULL, do_bt_list, NULL },
+
+    { "property", "get/set device property",
+    "'bt property [<bd_addr> [<prop> [value]]]':\r\n"
+    "Set property <prop> on device <bd_addr> to <value>.\r\n"
+    "If <value> is omitted, show the property <prop> of device <bd_addr>.\r\n"
+    "If both <prop> and <value> are omitted, enumerate all properties of device\r\n"
+    "<bd_addr>.  If <bd_addr> is also omitted, Bluetooth LOCAL address\r\n"
+    "ff:ff:ff:00:00:00 is assumed.\r\n",
+    NULL, do_bt_property, NULL },
 
     { NULL, NULL, NULL, NULL, NULL, NULL }
 };
