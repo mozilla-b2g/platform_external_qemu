@@ -3778,6 +3778,103 @@ validate_bt_args_device( ControlClient         client,
     return 0;
 }
 
+static int
+do_bt_remote_add( ControlClient client, char* args )
+{
+    struct bt_device_s *dev;
+    bdaddr_t addr;
+    char buf[BDADDR_BUF_LEN];
+
+    if (validate_bt_args_local(client, args, &dev) < 0) {
+        return -1;
+    }
+
+    // Create device within dev->net;
+    dev = bt_remote_device_new(dev->net);
+    if (!dev) {
+        control_write(client, "KO: failed to create remote device\r\n");
+        return -1;
+    }
+
+    ba_to_str(buf, &dev->bd_addr);
+    control_write(client, "%s\r\n", buf);
+    return 0;
+}
+
+static int
+do_bt_remote_remove_device( ControlClient        client,
+                            struct bt_device_s  *dev,
+                            int                  fatal )
+{
+    char buf[BDADDR_BUF_LEN];
+
+    if (bt_device_get_property(dev, "is_remote", NULL, 0) < 0) {
+        if (fatal) {
+            control_write(client, "KO: not a remote device\r\n");
+            return -1;
+        }
+        return 0;
+    }
+
+    ba_to_str(buf, &dev->bd_addr);
+    dev->handle_destroy(dev);
+    control_write(client, "%s\r\n", buf);
+
+    return 0;
+}
+
+static void
+do_bt_remote_remove_scatternet( ControlClient            client,
+                                struct bt_scatternet_s  *net )
+{
+    struct bt_device_s *dev, *next;
+
+    dev = net->slave;
+    while (dev) {
+        next = dev->next;
+        do_bt_remote_remove_device(client, dev, 0);
+        dev = next;
+    }
+}
+
+static int
+do_bt_remote_remove( ControlClient client, char* args )
+{
+    struct bt_device_s *local, *dev;
+    bdaddr_t addr;
+
+    if (validate_bt_args_device(client, args, &local, &dev,
+                   &addr, NULL, 1) < 0) {
+        return -1;
+    }
+
+    if (!bacmp(&addr, BDADDR_ALL)) {
+        // Remove all remote devices of current scatter net.
+        do_bt_remote_remove_scatternet(client, local->net);
+        return 0;
+    }
+
+    // Remove only one device.
+    return do_bt_remote_remove_device(client, dev, 1);
+}
+
+static const CommandDefRec bt_remote_commands[] =
+{
+    { "add", "add virtual Bluetooth remote device",
+    "'bt remote add':\r\n"
+    "Add a remote device to the scatternet where the local device lives and return\r\n"
+    "the address of the newly created device.\r\n",
+    NULL, do_bt_remote_add, NULL },
+
+    { "remove", "remove virtual Bluetooth remote device",
+    "'bt remove <bd_addr>':\r\n"
+    "Remove the remote device(s) specified by <bd_addr>.  Use Bluetooth ALL address\r\n"
+    "ff:ff:ff:ff:ff:ff to remove all remote devices the scatternet.\r\n",
+    NULL, do_bt_remote_remove, NULL },
+
+    { NULL, NULL, NULL, NULL, NULL, NULL }
+};
+
 static void
 do_bt_list_device( ControlClient        client,
                    struct bt_device_s  *local,
@@ -3785,7 +3882,13 @@ do_bt_list_device( ControlClient        client,
 {
     char buf[BDADDR_BUF_LEN], type;
 
-    type = dev == local ? '*' : 'L';
+    if (dev == local) {
+        type = '*';
+    } else if (bt_device_get_property(dev, "is_remote", NULL, 0) >= 0) {
+        type = 'R';
+    } else {
+        type = 'L';
+    }
     ba_to_str(buf, &dev->bd_addr);
     control_write(client, "%c %s\r\n", type, buf);
 }
@@ -3875,6 +3978,9 @@ static const CommandDefRec bt_commands[] =
     "<bd_addr>.  If <bd_addr> is also omitted, Bluetooth LOCAL address\r\n"
     "ff:ff:ff:00:00:00 is assumed.\r\n",
     NULL, do_bt_property, NULL },
+
+    { "remote", "manage Bluetooth virtual remote devices", NULL,
+    NULL, NULL, bt_remote_commands },
 
     { NULL, NULL, NULL, NULL, NULL, NULL }
 };

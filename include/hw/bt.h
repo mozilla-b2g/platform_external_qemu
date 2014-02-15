@@ -197,6 +197,16 @@ struct bt_device_s *bt_mouse_init(struct bt_scatternet_s *net);
 struct bt_device_s *bt_tablet_init(struct bt_scatternet_s *net);
 struct bt_device_s *bt_keyboard_init(struct bt_scatternet_s *net);
 
+/* bt-remote.c */
+struct bt_remote_device_s {
+    struct bt_l2cap_device_s l2cap_dev;
+};
+
+void bt_remote_device_init(struct bt_remote_device_s *dev,
+                struct bt_scatternet_s *net);
+
+struct bt_device_s *bt_remote_device_new(struct bt_scatternet_s *net);
+
 /* Link Management Protocol layer defines */
 
 #define LLID_ACLU_CONT		0x1
