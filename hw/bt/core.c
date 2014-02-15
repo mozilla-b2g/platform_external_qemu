@@ -21,6 +21,20 @@
 #include "net/net.h"
 #include "hw/bt.h"
 
+int ba_from_str(bdaddr_t *addr, const char *str)
+{
+    return sscanf(str, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",
+                  &addr->b[5], &addr->b[4], &addr->b[3],
+                  &addr->b[2], &addr->b[1], &addr->b[0]) == 6 ? 0 : -1;
+}
+
+void ba_to_str(char *buf, const bdaddr_t *addr)
+{
+    sprintf(buf, "%02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx",
+            addr->b[5], addr->b[4], addr->b[3],
+            addr->b[2], addr->b[1], addr->b[0]);
+}
+
 /* Slave implementations can ignore this */
 static void bt_dummy_lmp_mode_change(struct bt_link_s *link)
 {

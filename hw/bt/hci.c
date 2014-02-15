@@ -2174,6 +2174,7 @@ struct HCIInfo *bt_new_hci(struct bt_scatternet_s *net)
     s->info.sco_send = bt_submit_sco;
     s->info.acl_send = bt_submit_acl;
     s->info.bdaddr_set = bt_hci_bdaddr_set;
+    s->info.device = &s->device;
 
     s->device.handle_destroy = bt_hci_destroy;
 

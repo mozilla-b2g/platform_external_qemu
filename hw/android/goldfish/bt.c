@@ -44,6 +44,7 @@
 #include <assert.h>
 #include "net/net.h"
 #include "hw/bt.h"
+#include "hw/android/goldfish/bt.h"
 
 //#define DEBUG 1
 
@@ -57,16 +58,16 @@
 #  define  D(...)   ((void)0)
 #endif
 
-typedef struct {
+typedef struct ABluetoothRec_ {
     struct HCIInfo*   hci;
 
     CharDriverState*  cs;
     char              in_buff[ 1024 ];
     int               in_pos;
-} ABluetoothRec, *ABluetooth;
+} ABluetoothRec;
 
 static ABluetoothRec _android_bluetooth[MAX_NICS];
-static int cur_bt;
+static int num_bt;
 
 #if DEBUG
 static void
@@ -238,12 +239,12 @@ goldfish_bt_new_cs(struct HCIInfo *hci)
 {
     CharDriverState*  cs;
 
-    if (cur_bt >= MAX_NICS) {
+    if (num_bt >= MAX_NICS) {
         D("goldfish_bt_new_cs: too many devices\n");
         return NULL;
     }
 
-    ABluetooth bt = &_android_bluetooth[cur_bt];
+    ABluetooth bt = &_android_bluetooth[num_bt];
 
     if (qemu_chr_open_charpipe(&bt->cs, &cs) < 0) {
         D("goldfish_bt_new_cs: cannot open charpipe device\n");
@@ -261,7 +262,19 @@ goldfish_bt_new_cs(struct HCIInfo *hci)
     bt->hci->evt_recv = goldfish_bt_hci_packet_event;
     bt->hci->acl_recv = goldfish_bt_hci_packet_acl;
 
-    cur_bt++;
+    num_bt++;
 
     return cs;
+}
+
+ABluetooth
+abluetooth_get_instance(int id)
+{
+    return (id >= 0 && id < num_bt) ? &_android_bluetooth[id] : NULL;
+}
+
+struct bt_device_s *
+abluetooth_get_bt_device(ABluetooth bt)
+{
+    return bt->hci ? bt->hci->device : NULL;
 }

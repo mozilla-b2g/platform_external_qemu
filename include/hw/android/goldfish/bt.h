@@ -1,7 +1,7 @@
 #ifndef GOLDFISH_BT_H
 #define GOLDFISH_BT_H
 
-#include "hw/bt.h" // struct HCIInfo;
+#include "hw/bt.h"
 
 typedef enum {
     RFKILL_TYPE_WLAN = 0,
@@ -15,8 +15,13 @@ typedef enum {
 
 #define RFKILL_TYPE_BIT(type) (0x01UL << (type))
 
+typedef struct ABluetoothRec_* ABluetooth;
+
 /* hw/goldfish_bt.c */
 CharDriverState* goldfish_bt_new_cs (struct HCIInfo *hci);
+
+ABluetooth          abluetooth_get_instance(int id);
+struct bt_device_s *abluetooth_get_bt_device(ABluetooth bt);
 
 /* hw/goldfish_rfkill.c */
 uint32_t android_rfkill_get_blocking();

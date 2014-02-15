@@ -23,6 +23,9 @@
  * along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
 
+#ifndef QEMU_BT_H
+#define QEMU_BT_H
+
 /* BD Address */
 typedef struct {
     uint8_t b[6];
@@ -46,6 +49,10 @@ static inline void bacpy(bdaddr_t *dst, const bdaddr_t *src)
     (orig)->b[0], (orig)->b[1], (orig)->b[2],	\
     (orig)->b[3], (orig)->b[4], (orig)->b[5],	\
 }, }
+
+int  ba_from_str(bdaddr_t *addr, const char *str);
+#define BDADDR_BUF_LEN  18
+void ba_to_str(char *buf, const bdaddr_t *addr);
 
 /* The twisted structures of a bluetooth environment */
 struct bt_device_s;
@@ -2181,3 +2188,5 @@ enum bt_sdp_attribute_id {
     SDP_ATTR_NORMALLY_CONNECTABLE		= 0x020d,
     SDP_ATTR_BOOT_DEVICE			= 0x020e,
 };
+
+#endif /* QEMU_BT_H */

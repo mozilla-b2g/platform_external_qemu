@@ -108,11 +108,12 @@ typedef struct ControlClientRec_
 
     /**
      * Currently referred modem device. Each control client have their own
-     * modem device pointer to the one it's referring to. This pointer might be
-     * NULL so every command handler should check its validity every time
-     * referring to it. Its value is only modified by 'mux modem <N>'.
+     * modem|bt device pointer to the one it's referring to. This pointer might
+     * be NULL so every command handler should check its validity every time
+     * referring to it. Its value is only modified by 'mux <type> <id>'.
      */
     AModem                     modem;
+    ABluetooth                 bt;
 } ControlClientRec;
 
 
@@ -332,7 +333,10 @@ control_client_create( Socket         socket,
         client->global  = global;
         client->sock    = socket;
         client->next    = global->clients;
+
         client->modem   = amodem_get_instance(0);
+        client->bt      = abluetooth_get_instance(0);
+
         global->clients = client;
 
         qemu_set_fd_handler( socket, control_client_read, NULL, client );
@@ -3139,12 +3143,76 @@ do_mux_modem( ControlClient client, char* args )
     return 0;
 }
 
+static int
+do_mux_bt_list( ControlClient client )
+{
+    int id;
+    ABluetooth bt;
+
+    id = 0;
+    while ((bt = abluetooth_get_instance(id++)) != NULL) {
+        struct bt_device_s *dev;
+        char buf[BDADDR_BUF_LEN];
+
+        dev = abluetooth_get_bt_device(bt);
+        if (dev) {
+            ba_to_str(buf, &dev->bd_addr);
+        }
+        control_write(client, "%c %s\n",
+                      (client->bt == bt ? '*' : 'L'),
+                      (dev ? buf : "(null)"));
+    }
+
+    return 0;
+}
+
+static int
+do_mux_bt_set( ControlClient client, char* args )
+{
+    ABluetooth bt;
+    bdaddr_t addr;
+
+    bt = NULL;
+    if (!ba_from_str(&addr, args)) {
+        ABluetooth candidate;
+        int id = 0;
+
+        while ((candidate = abluetooth_get_instance(id++)) != NULL) {
+            struct bt_device_s *dev;
+
+            dev = abluetooth_get_bt_device(candidate);
+            if (dev && !bacmp(&addr, &dev->bd_addr)) {
+                bt = candidate;
+                break;
+            }
+        }
+    }
+
+    if (!bt) {
+        control_write(client, "WARNING: device '%s' is not available\n", args);
+    }
+
+    client->bt = bt;
+    return do_mux_bt_list(client);
+}
+
+static int
+do_mux_bt( ControlClient client, char* args )
+{
+    return args ? do_mux_bt_set(client, args) : do_mux_bt_list(client);
+}
+
 static const CommandDefRec  mux_commands[] =
 {
     { "modem", "select active modem device",
       "'modem <instance index>': select active modem device by instance for further config.\r\n"
       "'modem': display current active modem device.\r\n", NULL,
       do_mux_modem, NULL},
+
+    { "bt", "select active bluetooth device",
+      "'bt <instance index>': select active bluetooth device by instance for further config.\r\n"
+      "'bt': display current active bluetooth device.\r\n", NULL,
+      do_mux_bt, NULL},
 
     { NULL, NULL, NULL, NULL, NULL, NULL }
 };
