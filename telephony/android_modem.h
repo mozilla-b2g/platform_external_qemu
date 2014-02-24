@@ -46,8 +46,14 @@ typedef enum {
 
 extern ARadioState  amodem_get_radio_state( AModem modem );
 
+/* Get the received signal strength indicator and bit error rate */
+extern void         amodem_get_signal_strength( AModem modem, int* rssi, int* ber );
 /* Set the received signal strength indicator and bit error rate */
 extern void         amodem_set_signal_strength( AModem modem, int rssi, int ber );
+/* Get the received LTE rxlev, rsrp and rssnr */
+extern void         amodem_get_lte_signal_strength( AModem modem, int* rxlev, int* rsrp, int* rssnr );
+/* Set the received LTE rxlev, rsrp and rssnr */
+extern void         amodem_set_lte_signal_strength( AModem modem, int rxlev, int rsrp, int rssnr );
 
 /** SIM CARD STATUS
  **/

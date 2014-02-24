@@ -324,6 +324,11 @@ typedef struct AModemRec_
     int           rssi;
     int           ber;
 
+    /* LTE signal strength */
+    int           rxlev;
+    int           rsrp;
+    int           rssnr;
+
     /* SMS */
     int           wait_sms;
 
@@ -600,6 +605,10 @@ amodem_reset( AModem  modem )
 
     modem->rssi= 7;    // Two signal strength bars
     modem->ber = 99;   // Means 'unknown'
+
+    modem->rxlev = 99;    // Not known or not detectable
+    modem->rsrp  = 65535; // Denotes invalid value
+    modem->rssnr = 65535; // Denotes invalid value
 
     modem->oper_name_index     = amodem_nvram_get_int(modem, NV_OPER_NAME_INDEX, 2);
     modem->oper_selection_mode = amodem_nvram_get_int(modem, NV_SELECTION_MODE, A_SELECTION_AUTOMATIC);
@@ -1174,10 +1183,44 @@ amodem_find_call_by_number( AModem  modem, const char*  number )
 }
 
 void
+amodem_get_signal_strength( AModem modem, int* rssi, int* ber )
+{
+    *rssi = modem->rssi;
+    *ber = modem->ber;
+}
+
+void
 amodem_set_signal_strength( AModem modem, int rssi, int ber )
 {
     modem->rssi = rssi;
     modem->ber = ber;
+
+    /* Reset LTE signal strength */
+    modem->rxlev = 99;
+    modem->rsrp  = 65535;
+    modem->rssnr = 65535;
+
+    amodem_unsol_buffered( modem, handleSignalStrength(NULL, modem) );
+}
+
+void
+amodem_get_lte_signal_strength( AModem modem, int* rxlev, int* rsrp, int* rssnr )
+{
+    *rxlev = modem->rxlev;
+    *rsrp = modem->rsrp;
+    *rssnr = modem->rssnr;
+}
+
+void
+amodem_set_lte_signal_strength( AModem modem, int rxlev, int rsrp, int rssnr )
+{
+    /* Reset GSM/UMTS signal strength */
+    modem->rssi = 99;
+    modem->ber = 99;
+
+    modem->rxlev = rxlev;
+    modem->rsrp = rsrp;
+    modem->rssnr = rssnr;
 
     amodem_unsol_buffered( modem, handleSignalStrength(NULL, modem) );
 }
@@ -2672,9 +2715,18 @@ handleSignalStrength( const char*  cmd, AModem  modem )
     // TODO: return 99 if modem->radio_state==A_RADIO_STATE_OFF, once radio_state is in snapshot.
     int rssi = modem->rssi;
     int ber = modem->ber;
-    rssi = (0 > rssi && rssi > 31) ? 99 : rssi ;
-    ber = (0 > ber && ber > 7 ) ? 99 : ber;
-    amodem_add_line( modem, "+CSQ: %i,%i,85,130,90,6,4,99,2147483647,2147483647,2147483647,2147483647\r\n", rssi, ber);
+    rssi = (0 > rssi || rssi > 31) ? 99 : rssi ;
+    ber = (0 > ber || ber > 7 ) ? 99 : ber;
+
+    // Handling of LTE signal strength.
+    int rxlev = modem->rxlev;
+    int rsrp = modem->rsrp;
+    int rssnr = modem->rssnr;
+    rxlev = (0 > rxlev || rxlev > 63) ? 99 : rxlev;
+    rsrp = (44 > rsrp || rsrp > 140) ? 0x7FFFFFFF : rsrp;
+    rssnr = (-200 > rssnr || rssnr > 300) ? 0x7FFFFFFF : rssnr;
+
+    amodem_add_line( modem, "+CSQ: %i,%i,85,130,90,6,4,%i,%i,2147483647,%i,2147483647\r\n", rssi, ber, rxlev, rsrp, rssnr );
     return amodem_end_line( modem );
 }
 
