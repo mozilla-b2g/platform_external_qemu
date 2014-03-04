@@ -193,7 +193,7 @@ android_parse_modem_preferred_mask( const char* maskName )
 {
     int nn;
 
-    for (nn = 0; techs[nn].name; nn++) {
+    for (nn = 0; preferred_masks[nn].name; nn++) {
         if (!strcmp(maskName, preferred_masks[nn].name)) {
             return preferred_masks[nn].mask;
         }
