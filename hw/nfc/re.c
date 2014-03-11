@@ -46,23 +46,67 @@ nfc_get_re_by_id(uint8_t id)
     return NULL;
 }
 
-size_t
-nfc_re_write(struct nfc_re* re, size_t len, const void* data)
+static ssize_t
+write_buf(size_t* bufsiz, uint8_t* buf, size_t len, const void* data)
 {
-    size_t newsiz;
+    assert(bufsiz);
+    assert(buf || !*bufsiz);
+    assert(data || !len);
 
-    assert(re);
-
-    newsiz = re->wdtasiz + len;
-
-    if (newsiz > re->wdtasiz) {
-        return 0; /* not enough memory */
+    if (len > *bufsiz) {
+        return -1; /* not enough memory */
     }
 
-    memcpy(re->wdta+re->wdtasiz, data, len);
-    re->wdtasiz = newsiz;
+    memcpy(buf, data, len);
+    *bufsiz += len;
 
     return len;
+}
+
+static ssize_t
+read_buf(size_t* bufsiz, const uint8_t* buf, size_t len, void* data)
+{
+    assert(bufsiz);
+    assert(buf || !*bufsiz);
+    assert(data || !len);
+
+    if (len < *bufsiz) {
+        return -1; /* not enough memory */
+    }
+
+    len = *bufsiz;
+    memcpy(data, buf, len);
+    *bufsiz = 0;
+
+    return len;
+}
+
+ssize_t
+nfc_re_write_sbuf(struct nfc_re* re, size_t len, const void* data)
+{
+    assert(re);
+    return write_buf(&re->sbufsiz, re->sbuf, len, data);
+}
+
+ssize_t
+nfc_re_read_sbuf(struct nfc_re* re, size_t len, void* data)
+{
+    assert(re);
+    return read_buf(&re->sbufsiz, re->sbuf, len, data);
+}
+
+ssize_t
+nfc_re_write_rbuf(struct nfc_re* re, size_t len, const void* data)
+{
+    assert(re);
+    return write_buf(&re->rbufsiz, re->rbuf, len, data);
+}
+
+ssize_t
+nfc_re_read_rbuf(struct nfc_re* re, size_t len, void* data)
+{
+    assert(re);
+    return read_buf(&re->rbufsiz, re->rbuf, len, data);
 }
 
 static ssize_t
@@ -245,9 +289,8 @@ nfc_re_process_data(struct nfc_re* re, const union nci_packet* dta,
             break;
     }
 
-    /* payload gets stored in RE buffer */
-    nfc_re_write(re, dta->data.l-off, dta->data.payload+off);
-
+    /* payload gets stored in RE send buffer */
+    nfc_re_write_sbuf(re, dta->data.l-off, dta->data.payload+off);
     return len;
 }
 

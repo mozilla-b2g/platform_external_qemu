@@ -30,10 +30,10 @@ struct nfc_re {
     int send_symm;
     QEMUTimer *send_symm_timer;
     uint8_t connid;
-    size_t wdtasiz;
-    size_t rdtasiz;
-    uint8_t wdta[1024]; /* written data */
-    uint8_t rdta[1024]; /* data for reading */
+    size_t sbufsiz;
+    size_t rbufsiz;
+    uint8_t sbuf[1024]; /* data written by NFC driver */
+    uint8_t rbuf[1024]; /* data for reading from RE */
 };
 
 #define INIT_NFC_RE(re_, rfproto_, mode_, nfcid3_) \
@@ -45,8 +45,8 @@ struct nfc_re {
         .send_symm = 0, \
         .send_symm_timer = NULL, \
         .connid = 0, \
-        .wdtasiz = 0, \
-        .rdtasiz = 0 \
+        .sbufsiz = 0, \
+        .rbufsiz = 0 \
     }
 
 /* predefined NFC Remote Endpoints */
@@ -55,8 +55,17 @@ extern struct nfc_re nfc_res[2];
 struct nfc_re*
 nfc_get_re_by_id(uint8_t id);
 
-size_t
-nfc_re_write(struct nfc_re* re, size_t len, const void* data);
+ssize_t
+nfc_re_write_sbuf(struct nfc_re* re, size_t len, const void* data);
+
+ssize_t
+nfc_re_read_sbuf(struct nfc_re* re, size_t len, void* data);
+
+ssize_t
+nfc_re_write_rbuf(struct nfc_re* re, size_t len, const void* data);
+
+ssize_t
+nfc_re_read_rbuf(struct nfc_re* re, size_t len, void* data);
 
 size_t
 nfc_re_process_data(struct nfc_re* re, const union nci_packet* dta,
