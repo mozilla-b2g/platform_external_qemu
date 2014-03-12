@@ -179,6 +179,10 @@ size_t
 llcp_create_pdu_dm(struct llcp_pdu* llcp, unsigned char dsap,
                    unsigned char ssap, unsigned char reason);
 
+size_t
+llcp_create_pdu_i(struct llcp_pdu* llcp, unsigned char dsap,
+                  unsigned char ssap, unsigned char ns, unsigned char nr);
+
 unsigned char
 llcp_ptype(const struct llcp_pdu* llcp);
 

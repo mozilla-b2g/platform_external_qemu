@@ -381,6 +381,86 @@ process_ptype_dm(struct nfc_re* re, const struct llcp_pdu* llcp,
 }
 
 static size_t
+process_ptype_frmr(struct nfc_re* re, const struct llcp_pdu* llcp,
+                size_t len, uint8_t* consumed, struct llcp_pdu* rsp)
+{
+    unsigned int flags = (llcp->info[0] >> 4) & 0xf;
+    unsigned int ptype =  llcp->info[0] & 0xf;
+    unsigned int v_s = (llcp->info[2] >> 4) & 0xf;
+    unsigned int v_r =  llcp->info[2] & 0xf;
+    unsigned int v_sa = (llcp->info[3] >> 4) & 0xf;
+    unsigned int v_ra =  llcp->info[3] & 0xf;
+
+    NFC_D("LLCP FRMR flags=%x ptype=%u sequence=%u v_s=%u v_r=%u v_sa=%u "
+          "v_sr=%u\n", flags, ptype, llcp->info[1], v_s, v_r, v_sa, v_ra);
+
+    *consumed = sizeof(*llcp) + 4;
+    return 0;
+}
+
+static size_t
+process_ptype_i(struct nfc_re* re, const struct llcp_pdu* llcp,
+                size_t len, uint8_t* consumed, struct llcp_pdu* rsp)
+{
+    const uint8_t* info;
+    struct llcp_data_link* dl;
+
+    dl = re->llcp_dl[llcp->ssap] + llcp->dsap;
+    dl->v_r = (dl->v_r + 1) % 16;
+
+    /* I PDUs transfer messages (i.e., 'Service Data Units' in LLCP
+     * speak) over LLCP connections. In our case we simply put the
+     * payload into the RE's send buffer.
+     */
+
+    /* consume llcp header and sequence numbers */
+    *consumed = sizeof(*llcp) + 1;
+    len -= *consumed;
+
+    /* copy information field into DL's receive buffer */
+    info = ((const uint8_t*)llcp) + *consumed;
+    llcp_dl_write_rbuf(dl, len, info);
+
+    return 0;
+}
+
+static size_t
+process_ptype_rr(struct nfc_re* re, const struct llcp_pdu* llcp,
+                size_t len, uint8_t* consumed, struct llcp_pdu* rsp)
+{
+    struct llcp_data_link* dl;
+    unsigned int nr;
+
+    nr = llcp->info[0] & 0xf;
+
+    NFC_D("LLCP RR N(R)=%d", nr);
+
+    dl = re->llcp_dl[llcp->ssap] + llcp->dsap;
+    dl->v_sa = nr;
+
+    *consumed = sizeof(*llcp) + 1;
+    return 0;
+}
+
+static size_t
+process_ptype_rnr(struct nfc_re* re, const struct llcp_pdu* llcp,
+                  size_t len, uint8_t* consumed, struct llcp_pdu* rsp)
+{
+    struct llcp_data_link* dl;
+    unsigned int nr;
+
+    nr = llcp->info[0] & 0xf;
+
+    NFC_D("LLCP RNR N(R)=%d", nr);
+
+    dl = re->llcp_dl[llcp->ssap] + llcp->dsap;
+    dl->v_sa = nr;
+
+    *consumed = sizeof(*llcp) + 1;
+    return 0;
+}
+
+static size_t
 process_llcp(struct nfc_re* re, const struct llcp_pdu* llcp,
              size_t len, uint8_t* consumed, struct llcp_pdu* rsp)
 {
@@ -392,6 +472,10 @@ process_llcp(struct nfc_re* re, const struct llcp_pdu* llcp,
         [LLCP_PTYPE_DISC] = process_ptype_disc,
         [LLCP_PTYPE_CC] = process_ptype_cc,
         [LLCP_PTYPE_DM] = process_ptype_dm,
+        [LLCP_PTYPE_FRMR] = process_ptype_frmr,
+        [LLCP_PTYPE_I] = process_ptype_i,
+        [LLCP_PTYPE_RR] = process_ptype_rr,
+        [LLCP_PTYPE_RNR] = process_ptype_rnr
     };
 
     unsigned char ptype;
@@ -497,12 +581,18 @@ size_t
 nfc_re_create_dta_act(struct nfc_re* re, const void* data,
                       size_t len, uint8_t* act)
 {
+  struct llcp_data_link* dl;
   size_t llcp_len;
 
   assert(act);
 
-  llcp_len = llcp_create_pdu((struct llcp_pdu*)act, LLCP_SAP_SNEP,
-                             LLCP_PTYPE_UI, LLCP_SAP_SNEP);
+  dl = re->llcp_dl[LLCP_SAP_SNEP] + LLCP_SAP_SNEP;
+  llcp_len = llcp_create_pdu_i((struct llcp_pdu*)act,
+                               LLCP_SAP_SNEP, LLCP_SAP_SNEP,
+                               dl->v_s, dl->v_r);
+  dl->v_s = (dl->v_s+1) % 16;
+  dl->v_r = (dl->v_r+1) % 16;
+
   memcpy(act+len, data, len);
 
   return llcp_len + len;
