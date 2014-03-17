@@ -256,9 +256,9 @@ goldfish_nfc_init()
                     goldfish_nfc_save, goldfish_nfc_load, s);
 }
 
-void
-goldfish_nfc_send_dta(size_t (*create)(void*, struct nfc_device*,
-                                       union nci_packet*), void* data)
+int
+goldfish_nfc_send_dta(ssize_t (*create)(void*, struct nfc_device*,
+                                        union nci_packet*), void* data)
 {
     struct nfc_state* s;
     size_t res;
@@ -269,16 +269,19 @@ goldfish_nfc_send_dta(size_t (*create)(void*, struct nfc_device*,
 
     memset(s->data, 0, sizeof(s->data));
     res = create(data, &s->nfc, (union nci_packet*)s->data);
+    if (res < 0)
+      return -1;
 
     s->status |= STATUS_NCI_DATA * !!res;
     s->status |= STATUS_INTR;
-
     goldfish_device_set_irq(&s->dev, 0, 1);
+
+    return 0;
 }
 
-void
-goldfish_nfc_send_ntf(size_t (*create)(void*, struct nfc_device*,
-                                       union nci_packet*), void* data)
+int
+goldfish_nfc_send_ntf(ssize_t (*create)(void*, struct nfc_device*,
+                                        union nci_packet*), void* data)
 {
     struct nfc_state* s;
     size_t res;
@@ -289,8 +292,12 @@ goldfish_nfc_send_ntf(size_t (*create)(void*, struct nfc_device*,
 
     memset(s->ntfn, 0, sizeof(s->ntfn));
     res = create(data, &s->nfc, (union nci_packet*)s->ntfn);
+    if (res < 0)
+      return -1;
 
     s->status |= STATUS_NCI_NTFN * !!res;
     s->status |= STATUS_INTR;
     goldfish_device_set_irq(&s->dev, 0, 1);
+
+    return 0;
 }
