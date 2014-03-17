@@ -14,16 +14,17 @@
 #define goldfish_nfc_h
 
 #include <stddef.h>
+#include <sys/types.h>
 
 struct nfc_device;
 union nci_packet;
 
-void
-goldfish_nfc_send_dta(size_t (*create)(void*, struct nfc_device*,
-                                       union nci_packet*), void* data);
+int
+goldfish_nfc_send_dta(ssize_t (*create)(void*, struct nfc_device*,
+                                        union nci_packet*), void* data);
 
-void
-goldfish_nfc_send_ntf(size_t (*create)(void*, struct nfc_device*,
-                                       union nci_packet*), void* data);
+int
+goldfish_nfc_send_ntf(ssize_t (*create)(void*, struct nfc_device*,
+                                        union nci_packet*), void* data);
 
 #endif

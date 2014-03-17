@@ -47,7 +47,7 @@ static const uint8_t config_id_default[256][33] = {
   /* all zero */
 };
 
-static size_t
+static ssize_t
 nfc_rf_field_info_ntf_cb(void* data,
                          struct nfc_device* nfc,
                          union nci_packet* ntf)
@@ -989,6 +989,7 @@ nfc_create_rf_intf_activated_ntf(struct nfc_re* re,
     unsigned long bits;
     enum nfc_rfst rfst;
 
+    assert(re);
     assert(ntf);
 
     /* create notification */
@@ -1000,11 +1001,7 @@ nfc_create_rf_intf_activated_ntf(struct nfc_re* re,
 
     payload = (struct nci_rf_intf_activated_ntf*)ntf->control.payload;
 
-    if (!re) {
-        /* select active RE */
-        re = nfc->active_re;
-        assert(re);
-    } else if (!re->id) {
+    if (!re->id) {
         re->id = nfc_device_incr_id(nfc);
     }
 

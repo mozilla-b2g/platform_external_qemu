@@ -65,7 +65,7 @@ nfc_re_write(struct nfc_re* re, size_t len, const void* data)
     return len;
 }
 
-static size_t
+static ssize_t
 create_symm_dta(void* data, struct nfc_device* nfc, union nci_packet* dta)
 {
     struct nfc_re* re;
