@@ -3514,67 +3514,6 @@ do_nfc_ntf( ControlClient  client, char*  args )
     return 0;
 }
 
-struct nfc_dta_write_param {
-  uint8_t connid;
-  size_t len;
-  const void* data;
-};
-
-static ssize_t
-nfc_dta_write_cb(void* data, struct nfc_device* nfc, size_t maxlen,
-                 union nci_packet* packet)
-{
-  const struct nfc_dta_write_param* param;
-
-  param = data;
-
-  return nfc_create_dta(param->data, param->len, nfc, packet);
-}
-
-static int
-do_nfc_dta( ControlClient  client, char*  args )
-{
-    char *p;
-
-    if (!args) {
-        return -1;
-    }
-
-    /* read notification type */
-    p = strsep(&args, " ");
-
-    if (!p) {
-        return -1;
-    }
-
-    if (!strcmp(p, "s") || !strcmp(p, "send") ||
-        !strcmp(p, "w") || !strcmp(p, "wr") || !strcmp(p, "write")) {
-
-        struct nfc_dta_write_param param;
-
-        /* read connection id */
-        p = strsep(&args, " ");
-
-        if (!p) {
-            return -1;
-        }
-
-        errno = 0;
-        param.connid = strtoul(p, NULL, 0);
-
-        if (errno || !param.connid || (param.connid > 254)) {
-            return -1;
-        }
-
-        param.len = strlen(args);
-        param.data = args;
-
-        goldfish_nfc_send_dta(nfc_dta_write_cb, &param);
-    }
-
-    return 0;
-}
-
 static const CommandDefRec  nfc_commands[] =
 {
     { "ntf", "send NCI notification",
@@ -3583,11 +3522,6 @@ static const CommandDefRec  nfc_commands[] =
       "'nfc ntf rf_intf_activated <i>' send RC_DISCOVER_NTF for Remote Endpoint <i>\r\n",
       NULL,
       do_nfc_ntf, NULL },
-
-    { "data", "send and receive NCI data packets",
-      "'nfc data s|send|w|wr|write <connid> <data>' send <data> via active Remote Endpoint's connection <connid>\r\n",
-      NULL,
-      do_nfc_dta, NULL },
 
     { NULL, NULL, NULL, NULL, NULL, NULL }
 };
