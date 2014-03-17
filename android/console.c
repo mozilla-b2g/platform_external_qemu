@@ -3262,28 +3262,34 @@ do_nfc_ntf( ControlClient  client, char*  args )
     char *p;
 
     if (!args) {
+        control_write(client, "KO: no arguments given\r\n");
         return -1;
     }
 
     /* read notification type */
     p = strsep(&args, " ");
-
     if (!p) {
+        control_write(client, "KO: no operation given\r\n");
         return -1;
     }
 
     if (!strcmp(p, "rf_discover")) {
         /* read remote-endpoint index */
         p = strsep(&args, " ");
-
         if (!p) {
+            control_write(client, "KO: no remote endpoint given\r\n");
             return -1;
         }
-
         errno = 0;
         size_t i = strtoul(p, NULL, 0);
-
-        if (errno || !(i < sizeof(nfc_res)/sizeof(nfc_res[0])) ) {
+        if (errno) {
+            control_write(client,
+                          "KO: invalid remote endpoint '%s', error %d(%s)\r\n",
+                          p, errno, strerror(errno));
+            return -1;
+        }
+        if (!(i < sizeof(nfc_res)/sizeof(nfc_res[0])) ) {
+            control_write(client, "KO: unknown remote endpoint %zu\r\n", i);
             return -1;
         }
 
@@ -3293,20 +3299,27 @@ do_nfc_ntf( ControlClient  client, char*  args )
 
         /* read remote-endpoint index */
         p = strsep(&args, " ");
-
         if (p) {
             errno = 0;
             size_t i = strtoul(p, NULL, 0);
-
-            if (errno || !(i < sizeof(nfc_res)/sizeof(nfc_res[0])) ) {
+            if (errno) {
+                control_write(client,
+                              "KO: invalid remote endpoint '%s', error %d(%s)\r\n",
+                              p, errno, strerror(errno));
                 return -1;
             }
-
+            if (!(i < sizeof(nfc_res)/sizeof(nfc_res[0]))) {
+                control_write(client, "KO: unknown remote endpoint %zu\r\n", i);
+                return -1;
+            }
             re = nfc_res + i;
         }
 
         /* if re == NULL, active RE will be used */
         goldfish_nfc_send_ntf(nfc_rf_intf_activated_ntf_cb, re);
+    } else {
+        control_write(client, "KO: invalid operation '%s'\r\n", p);
+        return -1;
     }
 
     return 0;
