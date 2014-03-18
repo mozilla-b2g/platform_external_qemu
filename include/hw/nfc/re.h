@@ -80,4 +80,8 @@ size_t
 nfc_re_create_dta_act(struct nfc_re* re, const void* data,
                       size_t len, uint8_t* act);
 
+int
+nfc_re_send_llcp_connect(struct nfc_re* re, unsigned char dsap,
+                         unsigned char ssap);
+
 #endif

@@ -335,9 +335,49 @@ process_ptype_disc(struct nfc_re* re, const struct llcp_pdu* llcp,
                    size_t len, uint8_t* consumed,
                    struct llcp_pdu* rsp)
 {
-  /* Theres nothing to do on disconnects. We
-     just have to handle the PDU. */
-  return 0;
+    struct llcp_data_link* dl;
+
+    dl = re->llcp_dl[llcp->ssap] + llcp->dsap;
+    dl->status = LLCP_DATA_LINK_DISCONNECTED;
+
+    *consumed = sizeof(*llcp);
+
+    /* switch DSAP and SSAP in outgoing PDU */
+    return llcp_create_pdu_dm(rsp, llcp->ssap, llcp->dsap, 0);
+}
+
+static size_t
+process_ptype_cc(struct nfc_re* re, const struct llcp_pdu* llcp,
+                 size_t len, uint8_t* consumed,
+                 struct llcp_pdu* rsp)
+{
+    struct llcp_data_link* dl;
+
+    dl = llcp_clear_data_link(re->llcp_dl[llcp->ssap] + llcp->dsap);
+    assert(dl->status == LLCP_DATA_LINK_CONNECTING);
+    dl->status = LLCP_DATA_LINK_CONNECTED;
+
+    *consumed = sizeof(*llcp) + 1;
+
+    return 0;
+}
+
+static size_t
+process_ptype_dm(struct nfc_re* re, const struct llcp_pdu* llcp,
+                 size_t len, uint8_t* consumed,
+                 struct llcp_pdu* rsp)
+{
+    struct llcp_data_link* dl;
+
+    NFC_D("LLCP DM, reason=%d\n", llcp->info[0]);
+
+    dl = re->llcp_dl[llcp->ssap] + llcp->dsap;
+    dl->status = LLCP_DATA_LINK_DISCONNECTED;
+
+    /* consume 1 extra byte for 'reason' field */
+    *consumed = sizeof(*llcp) + 1;
+
+    return 0;
 }
 
 static size_t
@@ -349,7 +389,9 @@ process_llcp(struct nfc_re* re, const struct llcp_pdu* llcp,
          size_t, uint8_t*, struct llcp_pdu*) = {
         [LLCP_PTYPE_SYMM] = process_ptype_symm,
         [LLCP_PTYPE_CONNECT] = process_ptype_connect,
-        [LLCP_PTYPE_DISC] = process_ptype_disc
+        [LLCP_PTYPE_DISC] = process_ptype_disc,
+        [LLCP_PTYPE_CC] = process_ptype_cc,
+        [LLCP_PTYPE_DM] = process_ptype_dm,
     };
 
     unsigned char ptype;
@@ -464,4 +506,45 @@ nfc_re_create_dta_act(struct nfc_re* re, const void* data,
   memcpy(act+len, data, len);
 
   return llcp_len + len;
+}
+
+/*
+ * LLCP CONNECT
+ */
+
+struct llcp_connect_param {
+    struct nfc_re* re;
+    unsigned char dsap;
+    unsigned char ssap;
+};
+
+#define LLCP_CONNECT_PARAM_INIT(_re, _dsap, _ssap) \
+    { \
+        .re = (_re), \
+        .dsap = (_dsap), \
+        .ssap = (_ssap) \
+    }
+
+static ssize_t
+create_connect_dta(void* data, struct llcp_pdu* llcp)
+{
+    const struct llcp_connect_param* param;
+    struct llcp_data_link* dl;
+
+    param = data;
+    assert(param);
+
+    dl = param->re->llcp_dl[param->dsap] + param->ssap;
+
+    assert(dl->status == LLCP_DATA_LINK_DISCONNECTED);
+    dl->status = LLCP_DATA_LINK_CONNECTING;
+
+    return llcp_create_pdu(llcp, param->dsap, LLCP_PTYPE_CONNECT, param->ssap);
+}
+
+int
+nfc_re_send_llcp_connect(struct nfc_re* re, unsigned char dsap, unsigned char ssap)
+{
+    struct llcp_connect_param param = LLCP_CONNECT_PARAM_INIT(re, dsap, ssap);
+    return send_pdu_from_re(create_connect_dta, &param, re);
 }

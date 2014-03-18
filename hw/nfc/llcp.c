@@ -42,6 +42,17 @@ llcp_create_pdu(struct llcp_pdu* llcp, unsigned char dsap,
     return sizeof(*llcp);
 }
 
+size_t
+llcp_create_pdu_dm(struct llcp_pdu* llcp, unsigned char dsap,
+                   unsigned char ssap, unsigned char reason)
+{
+  assert(llcp);
+
+  llcp->info[0] = reason;
+
+  return llcp_create_pdu(llcp, dsap, LLCP_PTYPE_DM, ssap) + 1;
+}
+
 unsigned char
 llcp_ptype(const struct llcp_pdu* llcp)
 {

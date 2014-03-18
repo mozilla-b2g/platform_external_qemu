@@ -163,6 +163,7 @@ struct llcp_pdu {
     uint8_t ssap:6;
     uint8_t ptype1:2;
 #endif
+    uint8_t info[0];
 };
 
 struct llcp_version {
@@ -173,6 +174,10 @@ struct llcp_version {
 size_t
 llcp_create_pdu(struct llcp_pdu* llcp, unsigned char dsap,
                 unsigned char ptype, unsigned char ssap);
+
+size_t
+llcp_create_pdu_dm(struct llcp_pdu* llcp, unsigned char dsap,
+                   unsigned char ssap, unsigned char reason);
 
 unsigned char
 llcp_ptype(const struct llcp_pdu* llcp);
