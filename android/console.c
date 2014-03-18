@@ -3591,6 +3591,105 @@ do_nfc_nci( ControlClient  client, char*  args )
     return 0;
 }
 
+struct nfc_llcp_param {
+    ControlClient client;
+    enum llcp_sap dsap;
+    enum llcp_sap ssap;
+};
+
+#define NFC_LLCP_PARAM_INIT(_client) \
+    { \
+        .client = (_client), \
+        .dsap = 0, \
+        .ssap = 0 \
+    }
+
+static ssize_t
+nfc_llcp_connect_cb(void* data, struct nfc_device* nfc, size_t maxlen,
+                    union nci_packet* packet)
+{
+    ssize_t res;
+    const struct nfc_llcp_param* param = data;
+    if (!nfc->active_re) {
+        control_write(param->client, "KO: no active remote endpoint\n");
+        return -1;
+    }
+    res = nfc_re_send_llcp_connect(nfc->active_re, param->dsap, param->ssap);
+    if (res < 0) {
+        control_write(param->client, "KO: LLCP connect failed\r\n");
+        return -1;
+    }
+    return 0;
+}
+
+static int
+do_nfc_llcp( ControlClient  client, char*  args )
+{
+    char *p;
+
+    if (!args) {
+        control_write(client, "KO: no arguments given\r\n");
+        return -1;
+    }
+
+    p = strsep(&args, " ");
+    if (!p) {
+        control_write(client, "KO: no operation given\r\n");
+        return -1;
+    }
+    if (!strcmp(p, "connect")) {
+        struct nfc_llcp_param param = NFC_LLCP_PARAM_INIT(client);
+
+        /* read DSAP */
+        p = strsep(&args, " ");
+        if (!p) {
+            control_write(client, "KO: no DSAP given\r\n");
+            return -1;
+        }
+        errno = 0;
+        param.dsap = strtoul(p, NULL, 0);
+        if (errno) {
+            control_write(client,
+                          "KO: invalid DSAP '%s', error %d(%s)\r\n",
+                          p, errno, strerror(errno));
+            return -1;
+        }
+        if (!(param.dsap < LLCP_NUMBER_OF_SAPS)) {
+            control_write(client, "KO: invalid DSAP '%u'\r\n",
+                          param.dsap);
+            return -1;
+        }
+        /* read SSAP */
+        p = strsep(&args, " ");
+        if (!p) {
+            control_write(client, "KO: no SSAP given\r\n");
+            return -1;
+        }
+        errno = 0;
+        param.ssap = strtoul(p, NULL, 0);
+        if (errno) {
+            control_write(client,
+                          "KO: invalid SSAP '%s', error %d(%s)\r\n",
+                          p, errno, strerror(errno));
+            return -1;
+        }
+        if (!(param.ssap < LLCP_NUMBER_OF_SAPS)) {
+            control_write(client, "KO: invalid SSAP '%u'\r\n",
+                          param.ssap);
+            return -1;
+        }
+        if (goldfish_nfc_send_dta(nfc_llcp_connect_cb, &param) < 0) {
+            /* error message generated in create function */
+            return -1;
+        }
+    } else {
+        control_write(client, "KO: invalid operation '%s'\r\n", p);
+        return -1;
+    }
+
+    return 0;
+}
+
 static const CommandDefRec  nfc_commands[] =
 {
     { "nci", "send NCI notification",
@@ -3601,6 +3700,11 @@ static const CommandDefRec  nfc_commands[] =
       "'nfc nci rf_intf_activated_ntf <i> <j>' send RC_DISCOVER_NTF for Remote Endpoint <i> & RF interface <j>\r\n",
       NULL,
       do_nfc_nci, NULL },
+
+    { "llcp", "internal LLCP handling",
+      "'nfc llcp connect <dsap> <ssap>' connects active Remote Endpoint's SSAP to host's SSAP\r\n",
+      NULL,
+      do_nfc_llcp, NULL },
 
     { NULL, NULL, NULL, NULL, NULL, NULL }
 };
