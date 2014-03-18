@@ -77,7 +77,7 @@ create_symm_dta(void* data, struct nfc_device* nfc, size_t maxlen,
     re = data;
 
     len = llcp_create_pdu((struct llcp_pdu*)dta->data.payload,
-                          0, LLCP_PTYPE_SYMM, 0);
+                          LLCP_SAP_LM, LLCP_PTYPE_SYMM, LLCP_SAP_LM);
 
     return nfc_create_nci_dta(dta, NCI_PBF_END, re->connid, len);
 }
@@ -303,8 +303,8 @@ nfc_re_create_dta_act(struct nfc_re* re, const void* data,
 
   assert(act);
 
-  llcp_len = llcp_create_pdu((struct llcp_pdu*)act, 0, LLCP_PTYPE_UI, 0);
-
+  llcp_len = llcp_create_pdu((struct llcp_pdu*)act, LLCP_SAP_SNEP,
+                             LLCP_PTYPE_UI, LLCP_SAP_SNEP);
   memcpy(act+len, data, len);
 
   return llcp_len + len;

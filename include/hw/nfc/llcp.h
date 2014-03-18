@@ -25,7 +25,13 @@ enum {
     LLCP_VERSION_MINOR = 0x01
 };
 
-enum {
+/* See http://members.nfc-forum.org/specs/nfc_forum_assigned_numbers_register
+ * for a list of well-known SAP values
+ */
+enum llcp_sap {
+    LLCP_SAP_LM = 0, /* LLC Link Management; don't use for data transmission */
+    LLCP_SAP_SDP = 1, /* Service Discovery Protocol */
+    LLCP_SAP_SNEP = 4, /* Simple NDEF Exchange Protocol */
     LLCP_NUMBER_OF_SAPS = 64
 };
 
