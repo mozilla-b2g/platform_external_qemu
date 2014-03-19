@@ -27,8 +27,9 @@ struct nfc_re {
     uint8_t id;
     /* outer array is always remote SAP, inner array is local, emulated SAP */
     struct llcp_data_link llcp_dl[LLCP_NUMBER_OF_SAPS][LLCP_NUMBER_OF_SAPS];
-    int send_symm;
-    QEMUTimer *send_symm_timer;
+    int xmit_next; /* true if we are supposed to send the next PDU */
+    QEMUTimer *xmit_timer;
+    struct llcp_pdu_queue xmit_q;
     uint8_t connid;
     size_t sbufsiz;
     size_t rbufsiz;
@@ -36,14 +37,15 @@ struct nfc_re {
     uint8_t rbuf[1024]; /* data for reading from RE */
 };
 
-#define INIT_NFC_RE(re_, rfproto_, mode_, nfcid3_) \
+#define INIT_NFC_RE(re_, rfproto_, mode_, nfcid3_, addr_) \
     re_ = { \
         .rfproto = rfproto_, \
         .mode = mode_, \
         .nfcid3 = nfcid3_, \
         .id = 0, \
-        .send_symm = 0, \
-        .send_symm_timer = NULL, \
+        .xmit_next = 0, \
+        .xmit_timer = NULL, \
+        .xmit_q = QTAILQ_HEAD_INITIALIZER((addr_)->xmit_q), \
         .connid = 0, \
         .sbufsiz = 0, \
         .rbufsiz = 0 \
