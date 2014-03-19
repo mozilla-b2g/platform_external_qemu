@@ -172,7 +172,7 @@ process_ptype_connect(struct nfc_re* re, const struct llcp_pdu* llcp,
                       size_t len, uint8_t* consumed,
                       struct llcp_pdu* rsp)
 {
-    struct llcp_connection_state* cs;
+    struct llcp_data_link* dl;
     const uint8_t* opt;
 
     assert(re);
@@ -180,7 +180,8 @@ process_ptype_connect(struct nfc_re* re, const struct llcp_pdu* llcp,
     assert(consumed);
     assert(rsp);
 
-    cs = llcp_init_connection_state(re->llcp_cs[llcp->ssap] + llcp->dsap);
+    dl = llcp_init_data_link(re->llcp_dl[llcp->ssap] + llcp->dsap);
+    dl->status = LLCP_DATA_LINK_CONNECTED;
 
     *consumed = sizeof(*llcp);
     len -= *consumed;
@@ -197,9 +198,9 @@ process_ptype_connect(struct nfc_re* re, const struct llcp_pdu* llcp,
                 {
                   const struct llcp_param_miux* param =
                       (const struct llcp_param_miux*)(opt + 2);
-                  cs->miu = param->miux - 128;
+                  dl->miu = param->miux - 128;
                 }
-                NFC_D("LLCP MIU size=%d", cs->miu);
+                NFC_D("LLCP MIU size=%d", dl->miu);
                 break;
             case LLCP_PARAM_RW:
                 if ((opt[1] != 1) || (len < opt[1])) {
@@ -208,9 +209,9 @@ process_ptype_connect(struct nfc_re* re, const struct llcp_pdu* llcp,
                 {
                   const struct llcp_param_rw* param =
                       (const struct llcp_param_rw*)(opt + 2);
-                  cs->rw_r = param->rw;
+                  dl->rw_r = param->rw;
                 }
-                NFC_D("LLCP remote RW size %d", cs->rw_r);
+                NFC_D("LLCP remote RW size %d", dl->rw_r);
                 break;
             case LLCP_PARAM_SN:
                 if (len < opt[1]) {

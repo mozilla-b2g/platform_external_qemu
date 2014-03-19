@@ -11,6 +11,10 @@
 */
 
 #include <assert.h>
+#include <errno.h>
+#include <stdlib.h>
+#include <string.h>
+#include "hw/nfc/debug.h"
 #include "hw/nfc/llcp.h"
 
 /* magic numbers for bcm2079x */
@@ -75,18 +79,85 @@ llcp_create_param_tail(uint8_t* p)
     return p-beg;
 }
 
-struct llcp_connection_state*
-llcp_init_connection_state(struct llcp_connection_state* cs)
+/*
+ * LLCP PDU handling
+ */
+
+struct llcp_pdu_buf*
+llcp_alloc_pdu_buf(void)
 {
-    assert(cs);
+    struct llcp_pdu_buf* buf;
 
-    cs->v_s = 0;
-    cs->v_sa = 0;
-    cs->v_r = 0;
-    cs->v_ra = 0;
-    cs->miu = 128;
-    cs->rw_l = 1;
-    cs->rw_r = 1;
+    buf = malloc(sizeof(*buf));
+    if (!buf) {
+        NFC_D("malloc failed: %d (%s)", errno, strerror(errno));
+        return NULL;
+    }
+    buf->entry.tqe_next = NULL;
+    buf->entry.tqe_prev = NULL;
+    buf->len = 0;
+    return buf;
+}
 
-    return cs;
+void
+llcp_free_pdu_buf(struct llcp_pdu_buf* buf)
+{
+    free(buf);
+}
+
+/*
+ * Data links
+ */
+
+struct llcp_data_link*
+llcp_clear_data_link(struct llcp_data_link* dl)
+{
+    assert(dl);
+
+    dl->v_s = 0;
+    dl->v_sa = 0;
+    dl->v_r = 0;
+    dl->v_ra = 0;
+    dl->miu = 128;
+    dl->rw_l = 1;
+    dl->rw_r = 1;
+    dl->rlen = 0;
+
+    return dl;
+}
+
+struct llcp_data_link*
+llcp_init_data_link(struct llcp_data_link* dl)
+{
+    assert(dl);
+
+    dl->status = LLCP_DATA_LINK_DISCONNECTED;
+    QTAILQ_INIT(&dl->xmit_q);
+
+    return llcp_clear_data_link(dl);
+}
+
+size_t
+llcp_dl_write_rbuf(struct llcp_data_link* dl, size_t len, const void* data)
+{
+    assert(dl);
+    assert(len < sizeof(dl->rbuf));
+    assert(data || !len);
+
+    dl->rlen = len;
+    memcpy(dl->rbuf, data, len);
+
+    return dl->rlen;
+}
+
+size_t
+llcp_dl_read_rbuf(const struct llcp_data_link* dl, size_t len, void* data)
+{
+    assert(dl);
+    assert(len < sizeof(dl->rbuf));
+
+    len = len < dl->rlen ? len : dl->rlen;
+    memcpy(data, dl->rbuf, len);
+
+    return len;
 }

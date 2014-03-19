@@ -19,6 +19,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "qemu/queue.h"
 
 enum {
     LLCP_VERSION_MAJOR = 0x01,
@@ -181,22 +182,62 @@ size_t
 llcp_create_param_tail(uint8_t* p);
 
 /*
- * LLCP connection state
+ * LLCP PDU handling
  */
 
-struct llcp_connection_state {
+struct llcp_pdu_buf {
+    QTAILQ_ENTRY(llcp_pdu_buf) entry;
+    unsigned char len;
+    unsigned char pdu[256];
+};
+
+QTAILQ_HEAD(llcp_pdu_queue, llcp_pdu_buf);
+
+struct llcp_pdu_buf*
+llcp_alloc_pdu_buf(void);
+
+void
+llcp_free_pdu_buf(struct llcp_pdu_buf* buf);
+
+/*
+ * LLCP data link
+ */
+
+enum llcp_data_link_status {
+    LLCP_DATA_LINK_DISCONNECTED = 0,
+    LLCP_DATA_LINK_CONNECTING,
+    LLCP_DATA_LINK_CONNECTED,
+    LLCP_DATA_LINK_DISCONNECTING
+};
+
+struct llcp_data_link {
+    enum llcp_data_link_status status;
     /* data-link connection state variables; [LLCP], Sec 5.6.1 */
-    uint16_t v_s;
-    uint16_t v_sa;
-    uint16_t v_r;
-    uint16_t v_ra;
+    uint8_t v_s;
+    uint8_t v_sa;
+    uint8_t v_r;
+    uint8_t v_ra;
     /* data-link connection parameters; [LLCP], Sec 5.6.2 */
     uint8_t miu;
     uint8_t rw_l;
     uint8_t rw_r;
+    /* receive buffer for user data (e.g., NDEF records) */
+    uint8_t rlen;
+    uint8_t rbuf[256];
+    /* transmit queue for outgoing packets */
+    struct llcp_pdu_queue xmit_q;
 };
 
-struct llcp_connection_state*
-llcp_init_connection_state(struct llcp_connection_state* cs);
+struct llcp_data_link*
+llcp_init_data_link(struct llcp_data_link* dl);
+
+struct llcp_data_link*
+llcp_clear_data_link(struct llcp_data_link* dl);
+
+size_t
+llcp_dl_write_rbuf(struct llcp_data_link* dl, size_t len, const void* data);
+
+size_t
+llcp_dl_read_rbuf(const struct llcp_data_link* dl, size_t len, void* data);
 
 #endif

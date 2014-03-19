@@ -26,7 +26,7 @@ struct nfc_re {
     char nfcid3[10];
     uint8_t id;
     /* outer array is always remote SAP, inner array is local, emulated SAP */
-    struct llcp_connection_state llcp_cs[LLCP_NUMBER_OF_SAPS][LLCP_NUMBER_OF_SAPS];
+    struct llcp_data_link llcp_dl[LLCP_NUMBER_OF_SAPS][LLCP_NUMBER_OF_SAPS];
     int send_symm;
     QEMUTimer *send_symm_timer;
     uint8_t connid;
