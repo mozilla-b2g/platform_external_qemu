@@ -245,12 +245,12 @@ typedef struct {
 typedef SimFileEFLinearRec   SimFileEFCyclicRec;
 typedef SimFileEFCyclicRec*  SimFileEFCyclic;
 
-typedef union SimFileRec_ {
+union SimFileRec_ {
     SimFileAnyRec          any;
     SimFileEFDedicatedRec  dedicated;
     SimFileEFLinearRec     linear;
     SimFileEFCyclicRec     cyclic;
-} SimFileRec, *SimFile;
+};
 
 static int
 asimcard_ef_add( ASimCard sim, SimFile ef )
