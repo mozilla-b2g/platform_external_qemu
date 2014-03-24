@@ -76,8 +76,8 @@ create_symm_dta(void* data, struct nfc_device* nfc, size_t maxlen,
 
     re = data;
 
-    len = llcp_create_packet((struct llcp_packet*)dta->data.payload,
-                             0, LLCP_PTYPE_SYMM, 0);
+    len = llcp_create_pdu((struct llcp_pdu*)dta->data.payload,
+                          0, LLCP_PTYPE_SYMM, 0);
 
     return nfc_create_nci_dta(dta, NCI_PBF_END, re->connid, len);
 }
@@ -89,8 +89,8 @@ send_symm_cb(void* opaque)
 }
 
 static size_t
-process_ptype_symm(struct nfc_re* re, const struct llcp_packet* llcp,
-                   size_t len, uint8_t* consumed, struct llcp_packet* rsp)
+process_ptype_symm(struct nfc_re* re, const struct llcp_pdu* llcp,
+                   size_t len, uint8_t* consumed, struct llcp_pdu* rsp)
 {
     assert(re);
     assert(llcp);
@@ -98,8 +98,7 @@ process_ptype_symm(struct nfc_re* re, const struct llcp_packet* llcp,
     assert(rsp);
 
     if (!re->send_symm) {
-        len = llcp_create_packet(rsp, llcp->dsap, LLCP_PTYPE_SYMM,
-                                 llcp->ssap);
+        len = llcp_create_pdu(rsp, llcp->dsap, LLCP_PTYPE_SYMM, llcp->ssap);
     } else {
         len = 0;
     }
@@ -124,9 +123,9 @@ process_ptype_symm(struct nfc_re* re, const struct llcp_packet* llcp,
 }
 
 static size_t
-process_ptype_connect(struct nfc_re* re, const struct llcp_packet* llcp,
+process_ptype_connect(struct nfc_re* re, const struct llcp_pdu* llcp,
                       size_t len, uint8_t* consumed,
-                      struct llcp_packet* rsp)
+                      struct llcp_pdu* rsp)
 {
     struct llcp_connection_state* cs;
     const uint8_t* opt;
@@ -180,14 +179,14 @@ process_ptype_connect(struct nfc_re* re, const struct llcp_packet* llcp,
         }
     }
 
-    /* switch DSAP and SSAP in outgoing packet */
-    return llcp_create_packet(rsp, llcp->ssap, LLCP_PTYPE_CC, llcp->dsap);
+    /* switch DSAP and SSAP in outgoing PDU */
+    return llcp_create_pdu(rsp, llcp->ssap, LLCP_PTYPE_CC, llcp->dsap);
 }
 
 static size_t
-process_ptype_disc(struct nfc_re* re, const struct llcp_packet* llcp,
+process_ptype_disc(struct nfc_re* re, const struct llcp_pdu* llcp,
                    size_t len, uint8_t* consumed,
-                   struct llcp_packet* rsp)
+                   struct llcp_pdu* rsp)
 {
   /* Theres nothing to do on disconnects. We
      just have to handle the PDU. */
@@ -195,12 +194,12 @@ process_ptype_disc(struct nfc_re* re, const struct llcp_packet* llcp,
 }
 
 static size_t
-process_llcp(struct nfc_re* re, const struct llcp_packet* llcp,
-             size_t len, uint8_t* consumed, struct llcp_packet* rsp)
+process_llcp(struct nfc_re* re, const struct llcp_pdu* llcp,
+             size_t len, uint8_t* consumed, struct llcp_pdu* rsp)
 {
     static size_t (* const process[16])
-        (struct nfc_re*, const struct llcp_packet*,
-         size_t, uint8_t*, struct llcp_packet*) = {
+        (struct nfc_re*, const struct llcp_pdu*,
+         size_t, uint8_t*, struct llcp_pdu*) = {
         [LLCP_PTYPE_SYMM] = process_ptype_symm,
         [LLCP_PTYPE_CONNECT] = process_ptype_connect,
         [LLCP_PTYPE_DISC] = process_ptype_disc
@@ -233,8 +232,8 @@ nfc_re_process_data(struct nfc_re* re, const union nci_packet* dta,
     switch (re->rfproto) {
         case NCI_RF_PROTOCOL_NFC_DEP:
             len = process_llcp(re,
-                (const struct llcp_packet*)dta->data.payload,
-                dta->data.l, &off, (struct llcp_packet*)rsp->data.payload);
+                (const struct llcp_pdu*)dta->data.payload,
+                dta->data.l, &off, (struct llcp_pdu*)rsp->data.payload);
             if (len) {
                 len = nfc_create_nci_dta(rsp, NCI_PBF_END, re->connid, len);
             }
@@ -304,7 +303,7 @@ nfc_re_create_dta_act(struct nfc_re* re, const void* data,
 
   assert(act);
 
-  llcp_len = llcp_create_packet((struct llcp_packet*)act, 0, LLCP_PTYPE_UI, 0);
+  llcp_len = llcp_create_pdu((struct llcp_pdu*)act, 0, LLCP_PTYPE_UI, 0);
 
   memcpy(act+len, data, len);
 

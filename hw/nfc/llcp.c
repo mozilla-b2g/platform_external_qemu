@@ -21,8 +21,8 @@ enum {
 };
 
 size_t
-llcp_create_packet(struct llcp_packet* llcp, unsigned char dsap,
-                   unsigned char ptype, unsigned char ssap)
+llcp_create_pdu(struct llcp_pdu* llcp, unsigned char dsap,
+                unsigned char ptype, unsigned char ssap)
 {
     assert(llcp);
 
@@ -39,7 +39,7 @@ llcp_create_packet(struct llcp_packet* llcp, unsigned char dsap,
 }
 
 unsigned char
-llcp_ptype(const struct llcp_packet* llcp)
+llcp_ptype(const struct llcp_pdu* llcp)
 {
     assert(llcp);
 

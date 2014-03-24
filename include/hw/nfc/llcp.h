@@ -126,7 +126,7 @@ struct llcp_param_sdres {
 };
 
 /*
- * LLCP packets
+ * LLCP PDUs
  */
 
 enum nfc_llcp_ptype {
@@ -145,7 +145,7 @@ enum nfc_llcp_ptype {
     LLCP_PTYPE_RNR = 0xe
 };
 
-struct llcp_packet {
+struct llcp_pdu {
 #if BITORDER_MSB_FIRST
     uint16_t dsap:6;
     uint16_t ptype:4;
@@ -164,11 +164,11 @@ struct llcp_version {
 };
 
 size_t
-llcp_create_packet(struct llcp_packet* llcp, unsigned char dsap,
-                   unsigned char ptype, unsigned char ssap);
+llcp_create_pdu(struct llcp_pdu* llcp, unsigned char dsap,
+                unsigned char ptype, unsigned char ssap);
 
 unsigned char
-llcp_ptype(const struct llcp_packet* llcp);
+llcp_ptype(const struct llcp_pdu* llcp);
 
 /* used during link establishment */
 size_t
