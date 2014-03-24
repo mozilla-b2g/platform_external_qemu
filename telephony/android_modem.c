@@ -1125,7 +1125,7 @@ amodem_send_calls_update( AModem  modem )
 
 
 int
-amodem_add_inbound_call( AModem  modem, const char*  number )
+amodem_add_inbound_call( AModem  modem, const char*  number, const int  numPresentation, const char*  name, const int  namePresentation )
 {
     AVoiceCall  vcall = amodem_alloc_call( modem );
     ACall       call  = &vcall->call;
@@ -1147,6 +1147,16 @@ amodem_add_inbound_call( AModem  modem, const char*  number )
 
     memcpy( call->number, number, len );
     call->number[len] = 0;
+
+    call->numberPresentation = numPresentation;
+
+    len  = strlen(name);
+    if (len >= sizeof(call->name))
+    len = sizeof(call->name)-1;
+    memcpy( call->name, name, len );
+
+    call->name[len] = 0;
+    call->namePresentation = namePresentation;
 
     amodem_unsol( modem, "RING\r");
     return 0;
@@ -2263,9 +2273,10 @@ handleListCurrentCalls( const char*  cmd, AModem  modem )
         AVoiceCall  vcall = modem->calls + nn;
         ACall       call  = &vcall->call;
         if (call->mode == A_CALL_VOICE)
-            amodem_add_line( modem, "+CLCC: %d,%d,%d,%d,%d,\"%s\",%d\r\n",
+            amodem_add_line( modem, "+CLCC: %d,%d,%d,%d,%d,\"%s\",%d,%d,\"%s\",%d\r\n",
                              call->id, call->dir, call->state, call->mode,
-                             call->multi, call->number, 129 );
+                             call->multi, call->number, 129 , call->numberPresentation,
+                             call->name, call->namePresentation);
     }
     return amodem_end_line( modem );
 }
