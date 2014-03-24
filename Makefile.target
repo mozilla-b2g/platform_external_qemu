@@ -94,6 +94,7 @@ HW_SOURCES := \
     nfc/nfc.c \
     nfc/re.c \
     nfc/rf.c \
+    nfc/snep.c \
     pci/pci.c \
     scsi/scsi-disk.c \
     usb/dev-hid.c \
