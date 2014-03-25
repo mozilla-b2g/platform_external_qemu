@@ -17,7 +17,9 @@
 #include "hw/nfc/nfc.h"
 #include "hw/nfc/nci.h"
 #include "hw/nfc/llcp.h"
+#include "hw/nfc/llcp-snep.h"
 #include "hw/nfc/re.h"
+#include "hw/nfc/snep.h"
 
 struct nfc_re nfc_res[3] = {
     INIT_NFC_RE([0], NCI_RF_PROTOCOL_NFC_DEP, NCI_RF_NFC_F_PASSIVE_LISTEN_MODE, "deadbeaf0", nfc_res+0),
@@ -234,6 +236,16 @@ nfc_re_read_rbuf(struct nfc_re* re, size_t len, void* data)
     return read_buf(&re->rbufsiz, re->rbuf, len, data);
 }
 
+/*
+ * LLCP support
+ */
+
+static size_t (* const llcp_sap_cb[LLCP_NUMBER_OF_SAPS])(struct llcp_data_link*,
+                                                   const uint8_t*, size_t,
+                                                         struct snep*) = {
+    [LLCP_SAP_SNEP] = llcp_sap_snep
+};
+
 static ssize_t
 create_dta(void* data, struct nfc_device* nfc, size_t maxlen,
            union nci_packet* dta)
@@ -404,24 +416,38 @@ process_ptype_i(struct nfc_re* re, const struct llcp_pdu* llcp,
 {
     const uint8_t* info;
     struct llcp_data_link* dl;
+    ssize_t res;
 
     dl = re->llcp_dl[llcp->ssap] + llcp->dsap;
     dl->v_r = (dl->v_r + 1) % 16;
 
     /* I PDUs transfer messages (i.e., 'Service Data Units' in LLCP
-     * speak) over LLCP connections. In our case we simply put the
-     * payload into the RE's send buffer.
+     * speak) over LLCP connections. In our case we hand over the
+     * payload to the next higher-layered protocol, or simply put
+     * it into the RE's send buffer.
      */
 
     /* consume llcp header and sequence numbers */
     *consumed = sizeof(*llcp) + 1;
     len -= *consumed;
 
-    /* copy information field into DL's receive buffer */
     info = ((const uint8_t*)llcp) + *consumed;
-    llcp_dl_write_rbuf(dl, len, info);
+    if (llcp_sap_cb[llcp->dsap]) {
+        /* there's a handler for this SAP, call it and build an LLCP
+         * header if there is a response */
+        res = llcp_sap_cb[llcp->dsap](dl, info, len,
+                                      (struct snep*)rsp->info+1);
+        if (res) {
+            res += llcp_create_pdu_i(rsp, llcp->ssap, llcp->dsap,
+                                     dl->v_s, dl->v_r);
+        }
+    } else {
+        /* copy information field into re->sbuf */
+        llcp_dl_write_rbuf(dl, len, info);
+        res = 0;
+    }
 
-    return 0;
+    return res;
 }
 
 static size_t

@@ -90,6 +90,7 @@ HW_SOURCES := \
     android/goldfish/profile.c \
     nfc/hci.c \
     nfc/llcp.c \
+    nfc/llcp-snep.c \
     nfc/nci.c \
     nfc/nfc.c \
     nfc/re.c \
