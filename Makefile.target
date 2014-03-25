@@ -92,6 +92,7 @@ HW_SOURCES := \
     nfc/llcp.c \
     nfc/llcp-snep.c \
     nfc/nci.c \
+    nfc/ndef.c \
     nfc/nfc.c \
     nfc/re.c \
     nfc/rf.c \
