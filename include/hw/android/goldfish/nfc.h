@@ -27,4 +27,7 @@ int
 goldfish_nfc_send_ntf(ssize_t (*create)(void*, struct nfc_device*, size_t,
                                         union nci_packet*), void* data);
 
+int
+goldfish_nfc_recv_dta(ssize_t (*recv)(void*, struct nfc_device*), void* data);
+
 #endif
