@@ -664,3 +664,127 @@ nfc_re_send_llcp_connect(struct nfc_re* re, unsigned char dsap, unsigned char ss
     struct llcp_connect_param param = LLCP_CONNECT_PARAM_INIT(re, dsap, ssap);
     return send_pdu_from_re(create_connect_dta, &param, re);
 }
+
+/*
+ * SNEP PUT
+ */
+
+struct llcp_i_param {
+    struct nfc_re* re;
+    unsigned char dsap;
+    unsigned char ssap;
+    ssize_t (*create_snep)(void*, size_t, struct snep*);
+    void* data;
+};
+
+#define LLCP_I_PARAM_INIT(_re, _dsap, _ssap, _create_snep, _data) \
+    { \
+        .re = (_re), \
+        .dsap = (_dsap), \
+        .ssap = (_ssap), \
+        .create_snep = (_create_snep), \
+        .data =  (_data) \
+    }
+
+static ssize_t
+create_i_pdu(void* data, struct llcp_pdu* llcp)
+{
+    const struct llcp_i_param* param;
+    struct llcp_data_link* dl;
+    size_t len;
+    struct snep* snep;
+    ssize_t res;
+
+    param = data;
+    assert(param);
+
+    dl = param->re->llcp_dl[param->dsap] + param->ssap;
+    len = llcp_create_pdu_i(llcp, param->dsap, param->ssap, dl->v_s, dl->v_r);
+
+    snep = (struct snep*)(llcp->info + (len-sizeof(*llcp)));
+    res = param->create_snep(param->data, 200-len, snep);
+    if (res < 0) {
+        return -1;
+    }
+    dl->v_s = (dl->v_s + 1) % 16;
+
+    return len + res;
+}
+
+static int
+send_snep_over_llcp(struct nfc_re* re,
+                    enum llcp_sap dsap, enum llcp_sap ssap,
+                    ssize_t (*create)(void*, size_t, struct snep*),
+                    void* data)
+{
+    struct llcp_i_param param =
+        LLCP_I_PARAM_INIT(re, dsap, ssap, create, data);
+    return send_pdu_from_re(create_i_pdu, &param, re);
+}
+
+int
+nfc_re_send_snep_put(struct nfc_re* re,
+                     enum llcp_sap dsap, enum llcp_sap ssap,
+                     ssize_t (*create_snep)(void*, size_t, struct snep*),
+                     void* data)
+{
+    int res;
+
+    assert(re);
+
+    switch (re->rfproto) {
+        case NCI_RF_PROTOCOL_NFC_DEP:
+            /* send SNEP over LLCP */
+            res = send_snep_over_llcp(re, dsap, ssap, create_snep, data);
+            break;
+        default:
+            /* TODO: support over protocols */
+            return -1;
+    }
+    return res;
+}
+
+static int
+recv_snep_over_llcp(struct nfc_re* re,
+                    enum llcp_sap dsap, enum llcp_sap ssap,
+                    ssize_t (*process)(void*, size_t, const struct ndef_rec*),
+                    void* data)
+{
+    struct llcp_data_link* dl;
+    ssize_t res;
+
+    dl = re->llcp_dl[dsap] + ssap;
+
+    /* normal operation; process last received SNEP request */
+    assert(dl->status == LLCP_DATA_LINK_CONNECTED);
+
+    res = process(data, dl->rlen, (const struct ndef_rec*)dl->rbuf);
+    if (res < 0) {
+        return -1;
+    }
+
+    return 0;
+}
+
+int
+nfc_re_recv_snep_put(struct nfc_re* re,
+                     enum llcp_sap dsap, enum llcp_sap ssap,
+                     ssize_t (*process_ndef)(void*, size_t,
+                                       const struct ndef_rec*),
+                     void* data)
+{
+    int res;
+
+    assert(re);
+
+    switch (re->rfproto) {
+        case NCI_RF_PROTOCOL_NFC_DEP:
+            /* send SNEP over LLCP */
+            res = recv_snep_over_llcp(re, dsap, ssap, process_ndef, data);
+            break;
+        default:
+            /* TODO: support over protocols */
+            return -1;
+    }
+    return res;
+}

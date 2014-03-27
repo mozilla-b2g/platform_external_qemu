@@ -18,6 +18,8 @@
 #include "hw/nfc/rf.h"
 
 union nci_packet;
+struct ndef_rec;
+struct snep;
 
 /* NFC Remote Endpoint */
 struct nfc_re {
@@ -83,5 +85,17 @@ nfc_re_create_dta_act(struct nfc_re* re, const void* data,
 int
 nfc_re_send_llcp_connect(struct nfc_re* re, unsigned char dsap,
                          unsigned char ssap);
+
+int
+nfc_re_send_snep_put(struct nfc_re* re,
+                     enum llcp_sap dsap, enum llcp_sap ssap,
+                     ssize_t (*create_snep)(void*, size_t, struct snep*),
+                     void* data);
+
+int
+nfc_re_recv_snep_put(struct nfc_re* re,
+                     enum llcp_sap dsap, enum llcp_sap ssap,
+                     ssize_t (*process_ndef)(void*, size_t, const struct ndef_rec*),
+                     void* data);
 
 #endif
