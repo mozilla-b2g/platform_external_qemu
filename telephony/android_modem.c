@@ -885,7 +885,7 @@ amodem_set_data_registration( AModem  modem, ARegistrationState  state )
             else
                 amodem_unsol( modem, "+CGREG: %d,%d,\"%04x\",\"%07x\"\r",
                             modem->data_mode, modem->data_state,
-                            modem->area_code & 0xffff, modem->cell_id & 0xffffff );
+                            modem->area_code & 0xffff, modem->cell_id & 0xfffffff );
             break;
 
         default:
