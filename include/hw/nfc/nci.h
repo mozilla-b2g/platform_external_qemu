@@ -142,6 +142,10 @@ enum nci_notification_type {
     NCI_MORE_NOTIFICATIONS = 2
 };
 
+enum {
+    MAX_NCI_PAYLOAD_LENGTH = 256
+};
+
 struct nci_common_hdr {
 #if BITORDER_MSB_FIRST
     uint8_t mt:3;
@@ -166,7 +170,7 @@ struct nci_data_packet {
 #endif
     uint8_t rfu;
     uint8_t l;
-    uint8_t payload[256];
+    uint8_t payload[MAX_NCI_PAYLOAD_LENGTH];
 } __attribute__((packed));
 
 struct nci_control_packet {
@@ -187,7 +191,7 @@ struct nci_control_packet {
     uint8_t rfu:2;
 #endif
     uint8_t l;
-    uint8_t payload[256];
+    uint8_t payload[MAX_NCI_PAYLOAD_LENGTH];
 };
 
 union nci_packet {

@@ -20,11 +20,11 @@ struct nfc_device;
 union nci_packet;
 
 int
-goldfish_nfc_send_dta(ssize_t (*create)(void*, struct nfc_device*,
+goldfish_nfc_send_dta(ssize_t (*create)(void*, struct nfc_device*, size_t,
                                         union nci_packet*), void* data);
 
 int
-goldfish_nfc_send_ntf(ssize_t (*create)(void*, struct nfc_device*,
+goldfish_nfc_send_ntf(ssize_t (*create)(void*, struct nfc_device*, size_t,
                                         union nci_packet*), void* data);
 
 #endif

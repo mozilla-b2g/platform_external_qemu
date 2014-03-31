@@ -49,7 +49,7 @@ static const uint8_t config_id_default[256][33] = {
 
 static ssize_t
 nfc_rf_field_info_ntf_cb(void* data,
-                         struct nfc_device* nfc,
+                         struct nfc_device* nfc, size_t maxlen,
                          union nci_packet* ntf)
 {
     return nfc_create_rf_field_info_ntf(nfc, ntf);
