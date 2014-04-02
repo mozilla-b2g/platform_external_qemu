@@ -59,6 +59,9 @@ extern struct nfc_re nfc_res[3];
 struct nfc_re*
 nfc_get_re_by_id(uint8_t id);
 
+void
+nfc_clear_re(struct nfc_re* re);
+
 ssize_t
 nfc_re_write_sbuf(struct nfc_re* re, size_t len, const void* data);
 

@@ -173,6 +173,20 @@ nfc_get_re_by_id(uint8_t id)
     return NULL;
 }
 
+void
+nfc_clear_re(struct nfc_re* re)
+{
+    size_t dsap, ssap;
+
+    assert(re);
+
+    for (dsap = 0; dsap < ARRAY_SIZE(re->llcp_dl); ++dsap) {
+        for (ssap = 0; ssap < ARRAY_SIZE(re->llcp_dl[dsap]); ++ssap) {
+            llcp_init_data_link(re->llcp_dl[dsap]+ssap);
+        }
+    }
+}
+
 static ssize_t
 write_buf(size_t* bufsiz, uint8_t* buf, size_t len, const void* data)
 {
