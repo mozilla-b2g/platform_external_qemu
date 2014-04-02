@@ -369,6 +369,13 @@ process_ptype_cc(struct nfc_re* re, const struct llcp_pdu* llcp,
     assert(dl->status == LLCP_DATA_LINK_CONNECTING);
     dl->status = LLCP_DATA_LINK_CONNECTED;
 
+    /* move DL's pending PDUs to global xmit queue */
+    while (!QTAILQ_EMPTY(&dl->xmit_q)) {
+        struct llcp_pdu_buf* buf = QTAILQ_FIRST(&dl->xmit_q);
+        QTAILQ_REMOVE(&dl->xmit_q, buf, entry);
+        QTAILQ_INSERT_TAIL(&re->xmit_q, buf, entry);
+    }
+
     *consumed = sizeof(*llcp) + 1;
 
     return 0;
@@ -717,9 +724,43 @@ send_snep_over_llcp(struct nfc_re* re,
                     ssize_t (*create)(void*, size_t, struct snep*),
                     void* data)
 {
-    struct llcp_i_param param =
+    int res;
+    struct llcp_data_link* dl;
+    struct llcp_i_param i_param =
         LLCP_I_PARAM_INIT(re, dsap, ssap, create, data);
-    return send_pdu_from_re(create_i_pdu, &param, re);
+
+    res = 0;
+    dl = re->llcp_dl[dsap] + ssap;
+
+    if (dl->status == LLCP_DATA_LINK_DISCONNECTED) {
+        /* enqueue request for later delivery and connect first */
+        struct llcp_pdu_buf* buf;
+        struct llcp_connect_param connect_param =
+            LLCP_CONNECT_PARAM_INIT(re, dsap, ssap);
+        buf = llcp_alloc_pdu_buf();
+        if (!buf) {
+            return -1;
+        }
+        buf->len = create_i_pdu(&i_param, (struct llcp_pdu*)buf->pdu);
+        QTAILQ_INSERT_TAIL(&dl->xmit_q, buf, entry);
+        /* on connecting successfully, pending packets will be delivered */
+        res = send_pdu_from_re(create_connect_dta, &connect_param, re);
+    } else if (dl->status == LLCP_DATA_LINK_CONNECTING) {
+        /* connecting in process; only enqueue request for later delivery */
+        struct llcp_pdu_buf* buf = llcp_alloc_pdu_buf();
+        if (!buf) {
+            return -1;
+        }
+        buf->len = create_i_pdu(&i_param, (struct llcp_pdu*)buf->pdu);
+        QTAILQ_INSERT_TAIL(&dl->xmit_q, buf, entry);
+    } else if (dl->status == LLCP_DATA_LINK_CONNECTED) {
+        /* normal operation; send a SNEP request */
+        res = send_pdu_from_re(create_i_pdu, &i_param, re);
+    } else {
+        /* don't send a request for disconnecting links */
+        assert(dl->status == LLCP_DATA_LINK_DISCONNECTING);
+    }
+    return res;
 }
 
 int
