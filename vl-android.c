@@ -4013,11 +4013,36 @@ int main(int argc, char **argv, char **envp)
 #ifdef CONFIG_SLIRP
         net_clients[nb_net_clients++] = "user";
 #endif
+
+        if (amodem_num_devices) {
+            i = MAX_NET_CLIENTS - nb_net_clients;
+            if (i > 4/*MAX_DATA_CONTEXTS*/) {
+                i = 4;
+            }
+
+            while (i--) {
+                net_clients[nb_net_clients++] = "rmnet";
+            }
+        }
     }
 
     for(i = 0;i < nb_net_clients; i++) {
-        if (net_client_parse(net_clients[i]) < 0) {
+        int index;
+        NICInfo *nd;
+
+        if ((index = net_client_parse(net_clients[i])) < 0) {
             PANIC("Unable to parse net clients");
+        } else if (!index) {
+            // Host devices.
+            continue;
+        }
+
+        nd = &nd_table[index];
+        if (!strncmp(nd->name, "rmnet.", 6)) {
+            char buf[32];
+            snprintf(buf, sizeof(buf), " android.ifrename=eth%d:rmnet%s",
+                     index, (nd->name + 6));
+            stralloc_add_str(kernel_params, buf);
         }
     }
     net_client_check();

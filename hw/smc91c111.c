@@ -28,6 +28,7 @@ typedef struct {
     uint16_t gpr;
     uint16_t ptr;
     uint16_t ercv;
+    uint16_t ephsr;
     qemu_irq irq;
     int bank;
     int packet_num;
@@ -48,7 +49,7 @@ typedef struct {
     int mmio_index;
 } smc91c111_state;
 
-#define SMC91C111_SAVE_VERSION 1
+#define SMC91C111_SAVE_VERSION 2
 
 static void smc91c111_save(QEMUFile *f, void *opaque)
 {
@@ -66,6 +67,7 @@ static void smc91c111_save(QEMUFile *f, void *opaque)
     qemu_put_be16(f, s->gpr);
     qemu_put_be16(f, s->ptr);
     qemu_put_be16(f, s->ercv);
+    qemu_put_be16(f, s->ephsr);
 
     qemu_put_be32(f, s->bank);
     qemu_put_be32(f, s->packet_num);
@@ -102,6 +104,7 @@ static int smc91c111_load(QEMUFile *f, void *opaque, int version_id)
     s->gpr = qemu_get_be16(f);
     s->ptr = qemu_get_be16(f);
     s->ercv = qemu_get_be16(f);
+    s->ephsr = qemu_get_be16(f);
 
     s->bank = qemu_get_be32(f);
     s->packet_num = qemu_get_be32(f);
@@ -134,6 +137,8 @@ static int smc91c111_load(QEMUFile *f, void *opaque, int version_id)
 #define TCR_LOOP      0x0002
 #define TCR_TXEN      0x0001
 
+#define EPHSR_LINK_OK 0x4000
+
 #define INT_MD        0x80
 #define INT_ERCV      0x40
 #define INT_EPH       0x20
@@ -144,6 +149,7 @@ static int smc91c111_load(QEMUFile *f, void *opaque, int version_id)
 #define INT_RCV       0x01
 
 #define CTR_AUTO_RELEASE  0x0800
+#define CTR_LE_ENABLE     0x0080
 #define CTR_RELOAD        0x0002
 #define CTR_STORE         0x0001
 
@@ -314,6 +320,7 @@ static void smc91c111_reset(smc91c111_state *s)
     s->ctr = 0x1210;
     s->ptr = 0;
     s->ercv = 0x1f;
+    s->ephsr = s->vc && s->vc->link_down ? 0 : EPHSR_LINK_OK;
     s->int_level = INT_TX_EMPTY;
     s->int_mask = 0;
     smc91c111_update(s);
@@ -381,6 +388,18 @@ static void smc91c111_writeb(void *opaque, target_phys_addr_t offset,
                 fprintf(stderr, "smc91c111:EEPROM reload not implemented\n");
             value &= ~3;
             SET_LOW(ctr, value);
+
+            /**
+             * subclause 8.21 "Bank 2 - Interrupt Status Registers":
+             *
+             *   EPH INT will only be cleared by the following methods:
+             *   1) Clearing the LE ENABLE bit in the Control Register if an
+             *      EPH interrupt is caused by a LINK_OK transition.
+             */
+            if (!(value & CTR_LE_ENABLE)) {
+                s->int_level &= ~INT_EPH;
+                smc91c111_update(s);
+            }
             return;
         case 13:
             SET_HIGH(ctr, value);
@@ -511,9 +530,9 @@ static uint32_t smc91c111_readb(void *opaque, target_phys_addr_t offset)
         case 1:
             return s->tcr >> 8;
         case 2: /* EPH Status */
-            return 0;
+            return s->ephsr & 0xff;
         case 3:
-            return 0x40;
+            return s->ephsr >> 8;
         case 4: /* RCR */
             return s->rcr & 0xff;
         case 5:
@@ -777,6 +796,24 @@ static void smc91c111_cleanup(VLANClientState *vc)
     qemu_free(s);
 }
 
+static void smc91c111_link_status_changed(VLANClientState *vc)
+{
+    smc91c111_state *s = vc->opaque;
+    uint16_t ephsr;
+
+    ephsr = s->ephsr & ~EPHSR_LINK_OK;
+    if (!vc->link_down) {
+        ephsr |= EPHSR_LINK_OK;
+    }
+    if (ephsr == s->ephsr) {
+        return;
+    }
+
+    s->ephsr = ephsr;
+    s->int_level |= INT_EPH;
+    smc91c111_update(s);
+}
+
 static void smc91c111_init1(SysBusDevice *dev)
 {
     smc91c111_state *s = FROM_SYSBUS(smc91c111_state, dev);
@@ -792,6 +829,7 @@ static void smc91c111_init1(SysBusDevice *dev)
     s->vc = qdev_get_vlan_client(&dev->qdev,
                                  smc91c111_can_receive, smc91c111_receive, NULL,
                                  smc91c111_cleanup, s);
+    s->vc->link_status_changed = smc91c111_link_status_changed;
     qemu_format_nic_info_str(s->vc, s->macaddr);
 
     register_savevm( "smc91c111", 0, SMC91C111_SAVE_VERSION,
