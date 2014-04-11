@@ -4024,6 +4024,11 @@ int main(int argc, char **argv, char **envp)
                 net_clients[nb_net_clients++] = "rmnet";
             }
         }
+
+        // Add one wlan interface for wifi.
+        if (MAX_NET_CLIENTS - nb_net_clients > 0) {
+          net_clients[nb_net_clients++] = "wlan";
+        }
     }
 
     for(i = 0;i < nb_net_clients; i++) {
@@ -4042,6 +4047,11 @@ int main(int argc, char **argv, char **envp)
             char buf[32];
             snprintf(buf, sizeof(buf), " android.ifrename=eth%d:rmnet%s",
                      index, (nd->name + 6));
+            stralloc_add_str(kernel_params, buf);
+        } else if (!strncmp(nd->name, "wlan.", 5)) {
+            char buf[32];
+            snprintf(buf, sizeof(buf), " android.ifrename=eth%d:wlan%s",
+                     index, (nd->name + 5));
             stralloc_add_str(kernel_params, buf);
         }
     }
