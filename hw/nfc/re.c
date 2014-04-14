@@ -185,6 +185,9 @@ nfc_clear_re(struct nfc_re* re)
             llcp_init_data_link(re->llcp_dl[dsap]+ssap);
         }
     }
+
+    re->last_dsap = LLCP_SAP_LM;
+    re->last_ssap = LLCP_SAP_LM;
 }
 
 static ssize_t
@@ -253,6 +256,17 @@ nfc_re_read_rbuf(struct nfc_re* re, size_t len, void* data)
 /*
  * LLCP support
  */
+
+static void
+update_last_saps(struct nfc_re* re, enum llcp_sap dsap, enum llcp_sap ssap)
+{
+    assert(re);
+    assert(dsap < LLCP_NUMBER_OF_SAPS);
+    assert(ssap < LLCP_NUMBER_OF_SAPS);
+
+    re->last_dsap = dsap;
+    re->last_ssap = ssap;
+}
 
 static size_t (* const llcp_sap_cb[LLCP_NUMBER_OF_SAPS])(struct llcp_data_link*,
                                                    const uint8_t*, size_t,
@@ -352,6 +366,8 @@ process_ptype_connect(struct nfc_re* re, const struct llcp_pdu* llcp,
         }
     }
 
+    update_last_saps(re, llcp->ssap, llcp->dsap);
+
     /* switch DSAP and SSAP in outgoing PDU */
     return llcp_create_pdu(rsp, llcp->ssap, LLCP_PTYPE_CC, llcp->dsap);
 }
@@ -367,6 +383,8 @@ process_ptype_disc(struct nfc_re* re, const struct llcp_pdu* llcp,
     dl->status = LLCP_DATA_LINK_DISCONNECTED;
 
     *consumed = sizeof(*llcp);
+
+    update_last_saps(re, llcp->ssap, llcp->dsap);
 
     /* switch DSAP and SSAP in outgoing PDU */
     return llcp_create_pdu_dm(rsp, llcp->ssap, llcp->dsap, 0);
@@ -390,6 +408,8 @@ process_ptype_cc(struct nfc_re* re, const struct llcp_pdu* llcp,
         QTAILQ_INSERT_TAIL(&re->xmit_q, buf, entry);
     }
 
+    update_last_saps(re, llcp->ssap, llcp->dsap);
+
     *consumed = sizeof(*llcp) + 1;
 
     return 0;
@@ -406,6 +426,8 @@ process_ptype_dm(struct nfc_re* re, const struct llcp_pdu* llcp,
 
     dl = re->llcp_dl[llcp->ssap] + llcp->dsap;
     dl->status = LLCP_DATA_LINK_DISCONNECTED;
+
+    update_last_saps(re, llcp->ssap, llcp->dsap);
 
     /* consume 1 extra byte for 'reason' field */
     *consumed = sizeof(*llcp) + 1;
@@ -427,7 +449,10 @@ process_ptype_frmr(struct nfc_re* re, const struct llcp_pdu* llcp,
     NFC_D("LLCP FRMR flags=%x ptype=%u sequence=%u v_s=%u v_r=%u v_sa=%u "
           "v_sr=%u\n", flags, ptype, llcp->info[1], v_s, v_r, v_sa, v_ra);
 
+    update_last_saps(re, llcp->ssap, llcp->dsap);
+
     *consumed = sizeof(*llcp) + 4;
+
     return 0;
 }
 
@@ -447,6 +472,8 @@ process_ptype_i(struct nfc_re* re, const struct llcp_pdu* llcp,
      * payload to the next higher-layered protocol, or simply put
      * it into the RE's send buffer.
      */
+
+    update_last_saps(re, llcp->ssap, llcp->dsap);
 
     /* consume llcp header and sequence numbers */
     *consumed = sizeof(*llcp) + 1;
@@ -485,6 +512,8 @@ process_ptype_rr(struct nfc_re* re, const struct llcp_pdu* llcp,
     dl = re->llcp_dl[llcp->ssap] + llcp->dsap;
     dl->v_sa = nr;
 
+    update_last_saps(re, llcp->ssap, llcp->dsap);
+
     *consumed = sizeof(*llcp) + 1;
     return 0;
 }
@@ -502,6 +531,8 @@ process_ptype_rnr(struct nfc_re* re, const struct llcp_pdu* llcp,
 
     dl = re->llcp_dl[llcp->ssap] + llcp->dsap;
     dl->v_sa = nr;
+
+    update_last_saps(re, llcp->ssap, llcp->dsap);
 
     *consumed = sizeof(*llcp) + 1;
     return 0;

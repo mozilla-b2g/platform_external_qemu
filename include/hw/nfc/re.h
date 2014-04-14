@@ -29,6 +29,8 @@ struct nfc_re {
     uint8_t id;
     /* outer array is always remote SAP, inner array is local, emulated SAP */
     struct llcp_data_link llcp_dl[LLCP_NUMBER_OF_SAPS][LLCP_NUMBER_OF_SAPS];
+    enum llcp_sap last_dsap; /* last remote SAP */
+    enum llcp_sap last_ssap; /* last local SAP */
     int xmit_next; /* true if we are supposed to send the next PDU */
     QEMUTimer *xmit_timer;
     struct llcp_pdu_queue xmit_q;

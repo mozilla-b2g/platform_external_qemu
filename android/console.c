@@ -3475,8 +3475,8 @@ build_ndef_msg(ControlClient client,
 
 struct nfc_snep_param {
     ControlClient client;
-    unsigned long dsap;
-    unsigned long ssap;
+    long dsap;
+    long ssap;
     size_t nrecords;
     struct nfc_ndef_record_param record[4];
 };
@@ -3517,7 +3517,7 @@ nfc_send_snep_put_cb(void* data,
                      struct nfc_device* nfc,
                      size_t maxlen, union nci_packet* ntf)
 {
-    const struct nfc_snep_param* param;
+    struct nfc_snep_param* param;
     ssize_t res;
 
     param = data;
@@ -3526,6 +3526,10 @@ nfc_send_snep_put_cb(void* data,
     if (!nfc->active_re) {
         control_write(param->client, "KO: no active remote endpoint\n");
         return -1;
+    }
+    if ((param->dsap < 0) && (param->ssap < 0)) {
+        param->dsap = nfc->active_re->last_dsap;
+        param->ssap = nfc->active_re->last_ssap;
     }
     res = nfc_re_send_snep_put(nfc->active_re, param->dsap, param->ssap,
                                create_snep_cp, data);
@@ -3589,7 +3593,7 @@ nfc_recv_process_ndef_cb(void* data, size_t len, const struct ndef_rec* ndef)
 static ssize_t
 nfc_recv_snep_put_cb(void* data,  struct nfc_device* nfc)
 {
-    const struct nfc_snep_param* param;
+    struct nfc_snep_param* param;
     ssize_t res;
 
     param = data;
@@ -3598,6 +3602,10 @@ nfc_recv_snep_put_cb(void* data,  struct nfc_device* nfc)
     if (!nfc->active_re) {
         control_write(param->client, "KO: no active remote endpoint\r\n");
         return -1;
+    }
+    if ((param->dsap < 0) && (param->ssap < 0)) {
+        param->dsap = nfc->active_re->last_dsap;
+        param->ssap = nfc->active_re->last_ssap;
     }
     res = nfc_re_recv_snep_put(nfc->active_re, param->dsap, param->ssap,
                                nfc_recv_process_ndef_cb, data);
@@ -3634,15 +3642,15 @@ do_nfc_snep( ControlClient  client, char*  args )
             return -1;
         }
         errno = 0;
-        param.dsap = strtoul(p, NULL, 0);
+        param.dsap = strtol(p, NULL, 0);
         if (errno) {
             control_write(client,
                           "KO: invalid DSAP '%s', error %d(%s)\r\n",
                           p, errno, strerror(errno));
             return -1;
         }
-        if (!(param.dsap < LLCP_NUMBER_OF_SAPS)) {
-            control_write(client, "KO: invalid DSAP '%u'\r\n",
+        if ((param.dsap < -1) || !(param.dsap < LLCP_NUMBER_OF_SAPS)) {
+            control_write(client, "KO: invalid DSAP '%ld'\r\n",
                           param.dsap);
             return -1;
         }
@@ -3653,15 +3661,15 @@ do_nfc_snep( ControlClient  client, char*  args )
             return -1;
         }
         errno = 0;
-        param.ssap = strtoul(p, NULL, 0);
+        param.ssap = strtol(p, NULL, 0);
         if (errno) {
             control_write(client,
                           "KO: invalid SSAP '%s', error %d(%s)\r\n",
                           p, errno, strerror(errno));
             return -1;
         }
-        if (!(param.ssap < LLCP_NUMBER_OF_SAPS)) {
-            control_write(client, "KO: invalid SSAP '%u'\r\n",
+        if ((param.ssap < -1) || !(param.ssap < LLCP_NUMBER_OF_SAPS)) {
+            control_write(client, "KO: invalid SSAP '%ld'\r\n",
                           param.ssap);
             return -1;
         }
@@ -3997,11 +4005,24 @@ static ssize_t
 nfc_llcp_connect_cb(void* data, struct nfc_device* nfc, size_t maxlen,
                     union nci_packet* packet)
 {
+    struct nfc_llcp_param* param = data;
     ssize_t res;
-    const struct nfc_llcp_param* param = data;
+
     if (!nfc->active_re) {
         control_write(param->client, "KO: no active remote endpoint\n");
         return -1;
+    }
+    if (!param->dsap && !param->ssap) {
+        param->dsap = nfc->active_re->last_dsap;
+        param->ssap = nfc->active_re->last_ssap;
+        if (!param->dsap) {
+            control_write(param->client, "KO: DSAP is 0\r\n");
+            return -1;
+        }
+        if (!param->ssap) {
+            control_write(param->client, "KO: SSAP is 0\r\n");
+            return -1;
+        }
     }
     res = nfc_re_send_llcp_connect(nfc->active_re, param->dsap, param->ssap);
     if (res < 0) {
