@@ -139,7 +139,8 @@ enum nci_version {
 enum nci_notification_type {
     NCI_LAST_NOTIFICATION = 0,
     NCI_LIMIT_NOTIFICATION = 1,
-    NCI_MORE_NOTIFICATIONS = 2
+    NCI_MORE_NOTIFICATIONS = 2,
+    NUMBER_OF_NCI_NOTIFICATION_TYPES
 };
 
 enum {
@@ -530,6 +531,7 @@ nfc_create_nci_ntf(union nci_packet* ntf, enum nci_pbf pbf,
 
 size_t
 nfc_create_rf_discovery_ntf(struct nfc_re* re,
+                            enum nci_notification_type type,
                             struct nfc_device* nfc,
                             union nci_packet* ntf);
 

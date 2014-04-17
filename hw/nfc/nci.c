@@ -928,6 +928,7 @@ nfc_create_nci_ntf(union nci_packet* ntf, enum nci_pbf pbf,
 
 size_t
 nfc_create_rf_discovery_ntf(struct nfc_re* re,
+                            enum nci_notification_type type,
                             struct nfc_device* nfc,
                             union nci_packet* ntf)
 {
@@ -936,6 +937,7 @@ nfc_create_rf_discovery_ntf(struct nfc_re* re,
     enum nfc_rfst rfst;
 
     assert(re);
+    assert(type < NUMBER_OF_NCI_NOTIFICATION_TYPES);
 
     if (re->id) {
         return 0; /* RE already discovered */
@@ -956,14 +958,19 @@ nfc_create_rf_discovery_ntf(struct nfc_re* re,
 
     switch (nfc->rf[0].state) {
         case NFC_RFST_DISCOVERY:
+            assert(type == NCI_MORE_NOTIFICATIONS);
             payload->end[payload->nparams] = NCI_MORE_NOTIFICATIONS;
             bits = NFC_RFST_DISCOVERY_BIT;
             rfst = NFC_RFST_W4_ALL_DISCOVERIES;
             break;
         case NFC_RFST_W4_ALL_DISCOVERIES:
-            payload->end[payload->nparams] = NCI_LAST_NOTIFICATION;
+            payload->end[payload->nparams] = type;
             bits = NFC_RFST_W4_ALL_DISCOVERIES_BIT;
-            rfst = NFC_RFST_W4_HOST_SELECT;
+            if (type == NCI_MORE_NOTIFICATIONS) {
+                rfst = NFC_RFST_W4_ALL_DISCOVERIES;
+            } else {
+                rfst = NFC_RFST_W4_HOST_SELECT;
+            }
             break;
         default:
             bits = 0;
