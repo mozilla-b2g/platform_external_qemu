@@ -712,10 +712,13 @@ static void sdp_service_record_build(struct sdp_service_record_s *record,
             g_malloc0(record->attributes * sizeof(*record->attribute_list));
     record->uuid =
             g_malloc0(record->uuids * sizeof(*record->uuid));
-    data = g_malloc(len);
 
     record->attributes = 0;
     uuid = record->uuid;
+
+    /* TODO: Build attribute list of SDP service record for SDP emulation */
+#if 0
+    data = qemu_malloc(len);
     while (def->attributes[record->attributes].data.type) {
         record->attribute_list[record->attributes].pair = data;
 
@@ -735,6 +738,7 @@ static void sdp_service_record_build(struct sdp_service_record_s *record,
         record->attribute_list[record->attributes ++].len = len;
         data += len;
     }
+#endif
 
     /* Sort the attribute list by the AttributeID */
     qsort(record->attribute_list, record->attributes,

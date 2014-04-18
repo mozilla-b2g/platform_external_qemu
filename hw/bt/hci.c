@@ -1641,12 +1641,65 @@ static void bt_submit_hci(struct HCIInfo *info,
     case cmd_opcode_pack(OGF_LINK_CTL, OCF_AUTH_REQUESTED):
         LENGTH_CHECK(auth_requested);
 
-        if (bt_hci_handle_bad(hci, PARAMHANDLE(auth_requested)))
-            bt_hci_event_status(hci, HCI_NO_CONNECTION);
-        else {
-            bt_hci_event_status(hci, HCI_SUCCESS);
-            bt_hci_event_auth_complete(hci, PARAMHANDLE(auth_requested));
+        uint16_t auth_req_handle = 0;
+        if (PARAMHANDLE(auth_requested)) {
+            auth_req_handle = PARAMHANDLE(auth_requested);
+        } else {
+            auth_req_handle = hci->lm.last_handle | HCI_HANDLE_OFFSET;
         }
+        if (bt_hci_handle_bad(hci, auth_req_handle)) {
+            bt_hci_event_status(hci, HCI_NO_CONNECTION);
+        } else {
+            bt_hci_event_status(hci, HCI_SUCCESS);
+            bt_hci_request_link_key(hci, auth_req_handle);
+        }
+        break;
+
+    case cmd_opcode_pack(OGF_LINK_CTL, OCF_LINK_KEY_NEG_REPLY):
+        LENGTH_CHECK(link_key_neg_reply);
+
+        bt_hci_event_complete(hci, &PARAM(link_key_reply, bdaddr),
+            LINK_KEY_REPLY_CP_SIZE);
+        bt_hci_request_io_capability(hci,
+            &PARAM(link_key_neg_reply, bdaddr));
+        break;
+
+    case cmd_opcode_pack(OGF_LINK_CTL, OCF_IO_CAPABILITY_REQ_REPLY):
+        LENGTH_CHECK(io_capability_req_reply);
+
+        bt_hci_event_complete(hci, &PARAM(io_capability_req_reply, bdaddr),
+            IO_CAPABILITY_REQ_REPLY_CP_SIZE);
+        // The remote I/O capability exchangement has been done.
+        // Here we assume that the remote device has the same I/O capability as
+        // local. If we expect to emulate the different I/O capability of remote
+        // device in the future, we should response with corresponding parameters.
+        bt_hci_response_io_capability(hci,
+                        &PARAM(io_capability_req_reply, bdaddr),
+                        PARAM(io_capability_req_reply, capability),
+                        PARAM(io_capability_req_reply, oob_data),
+                        PARAM(io_capability_req_reply, authentication));
+        bt_hci_request_user_confirmation(hci,
+                        &PARAM(io_capability_req_reply, bdaddr));
+        break;
+
+    case cmd_opcode_pack(OGF_LINK_CTL, OCF_USER_CONFIRMATION_REQ_REPLY):
+        LENGTH_CHECK(user_confirmation_req_reply);
+
+        bt_hci_event_complete(hci, &PARAM(user_confirmation_req_reply, bdaddr),
+             USER_CONFIRMATION_REQ_CP_SIZE);
+        bt_hci_complete_simple_pairing(hci,
+                        &PARAM(user_confirmation_req_reply, bdaddr));
+        bt_hci_notify_link_key(hci,
+                        &PARAM(user_confirmation_req_reply, bdaddr));
+
+        for (i = 0; i < HCI_HANDLES_MAX; i ++)
+            if (hci->lm.handle[i].link &&
+                !bacmp(&hci->lm.handle[i].link->slave->bd_addr,
+                    &PARAM(user_confirmation_req_reply, bdaddr)))
+            {
+                bt_hci_event_auth_complete(hci, hci->lm.handle[i].link->handle);
+                break;
+            }
         break;
 
     case cmd_opcode_pack(OGF_LINK_CTL, OCF_SET_CONN_ENCRYPT):
@@ -1774,6 +1827,13 @@ static void bt_submit_hci(struct HCIInfo *info,
                                     PARAMHANDLE(role_discovery)));
         break;
 
+    case cmd_opcode_pack(OGF_HOST_CTL, OCF_DELETE_STORED_LINK_KEY):
+        LENGTH_CHECK(delete_stored_link_key);
+
+        bt_hci_request_delete_link_key(hci,
+            &PARAM(delete_stored_link_key, bdaddr));
+        break;
+
     case cmd_opcode_pack(OGF_HOST_CTL, OCF_SET_EVENT_MASK):
         LENGTH_CHECK(set_event_mask);
 
@@ -1783,7 +1843,7 @@ static void bt_submit_hci(struct HCIInfo *info,
 
     case cmd_opcode_pack(OGF_HOST_CTL, OCF_RESET):
         bt_hci_reset(hci);
-        bt_hci_event_status(hci, HCI_SUCCESS);
+        bt_hci_event_complete_status(hci, HCI_SUCCESS);
         break;
 
     case cmd_opcode_pack(OGF_HOST_CTL, OCF_SET_EVENT_FLT):
@@ -2249,4 +2309,108 @@ static void bt_hci_done(struct HCIInfo *info)
     timer_free(hci->conn_accept_timer);
 
     g_free(hci);
+}
+
+void bt_hci_request_delete_link_key(struct bt_hci_s *hci, const bdaddr_t *bdaddr)
+{
+    static delete_stored_link_key_rp params;
+    params.status = HCI_SUCCESS;
+    params.num_keys = 1;
+
+    bt_hci_event_complete(hci, &params, DELETE_STORED_LINK_KEY_RP_SIZE);
+}
+
+void bt_hci_request_link_key(struct bt_hci_s *hci, const uint16_t handle)
+{
+    evt_link_key_req params = {
+        .bdaddr = BAINIT(&hci->lm.
+            handle[handle & ~HCI_HANDLE_OFFSET].link->slave->bd_addr),
+    };
+
+    bt_hci_event(hci, EVT_LINK_KEY_REQ, &params, EVT_LINK_KEY_REQ_SIZE);
+}
+
+void bt_hci_request_io_capability(struct bt_hci_s *hci, const bdaddr_t *bdaddr)
+{
+    evt_io_capability_req params = {
+        .bdaddr = BAINIT(bdaddr),
+    };
+
+    bt_hci_event(hci, EVT_IO_CAPABILITY_REQ, &params, EVT_IO_CAPABILITY_REQ_SIZE);
+}
+
+void bt_hci_response_io_capability(struct bt_hci_s *hci, const bdaddr_t *bdaddr,
+    const uint8_t capability, const uint8_t oob_data, const uint8_t authentication)
+{
+    evt_io_capability_response params = {
+        .bdaddr         = BAINIT(bdaddr),
+        .capability     = capability,
+        .oob_data       = oob_data,
+        .authentication = authentication,
+    };
+
+    bt_hci_event(hci, EVT_IO_CAPABILITY_RESPONSE, &params, EVT_IO_CAPABILITY_RESPONSE_SIZE);
+}
+
+void bt_hci_request_user_confirmation(struct bt_hci_s *hci, const bdaddr_t *bdaddr)
+{
+    evt_user_confirmation_req params = {
+        .bdaddr     = BAINIT(bdaddr),
+        .passkey    = 872640,
+    };
+
+    bt_hci_event(hci, EVT_USER_CONFIRMATION_REQ, &params, EVT_USER_CONFIRMATION_REQ_SIZE);
+}
+
+void bt_hci_complete_simple_pairing(struct bt_hci_s *hci, const bdaddr_t *bdaddr)
+{
+    evt_simple_pairing_complete params = {
+        .bdaddr = BAINIT(bdaddr),
+    };
+
+    bt_hci_event(hci, EVT_SIMPLE_PAIRING_COMPLETE, &params, EVT_SIMPLE_PAIRING_COMPLETE_SIZE);
+}
+
+void bt_hci_notify_link_key(struct bt_hci_s *hci, const bdaddr_t *bdaddr)
+{
+    evt_link_key_notify params = {
+        .bdaddr = BAINIT(bdaddr),
+        .link_key = {0x42, 0x05, 0x74, 0x6D, 0x11, 0x38, 0x8E, 0xE6,
+                    0x8F, 0x0D, 0xBE, 0x36, 0x5D, 0xB2, 0xDC, 0xB8},
+        .key_type = 5,
+    };
+
+    bt_hci_event(hci, EVT_LINK_KEY_NOTIFY, &params, EVT_LINK_KEY_NOTIFY_SIZE);
+}
+
+const char* bt_hci_get(struct HCIInfo *info, const char *query, char *result)
+{
+    struct bt_hci_s *hci = hci_from_info(info);
+
+    if (!strcmp(query, "name")) {
+        if (hci->device.lmp_name)
+            return hci->device.lmp_name;
+    } else if (!strcmp(query, "enable")) {
+        // ENABLE if lmp_name is not NULL since function
+        // bt_hci_reset() frees the memory of lmp_name
+        sprintf(result, "%d", hci->device.lmp_name? 1 : 0);
+        bt_hci_reset(hci);
+    } else if (!strcmp(query, "addr")) {
+        bdaddr_t addr = BAINIT(&hci->device.bd_addr);
+        ba_to_str(result, &addr);
+    } else if (!strcmp(query, "discoverable")) {
+        sprintf(result, "%d", (hci->device.inquiry_scan ? SCAN_INQUIRY : 0));
+    } else if (!strcmp(query, "discovering")) {
+        sprintf(result, "%d", hci->lm.inquire);
+    } else {
+        sprintf(result, "unknown property!");
+    }
+
+    return result;
+}
+
+struct bt_scatternet_s* bt_hci_get_net(struct HCIInfo *info)
+{
+    struct bt_hci_s *hci = hci_from_info(info);
+    return hci->device.net;
 }
