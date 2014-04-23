@@ -19,28 +19,38 @@ nfc_rf_init(struct nfc_rf* rf, enum nci_rf_interface iface)
 {
     assert(rf);
 
-    rf->state = NFC_RFST_IDLE;
     rf->iface = iface;
-    rf->mode = NCI_RF_NFC_F_PASSIVE_POLL_MODE;
+    switch (iface) {
+        case NCI_RF_INTERFACE_FRAME:
+            // TODO: this is also depend on protocol
+            rf->mode = NCI_RF_NFC_A_PASSIVE_POLL_MODE;
+            break;
+        case NCI_RF_INTERFACE_NFC_DEP:
+            rf->mode = NCI_RF_NFC_F_PASSIVE_POLL_MODE;
+            break;
+        default:
+            assert(0);
+            break;
+    }
 }
 
 enum nfc_rfst
-nfc_rf_state_transition(struct nfc_rf* rf, unsigned long bits,
+nfc_rf_state_transition(enum nfc_rfst* rf_state, unsigned long bits,
                         enum nfc_rfst state)
 {
     enum nfc_rfst rfst;
 
-    assert(rf);
+    assert(rf_state);
 
-    rfst = rf->state;
+    rfst = *rf_state;
 
     if (!((1<<rfst) & bits)) {
         return NUMBER_OF_NFC_RFSTS;
     }
 
-    NFC_D("rf->state from %d to %d\n", rf->state, state);
+    NFC_D("rf_state from %d to %d\n", *rf_state, state);
 
-    rf->state = state;
+    *rf_state = state;
 
     return rfst;
 }

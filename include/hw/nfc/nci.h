@@ -228,7 +228,7 @@ struct nci_core_init_rsp {
     uint8_t status;
     uint32_t features; /* little endian */
     uint8_t nrfs;
-    uint8_t rf[1];
+    uint8_t rf[NUMBER_OF_SUPPORTED_NCI_RF_INTERFACES];
     uint8_t nconns;
     uint16_t maxrtabsize; /* little endian */
     uint8_t payloadsize;

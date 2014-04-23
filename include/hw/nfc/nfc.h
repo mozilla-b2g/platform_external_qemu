@@ -19,6 +19,10 @@
 
 struct nfc_re;
 
+enum nfc_rf_interface_count {
+    NUMBER_OF_SUPPORTED_NCI_RF_INTERFACES = 2
+};
+
 enum nfc_fsm_state {
     NFC_FSM_STATE_IDLE = 0,
     NFC_FSM_STATE_RESET,
@@ -28,12 +32,14 @@ enum nfc_fsm_state {
 
 struct nfc_device {
     enum nfc_fsm_state state;
+    enum nfc_rfst rf_state;
 
-    /* one RF interface */
-    struct nfc_rf rf[1];
+    /* Support Frame and NFC-DEP interface */
+    struct nfc_rf rf[NUMBER_OF_SUPPORTED_NCI_RF_INTERFACES];
     uint8_t id;
 
     struct nfc_re* active_re;
+    struct nfc_rf* active_rf;
 
     /* stores all config options */
     uint8_t config_id_value[128];
@@ -53,4 +59,6 @@ nfc_device_get(const struct nfc_device* nfc, size_t off, size_t len,
 uint8_t
 nfc_device_incr_id(struct nfc_device* nfc);
 
+struct nfc_rf*
+nfc_find_rf_by_rf_interface(struct nfc_device* nfc, enum nci_rf_interface iface);
 #endif
