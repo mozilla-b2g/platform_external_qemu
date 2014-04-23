@@ -12,6 +12,7 @@
 
 #include <assert.h>
 #include <string.h>
+#include "qemu-common.h"
 #include "nfc.h"
 
 void
@@ -20,9 +21,12 @@ nfc_device_init(struct nfc_device* nfc)
     assert(nfc);
 
     nfc->state = NFC_FSM_STATE_IDLE;
+    nfc->rf_state = NFC_RFST_IDLE;
     nfc_rf_init(&nfc->rf[0], NCI_RF_INTERFACE_NFC_DEP);
+    nfc_rf_init(&nfc->rf[1], NCI_RF_INTERFACE_FRAME);
     nfc->id = 0;
     nfc->active_re = NULL;
+    nfc->active_rf = NULL;
 
     memset(nfc->config_id_value, 0, sizeof(nfc->config_id_value));
 }
@@ -56,4 +60,19 @@ nfc_device_incr_id(struct nfc_device* nfc)
     nfc->id = (nfc->id%254) + 1;
 
     return nfc->id;
+}
+
+struct nfc_rf*
+nfc_find_rf_by_rf_interface(struct nfc_device* nfc, enum nci_rf_interface iface)
+{
+    size_t i;
+
+    assert(nfc);
+
+    for (i = 0; i < ARRAY_SIZE(nfc->rf); i++) {
+        if (iface == nfc->rf[i].iface) {
+            return &nfc->rf[i];
+        }
+    }
+    return NULL;
 }

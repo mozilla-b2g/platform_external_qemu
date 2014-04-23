@@ -108,10 +108,10 @@ process_nci_dta(const union nci_packet* dta, struct nfc_device* nfc,
     assert(dta);
     assert(nfc);
 
-    rfst = nfc_rf_state_transition(&nfc->rf[0],
+    rfst = nfc_rf_state_transition(&nfc->rf_state,
                                    NFC_RFST_POLL_ACTIVE_BIT|
                                    NFC_RFST_LISTEN_ACTIVE_BIT,
-                                   nfc->rf[0].state);
+                                   nfc->rf_state);
     assert(rfst != NUMBER_OF_NFC_RFSTS);
 
     /* data gets processed by RE */
@@ -130,10 +130,10 @@ nfc_create_dta(const void* data, size_t len,
     assert(nci);
 
     /* RF state transition */
-    rfst = nfc_rf_state_transition(&nfc->rf[0],
+    rfst = nfc_rf_state_transition(&nfc->rf_state,
                                    NFC_RFST_POLL_ACTIVE_BIT|
                                    NFC_RFST_LISTEN_ACTIVE_BIT,
-                                   nfc->rf[0].state);
+                                   nfc->rf_state);
     assert(rfst != NUMBER_OF_NFC_RFSTS);
 
     /* create data message */
@@ -202,7 +202,7 @@ idle_process_oid_core_reset_cmd(const union nci_packet* cmd,
     nfc->state = NFC_FSM_STATE_RESET;
 
     if (cmd->control.payload[0]) {
-        nfc->rf[0].state = NFC_RFST_IDLE;
+        nfc->rf_state = NFC_RFST_IDLE;
     }
 
     rsp->control.payload[0] = NCI_STATUS_OK;
@@ -373,6 +373,7 @@ reset_process_oid_core_init_cmd(const union nci_packet* cmd,
                                 union nci_packet* rsp)
 {
     struct nci_core_init_rsp* payload;
+    uint8_t i;
 
     assert(nfc);
     assert(rsp);
@@ -382,14 +383,17 @@ reset_process_oid_core_init_cmd(const union nci_packet* cmd,
     payload = (struct nci_core_init_rsp*)rsp->control.payload;
     payload->status = NCI_STATUS_OK;
     payload->features = cpu_to_le32(0x0);
-    payload->nrfs = 1;
-    payload->rf[0] = nfc->rf[0].iface;
+    payload->nrfs = NUMBER_OF_SUPPORTED_NCI_RF_INTERFACES;
     payload->nconns = 0;
     payload->maxrtabsize = cpu_to_le16(0x0);
     payload->payloadsize = 255;
     payload->maxlparamsize = cpu_to_le16(0x0);
     payload->vendor = 0x0;
     payload->device = cpu_to_le32(0x0);
+
+    for (i = 0; i < payload->nrfs; i++) {
+        payload->rf[i] = nfc->rf[i].iface;
+    }
 
     return create_control_rsp(rsp, NCI_PBF_END, cmd->control.gid,
                               cmd->control.oid, sizeof(*payload));
@@ -472,7 +476,7 @@ init_process_oid_core_reset_cmd(const union nci_packet* cmd,
     nfc->state = NFC_FSM_STATE_RESET;
 
     if (cmd->control.payload[0]) {
-        nfc->rf[0].state = NFC_RFST_IDLE;
+        nfc->rf_state = NFC_RFST_IDLE;
     }
 
     rsp->control.payload[0] = NCI_STATUS_OK;
@@ -552,7 +556,7 @@ init_process_oid_rf_discover_cmd(const union nci_packet* cmd,
     const struct nci_rf_discover_cmd *payload;
     unsigned char i;
 
-    rfst = nfc_rf_state_transition(&nfc->rf[0], NFC_RFST_IDLE_BIT,
+    rfst = nfc_rf_state_transition(&nfc->rf_state, NFC_RFST_IDLE_BIT,
                                    NFC_RFST_DISCOVERY);
     assert(rfst != NUMBER_OF_NFC_RFSTS);
 
@@ -603,13 +607,14 @@ init_process_oid_rf_discover_select_cmd(const union nci_packet* cmd,
         goto status_rejected;
     }
 
-    if (payload->iface != nfc->rf[0].iface) {
-        NFC_D("invalid RF interface %d, expected %d", payload->iface, nfc->rf[0].iface);
+    /* make RF active */
+    nfc->active_rf = nfc_find_rf_by_rf_interface(nfc, payload->iface);
+    if (!nfc->active_rf) {
         goto status_rejected;
     }
 
     /* RF state transition */
-    rfst = nfc_rf_state_transition(&nfc->rf[0], NFC_RFST_W4_HOST_SELECT_BIT,
+    rfst = nfc_rf_state_transition(&nfc->rf_state, NFC_RFST_W4_HOST_SELECT_BIT,
                                    NFC_RFST_W4_HOST_SELECT);
     assert(rfst != NUMBER_OF_NFC_RFSTS);
 
@@ -649,9 +654,9 @@ init_process_oid_rf_deactivate_cmd(const union nci_packet* cmd,
             /* same transitions, fall through */
         case NCI_RF_DEACT_SLEEP_AF_MODE:
             bits = NFC_RFST_POLL_ACTIVE_BIT|NFC_RFST_LISTEN_ACTIVE_BIT;
-            if (nfc->rf[0].state == NFC_RFST_POLL_ACTIVE) {
+            if (nfc->rf_state == NFC_RFST_POLL_ACTIVE) {
                 rfst = NFC_RFST_W4_HOST_SELECT;
-            } else if (nfc->rf[0].state == NFC_RFST_LISTEN_ACTIVE) {
+            } else if (nfc->rf_state == NFC_RFST_LISTEN_ACTIVE) {
                 rfst = NFC_RFST_LISTEN_SLEEP;
             } else {
                 assert(0);
@@ -666,12 +671,13 @@ init_process_oid_rf_deactivate_cmd(const union nci_packet* cmd,
             rfst = NUMBER_OF_NFC_RFSTS;
     }
 
-    rfst = nfc_rf_state_transition(&nfc->rf[0], bits, rfst);
+    rfst = nfc_rf_state_transition(&nfc->rf_state, bits, rfst);
     assert(rfst != NUMBER_OF_NFC_RFSTS);
 
     /* reset state */
 
     nfc->active_re = NULL;
+    nfc->active_rf = NULL;
 
     for (i = 0; i < sizeof(nfc_res)/sizeof(nfc_res[0]); ++i) {
         nfc_res[i].id = 0;
@@ -956,7 +962,7 @@ nfc_create_rf_discovery_ntf(struct nfc_re* re,
     payload->mode = nfc->rf[0].mode;
     payload->nparams = 0;
 
-    switch (nfc->rf[0].state) {
+    switch (nfc->rf_state) {
         case NFC_RFST_DISCOVERY:
             assert(type == NCI_MORE_NOTIFICATIONS);
             payload->end[payload->nparams] = NCI_MORE_NOTIFICATIONS;
@@ -978,7 +984,7 @@ nfc_create_rf_discovery_ntf(struct nfc_re* re,
             break;
     }
 
-    rfst = nfc_rf_state_transition(&nfc->rf[0], bits, rfst);
+    rfst = nfc_rf_state_transition(&nfc->rf_state, bits, rfst);
     assert(rfst != NUMBER_OF_NFC_RFSTS);
 
     return nfc_create_nci_ntf(ntf, NCI_PBF_END, NCI_GID_RF,
@@ -998,6 +1004,7 @@ nfc_create_rf_intf_activated_ntf(struct nfc_re* re,
 
     assert(re);
     assert(ntf);
+    assert(nfc->active_rf);
 
     /* create notification */
 
@@ -1013,9 +1020,9 @@ nfc_create_rf_intf_activated_ntf(struct nfc_re* re,
     }
 
     payload->id = re->id;
-    payload->iface = nfc->rf[0].iface;
+    payload->iface = nfc->active_rf->iface;
     payload->rfproto = re->rfproto;
-    payload->actmode = nfc->rf[0].mode;
+    payload->actmode = nfc->active_rf->mode;
     payload->maxpayload = 255;
     payload->ncredits = 0xff; /* disable flow control */
     payload->nparams = 0;
@@ -1053,7 +1060,7 @@ nfc_create_rf_intf_activated_ntf(struct nfc_re* re,
             break;
     }
 
-    rfst = nfc_rf_state_transition(&nfc->rf[0], bits, rfst);
+    rfst = nfc_rf_state_transition(&nfc->rf_state, bits, rfst);
     assert(rfst != NUMBER_OF_NFC_RFSTS);
 
     /* update NFC */

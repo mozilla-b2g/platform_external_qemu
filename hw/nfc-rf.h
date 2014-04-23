@@ -65,7 +65,6 @@ enum nci_rf_interface {
 };
 
 struct nfc_rf {
-    enum nfc_rfst state;
     enum nci_rf_interface iface;
     enum nci_rf_tech_mode mode;
 };
@@ -74,7 +73,7 @@ void
 nfc_rf_init(struct nfc_rf* rf, enum nci_rf_interface iface);
 
 enum nfc_rfst
-nfc_rf_state_transition(struct nfc_rf* rf, unsigned long bits,
+nfc_rf_state_transition(enum nfc_rfst* rf_state, unsigned long bits,
                         enum nfc_rfst state);
 
 #endif
