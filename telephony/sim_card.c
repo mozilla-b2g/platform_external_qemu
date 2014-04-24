@@ -726,11 +726,21 @@ asimcard_ef_init( ASimCard card )
     //   Record size: 0x18
     //   Record count: 0x0a
     //   Record:
-    //     PNN 1: Fullname: "AT&T"
+    //     PNN 1: Full name: "Test1", Short name: "Test1"
+    //     PNN 2: Full name: "Test2", Short name: (none)
+    //     PNN 2: Full name: "Test3", Short name: (none)
+    //     PNN 2: Full name: "Test4", Short name: (none)
     // @see 3GPP TS 31.102 section 4.2.58 EFpnn (PLMN Network Name)
     // @see 3GPP TS 24.008
     ef = asimcard_ef_new_linear(0x6fc5, SIM_FILE_READ_ONLY, 0x18);
-    asimcard_ef_update_linear(ef, 0x01, "43058441aa890affffffffffffffffffffffffffffffffff");
+    // Long name: 43mn8x..., where <mn> is tlvLen, x is trailing spare bits.
+    // Short name: 45mn8x..., where <mn> is tlvLen, x is trailing spare bits.
+    // 'T'=b1010100, 'e'=b1100101, 's'=b1110011, 't'=b1110100, '1'=b0110001,
+    // "Test1"=11010100, 11110010, 10011100, 00011110, 00000011=0xd4f29c1e03 with 5 trailing bits.
+    asimcard_ef_update_linear(ef, 0x01, "430685d4f29c1e03450685d4f29c1e03ffffffffffffffff");
+    asimcard_ef_update_linear(ef, 0x02, "430685d4f29c2e03ffffffffffffffffffffffffffffffff");
+    asimcard_ef_update_linear(ef, 0x03, "430685d4f29c3e03ffffffffffffffffffffffffffffffff");
+    asimcard_ef_update_linear(ef, 0x04, "430685d4f29c4e03ffffffffffffffffffffffffffffffff");
     asimcard_ef_update_linear(ef, 0x0a, "ffffffffffffffffffffffffffffffffffffffffffffffff");
     asimcard_ef_add(card, ef);
 
@@ -738,11 +748,20 @@ asimcard_ef_init( ASimCard card )
     //   Record size: 0x18
     //   Record count: 0x0a
     //   Record:
-    //     MCC = 310, MNC = 070, PNN = 01
+    //     MCC = 001, MNC =  01, START=0000, END=FFFE, PNN = 01,
+    //     MCC = 001, MNC =  02, START=0001, END=0010, PNN = 02,
+    //     MCC = 001, MNC =  03, START=0011, END=0011, PNN = 03,
+    //     MCC = 001, MNC = 001, START=0012, END=0012, PNN = 04,
     // @see 3GPP TS 31.102 section 4.2.59 EFopl (Operator PLMN List)
     // @see 3GPP TS 24.008
+    // @see http://en.wikipedia.org/wiki/Mobile_country_code
     ef = asimcard_ef_new_linear(0x6fc6, SIM_FILE_READ_ONLY, 0x18);
-    asimcard_ef_update_linear(ef, 0x01, "1300700000fffe01ffffffffffffffffffffffffffffffff");
+    // If mnc=012, mcc=345, lac/tac start=abcd, end=wxyz, PLMN record id=mn, then:
+    //                                  "105243abcdwxyzmnffffffffffffffffffffffffffffffff"
+    asimcard_ef_update_linear(ef, 0x01, "00110f0000fffe01ffffffffffffffffffffffffffffffff");
+    asimcard_ef_update_linear(ef, 0x02, "00210f0001001002ffffffffffffffffffffffffffffffff");
+    asimcard_ef_update_linear(ef, 0x03, "00310f0011001103ffffffffffffffffffffffffffffffff");
+    asimcard_ef_update_linear(ef, 0x04, "0011000012001204ffffffffffffffffffffffffffffffff");
     asimcard_ef_update_linear(ef, 0x0a, "ffffffffffffffffffffffffffffffffffffffffffffffff");
     asimcard_ef_add(card, ef);
 

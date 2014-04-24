@@ -653,8 +653,8 @@ amodem_reset( AModem  modem )
         modem->emergency_numbers[i] = amodem_nvram_get_str(modem,key_name, NULL);
     }
 
-    modem->area_code = -1;
-    modem->cell_id   = -1;
+    modem->area_code = 0;
+    modem->cell_id   = 0;
 
     strcpy( modem->operators[0].name[0], OPERATOR_HOME_NAME );
     strcpy( modem->operators[0].name[1], OPERATOR_HOME_NAME );
@@ -902,7 +902,7 @@ amodem_set_voice_registration( AModem  modem, ARegistrationState  state )
             break;
 
         case A_REGISTRATION_UNSOL_ENABLED_FULL:
-            amodem_unsol( modem, "+CREG: %d,%d, \"%04x\", \"%07x\"\r",
+            amodem_unsol( modem, "+CREG: %d,%d,\"%04x\",\"%07x\"\r",
                           modem->voice_mode, modem->voice_state,
                           modem->area_code & 0xffff, modem->cell_id & 0xfffffff);
             break;
