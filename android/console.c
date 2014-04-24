@@ -1398,14 +1398,8 @@ do_gsm_call( ControlClient  client, char*  args )
 
     // see TS 23.096 Figure 3a, name is unavailable if number is not available.
     if (number_presentation == 0) {
-        if (top_param >= NAME && params[NAME]) {
-            name = params[NAME];
-        }
-
-        // only process name_presentation when no/empty name case.
-        if ((!name || strlen(name) <= 0)
-            && top_param >= NAME_PRESENTATION
-            && params[NAME_PRESENTATION]) {
+        // If name presentation is not restricted, then check if name characters exist or not.
+        if (top_param >= NAME_PRESENTATION && params[NAME_PRESENTATION]) {
             name_presentation = strtol( params[NAME_PRESENTATION], &end, 10 );
             if (*end) {
                 control_write( client, "KO: argument '%s' is not a number\r\n", end );
@@ -1417,6 +1411,10 @@ do_gsm_call( ControlClient  client, char*  args )
                 control_write( client, "KO: name presentation should be ranged between 0 and 2\r\n" );
                 return -1;
             }
+        }
+
+        if (name_presentation == 0 && top_param >= NAME && params[NAME]) {
+            name = params[NAME];
         }
     }
 
