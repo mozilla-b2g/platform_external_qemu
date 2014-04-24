@@ -290,11 +290,13 @@ typedef struct AVoiceCallRec {
 
 typedef enum {
     A_DATA_IP = 0,
-    A_DATA_PPP
+    A_DATA_PPP,
+    A_DATA_IPV6
 } ADataType;
 
 typedef struct {
     struct in_addr  in;
+    struct in6_addr in6;
 } AInetAddrRec, *AInetAddr;
 
 #define  A_DATA_APN_SIZE  32
@@ -745,6 +747,36 @@ static int  android_modem_state_load(QEMUFile *f, void  *opaque, int version_id)
 static int _amodem_num_rmnets = 0;
 static ADataNetRec _amodem_rmnets[MAX_DATA_CONTEXTS];
 
+static const char*
+format_inet_addr(ADataType type, AInetAddr addr, int with_mask, char *out, size_t len)
+{
+    char buf[ INET6_ADDRSTRLEN * 2 ]; // include mask
+
+    *out = '\0';
+    switch (type) {
+        case A_DATA_IP:
+            if (addr->in.s_addr) {
+                if (inet_ntop( AF_INET, &addr->in, buf, sizeof buf)) {
+                    snprintf(out, len, (with_mask ? "%s/24" : "%s"), buf);
+                }
+            }
+            break;
+
+        case A_DATA_IPV6:
+            if (addr->in6.s6_addr32[0]) {
+                if (inet_ntop( AF_INET6, &addr->in6, buf, sizeof buf)) {
+                    snprintf(out, len, (with_mask ? "%s/64" : "%s"), buf);
+                }
+            }
+            break;
+
+        default:
+            break;
+    }
+
+    return out;
+}
+
 static void
 amodem_init_rmnets()
 {
@@ -772,10 +804,19 @@ amodem_init_rmnets()
 
         int ip = special_addr_ip + 100 + (net - _amodem_rmnets);
         net->addr.in.s_addr = htonl(ip);
+        net->addr.in6.s6_addr32[0] = htonl(0x20010200);
+        net->addr.in6.s6_addr32[1] = htonl(j);
+        net->addr.in6.s6_addr32[3] = net->addr.in.s_addr;
+
         net->gw.in.s_addr = htonl(alias_addr_ip);
+        memcpy(&net->gw.in6, &net->addr.in6, sizeof net->addr.in6);
+        net->gw.in6.s6_addr32[3] = net->gw.in.s_addr;
+
         for ( i = 0; i < NUM_DNS_PER_RMNET && i < dns_addr_count; i++ ) {
             ip = dns_addr[i];
             net->dns[i].in.s_addr = htonl(ip);
+            memcpy(&net->dns[i].in6, &net->addr.in6, sizeof net->addr.in6);
+            net->dns[i].in6.s6_addr32[3] = net->dns[i].in.s_addr;
         }
 
         /* Data connections are down by default. */
@@ -2591,6 +2632,8 @@ handleDefinePDPContext( const char*  cmd, AModem  modem )
         amodem_begin_line( modem );
         amodem_add_line( modem, "+CGDCONT: (1-%d),\"IP\",,,(0-2),(0-4)",
                          MAX_DATA_CONTEXTS );
+        amodem_add_line( modem, "+CGDCONT: (1-%d),\"IPV6\",,,(0-2),(0-4)",
+                         MAX_DATA_CONTEXTS );
         return amodem_end_line( modem );
     }
 
@@ -2599,7 +2642,7 @@ handleDefinePDPContext( const char*  cmd, AModem  modem )
     ADataContext  data;
     ADataType     type;
     char          apn[A_DATA_APN_SIZE];
-    char          addr[INET_ADDRSTRLEN];
+    char          addr[INET6_ADDRSTRLEN];
     const char*   p;
     int           len;
 
@@ -2632,6 +2675,9 @@ handleDefinePDPContext( const char*  cmd, AModem  modem )
     if ( !memcmp( cmd, ",\"IP\"", 5 ) ) {
         type = A_DATA_IP;
         cmd += 5;
+    } else if ( !memcmp( cmd, ",\"IPV6\"", 7 ) ) {
+        type = A_DATA_IPV6;
+        cmd += 7;
     } else
         goto BadCommand;
 
@@ -2675,8 +2721,10 @@ handleDefinePDPContext( const char*  cmd, AModem  modem )
     data->active = 0;
     data->type   = type;
     strcpy( data->apn, apn );
-    if (inet_pton( AF_INET, addr, &data->addr.in.s_addr) <= 0) {
-        data->addr.in.s_addr = 0;
+    if (!addr[0] ||
+        (type == A_DATA_IP) && (inet_pton( AF_INET, addr, &data->addr.in) <= 0) ||
+        (type == A_DATA_IPV6) && (inet_pton( AF_INET6, addr, &data->addr.in6) <= 0)) {
+        memset(&data->addr, 0, sizeof data->addr);
     }
 
     return "OK";
@@ -2687,26 +2735,23 @@ BadCommand:
 static const char*
 handleQueryPDPContext( const char* cmd, AModem modem )
 {
+    static const char* type_names[] = {"IP", "PDP", "IPV6"};
+
     int  nn;
     amodem_begin_line(modem);
     for (nn = 0; nn < MAX_DATA_CONTEXTS; nn++) {
         ADataContext  data = modem->data_contexts + nn;
-        char          addr[INET_ADDRSTRLEN];
+        char          addr[INET6_ADDRSTRLEN];
 
         if (data->id <= 0)
             continue;
 
         /* The read command returns current settings for each defined context. */
-        if (data->addr.in.s_addr) {
-            inet_ntop( AF_INET, &data->addr.in, addr, sizeof addr);
-        } else {
-            addr[0] = '\0';
-        }
         amodem_add_line( modem, "+CGDCONT: %d,\"%s\",\"%s\",\"%s\",0,0\r\n",
                          data->id,
-                         data->type == A_DATA_IP ? "IP" : "PPP",
+                         type_names[data->type],
                          data->apn,
-                         addr );
+                         format_inet_addr(data->type, &data->addr, 0, addr, sizeof addr) );
     }
     return amodem_end_line(modem);
 }
@@ -2772,23 +2817,24 @@ handleListPDPDynamicProp( const char* cmd, AModem modem )
         ++entries;
 
         ADataNet net = context->net;
-        char     addr[INET_ADDRSTRLEN];
+        char     addr[INET6_ADDRSTRLEN * 2];
 
         /* This is a dirty hack for passing kernel netif num to rild. */
         const char* bearer_id = net->nd->name + strlen("rmnet.");
         amodem_add_line( modem, "+CGCONTRDP: %d,%s,\"%s\"",
                          context->id, bearer_id, context->apn );
 
-        inet_ntop( AF_INET, &net->addr.in, addr, sizeof addr);
-        amodem_add_line( modem, ",\"%s/24\"", addr );
-        inet_ntop( AF_INET, &net->gw.in, addr, sizeof addr);
-        amodem_add_line( modem, ",\"%s\"", addr );
+        amodem_add_line( modem, ",\"%s\"",
+                         format_inet_addr(context->type, &net->addr, 1, addr, sizeof addr) );
+        amodem_add_line( modem, ",\"%s\"",
+                         format_inet_addr(context->type, &net->gw, 0, addr, sizeof addr) );
+
         for ( j = 0; j < NUM_DNS_PER_RMNET; j++ ) {
             if (!net->dns[j].in.s_addr) {
                 break;
             }
-            inet_ntop( AF_INET, &net->dns[j].in, addr, sizeof addr);
-            amodem_add_line( modem, ",\"%s\"", addr );
+            amodem_add_line( modem, ",\"%s\"",
+                             format_inet_addr(context->type, &net->dns[j], 0, addr, sizeof addr) );
         }
 
         amodem_add_line( modem, "\r\n" );
