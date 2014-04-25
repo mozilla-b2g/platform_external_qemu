@@ -84,6 +84,7 @@ ifeq ($(HOST_OS),linux)
 EMULATOR_COMMON_CFLAGS += -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE
 endif
 
+
 ###########################################################
 # Zlib sources
 #
@@ -139,11 +140,10 @@ $(call gen-hw-config-defs)
 $(call end-emulator-library)
 
 ## another for 64-bit
-# NOTE: only linux in non-standalone mode is supported, because
+# NOTE: only linux and darwin in non-standalone mode is supported, because
 #  1) For Windows: amd64-mingw32msvc-gcc doesn't work, see http://b/issue?id=5949152.
-#  2) For MacOSX: 64-bit libSDL*.a 1.2.x depends on NSQuickDrawView doesn't exist
-#  3) Standalone has --try-64
-ifeq ($(HOST_OS),linux)
+#  2) Standalone has --try-64
+ifneq ($(filter linux darwin,$(HOST_OS)),)
   ifneq ($(BUILD_STANDALONE_EMULATOR),true)
     $(call start-emulator-library, emulator64-common)
     LOCAL_CFLAGS += $(common_LOCAL_CFLAGS) -m64
@@ -151,7 +151,7 @@ ifeq ($(HOST_OS),linux)
     $(call gen-hw-config-defs)
     $(call end-emulator-library)
   endif # BUILD_STANDALONE_EMULATOR == nil
-endif # HOST_OS == linux
+endif # HOST_OS == linux || darwin
 
 ##############################################################################
 ##############################################################################
@@ -198,16 +198,6 @@ ifeq ($(QEMU_HOST_TAG),linux-x86)
     BUILD_SDL_FROM_SOURCES := false
 endif
 
-# On darwin-x86, a bug in the Android build system prevents the compilation
-# of Objective-C sources. Fixed recently in AOSP, but we still use the
-# prebuilts for the benefit of older platform branches.
-#
-ifeq ($(QEMU_HOST_TAG),darwin-x86)
-    ifeq ($(FORCE_PREBUILT_SDL),true)
-        BUILD_SDL_FROM_SOURCES := false
-    endif
-endif
-
 # If we're building with android-configure.sh && make, always build from
 # sources to catch regressions as soon as they happen.
 #
@@ -240,7 +230,7 @@ ifneq ($(BUILD_SDL_FROM_SOURCES),true)
 
 else # BUILD_SDL_FROM_SOURCES
 
-    SDL_DIR := distrib/sdl-1.2.12
+    SDL_DIR := distrib/sdl-1.2.15
     include $(LOCAL_PATH)/$(SDL_DIR)/sources.make
     common_LOCAL_SRC_FILES += $(SDL_SOURCES)
 
@@ -248,12 +238,6 @@ else # BUILD_SDL_FROM_SOURCES
         -I$(LOCAL_PATH)/$(SDL_DIR)/include
 
     SDL_STATIC_LIBRARIES :=
-
-    # Set the 10.6 / 10.5 sysroot for Mac OS X, which enables QuickDraw
-    # compatibility headers
-    ifeq ($(QEMU_HOST_TAG),darwin-x86)
-      SDL_CFLAGS += -isysroot $(HOST_SYSROOT)
-    endif
 
 endif # BUILD_SDL_FROM_SOURCES
 
@@ -304,7 +288,7 @@ $(call end-emulator-library)
 
 
 ## another for 64-bit, see note in emulator64-common
-ifeq ($(HOST_OS),linux)
+ifneq ($(filter linux darwin,$(HOST_OS)),)
   ifneq ($(BUILD_STANDALONE_EMULATOR),true)
     $(call start-emulator-library, emulator64-libui)
     LOCAL_CFLAGS += $(common_LOCAL_CFLAGS) -m64
@@ -312,7 +296,7 @@ ifeq ($(HOST_OS),linux)
     $(call gen-hw-config-defs)
     $(call end-emulator-library)
   endif # BUILD_STANDALONE_EMULATOR == nil
-endif # HOST_OS == linux
+endif # HOST_OS == linux || darwin
 
 
 ##############################################################################
@@ -331,23 +315,11 @@ EMULATOR_LIBQEMU_CFLAGS :=
 
 common_LOCAL_CFLAGS += $(EMULATOR_COMMON_CFLAGS)
 
-###########################################################
-# Jpeg configuration
-#
-LIBJPEG_DIR := distrib/jpeg-6b
-include $(LOCAL_PATH)/$(LIBJPEG_DIR)/sources.make
-
-EMULATOR_LIBQEMU_CFLAGS += \
-    $(LIBJPEG_CFLAGS) \
-    -I$(LOCAL_PATH)/$(LIBJPEG_DIR)
-
-common_LOCAL_SRC_FILES += $(LIBJPEG_SOURCES)
-
 AUDIO_SOURCES := noaudio.c wavaudio.c wavcapture.c mixeng.c
 AUDIO_CFLAGS  := -I$(LOCAL_PATH)/audio -DHAS_AUDIO
 AUDIO_LDLIBS  :=
 
-common_LOCAL_CFLAGS += -Wall -Wno-missing-field-initializers
+common_LOCAL_CFLAGS += -Wall $(GCC_W_NO_MISSING_FIELD_INITIALIZERS)
 
 ifeq ($(HOST_OS),darwin)
   CONFIG_COREAUDIO ?= yes
@@ -425,7 +397,7 @@ endif
 EMULATOR_LIBQEMU_CFLAGS += $(AUDIO_CFLAGS)
 EMULATOR_LIBQEMU_LDLIBS += $(AUDIO_LDLIBS)
 
-common_LOCAL_CFLAGS += -Wno-missing-field-initializers
+common_LOCAL_CFLAGS += $(GCC_W_NO_MISSING_FIELD_INITIALIZERS)
 
 # migration sources
 #
@@ -534,7 +506,7 @@ endif
 common_LOCAL_SRC_FILES += $(CORE_MISC_SOURCES)
 
 # Required
-common_LOCAL_CFLAGS += -D_XOPEN_SOURCE=600 -D_BSD_SOURCE=1
+common_LOCAL_CFLAGS += -D_XOPEN_SOURCE=600 -D_BSD_SOURCE=1 -I$(LOCAL_PATH)/distrib/jpeg-6b
 
 SLIRP_SOURCES := \
     bootp.c \
@@ -628,7 +600,7 @@ $(call end-emulator-library)
 
 
 ## another for 64-bit, see note in emulator64-common
-ifeq ($(HOST_OS),linux)
+ifneq ($(filter linux darwin,$(HOST_OS)),)
   ifneq ($(BUILD_STANDALONE_EMULATOR),true)
     $(call start-emulator-library, emulator64-libqemu)
     # gdbstub-xml.c contains C-compilable arrays corresponding to the content
@@ -648,7 +620,7 @@ ifeq ($(HOST_OS),linux)
     $(call gen-hw-config-defs)
     $(call end-emulator-library)
   endif # BUILD_STANDALONE_EMULATOR == nil
-endif # HOST_OS == linux
+endif # HOST_OS == linux || darwin
 
 
 # Block sources, we must compile them with each executable because they
@@ -680,6 +652,46 @@ endif
 
 BLOCK_CFLAGS += $(EMULATOR_COMMON_CFLAGS)
 BLOCK_CFLAGS += -DCONFIG_BDRV_WHITELIST=""
+
+##############################################################################
+##############################################################################
+###
+###  emulator-libjpeg: TARGET-INDEPENDENT QEMU FUNCTIONS
+###
+###  THESE ARE USED BY EVERYTHING EXCEPT 'emulator-ui'
+###
+
+common_LOCAL_CFLAGS =
+common_LOCAL_SRC_FILES =
+
+###########################################################
+# Jpeg configuration
+#
+LIBJPEG_DIR := distrib/jpeg-6b
+include $(LOCAL_PATH)/$(LIBJPEG_DIR)/sources.make
+
+common_LOCAL_SRC_FILES += $(LIBJPEG_SOURCES)
+
+common_LOCAL_CFLAGS += \
+    $(LIBJPEG_CFLAGS) \
+    -I$(LOCAL_PATH)/$(LIBJPEG_DIR)
+
+## one for 32-bit
+$(call start-emulator-library, emulator-libjpeg)
+LOCAL_CFLAGS += $(common_LOCAL_CFLAGS)
+LOCAL_SRC_FILES += $(common_LOCAL_SRC_FILES)
+$(call end-emulator-library)
+
+
+## another for 64-bit, see note in emulator64-common
+ifneq ($(filter linux darwin,$(HOST_OS)),)
+  ifneq ($(BUILD_STANDALONE_EMULATOR),true)
+    $(call start-emulator-library, emulator64-libjpeg)
+    LOCAL_CFLAGS += $(common_LOCAL_CFLAGS) -m64
+    LOCAL_SRC_FILES += $(common_LOCAL_SRC_FILES)
+    $(call end-emulator-library)
+  endif # BUILD_STANDALONE_EMULATOR == nil
+endif # HOST_OS == linux
 
 
 ##############################################################################
@@ -722,7 +734,7 @@ $(call end-emulator-library)
 
 
 ## another for 64-bit, see note in emulator64-common
-ifeq ($(HOST_OS),linux)
+ifneq ($(filter linux darwin,$(HOST_OS)),)
   ifneq ($(BUILD_STANDALONE_EMULATOR),true)
     $(call start-emulator-library, emulator64-libelff)
     LOCAL_CPP_EXTENSION := .cc
@@ -730,7 +742,7 @@ ifeq ($(HOST_OS),linux)
     LOCAL_SRC_FILES += $(common_LOCAL_SRC_FILES)
     $(call end-emulator-library)
   endif # BUILD_STANDALONE_EMULATOR == nil
-endif # HOST_OS == linux
+endif # HOST_OS == linux || darwin
 
 
 ##############################################################################
