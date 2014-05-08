@@ -5022,6 +5022,73 @@ static const CommandDefRec bt_commands[] =
 /********************************************************************************************/
 /********************************************************************************************/
 /*****                                                                                 ******/
+/*****                           U S S D   C O M M A N D S                             ******/
+/*****                                                                                 ******/
+/********************************************************************************************/
+/********************************************************************************************/
+
+static void
+help_ussd_unsol( ControlClient  client )
+{
+    control_write( client,
+        "'ussd unsol <type> [<message_str>]': allows you to generate ussd unsolicted response.\r\n\r\n"
+        "valid values for <type> are the following:\r\n\r\n"
+        "  0: no further user action required\r\n"
+        "  1: further user action required\r\n"
+        "  2: USSD terminated by network\r\n"
+        "  3: other local client has responded\r\n"
+        "  4: operation not supported\r\n"
+        "  5: network time out\r\n" );
+}
+
+static int
+do_ussd_unsol( ControlClient client, char* args )
+{
+    char* pnext = NULL;
+    char* message = NULL;
+    int type = -1;
+
+    if (!client->modem) {
+        control_write(client, "KO: modem emulation not running\r\n");
+        return -1;
+    }
+
+    if (!args) {
+        control_write(client, "KO: missing argument, try 'ussd unsol <type> <message_str>'\r\n");
+        return -1;
+    }
+
+    // Parse <type>
+    type = strtol(args, &pnext, 10);
+    if (args == pnext || type < 0 || type > 5) {
+        // first argument is not a number or out of range.
+        control_write(client, "KO: bad argument, try 'help ussd unsol' for list of valid values\r\n");
+        return -1;
+    }
+
+    // Get <message_str>
+    while (*pnext && isspace(*pnext)) pnext++;
+    if (*pnext) {
+        message = pnext;
+    }
+
+    // Send ussd response
+    amodem_send_ussd_unsol_response(client->modem, type, message);
+
+    return 0;
+}
+
+static const CommandDefRec ussd_commands[] =
+{
+    { "unsol", "generate ussd unsolicted response",
+      NULL, help_ussd_unsol, do_ussd_unsol, NULL },
+
+    { NULL, NULL, NULL, NULL, NULL, NULL }
+};
+
+/********************************************************************************************/
+/********************************************************************************************/
+/*****                                                                                 ******/
 /*****                           M A I N   C O M M A N D S                             ******/
 /*****                                                                                 ******/
 /********************************************************************************************/
@@ -5435,6 +5502,10 @@ static const CommandDefRec   main_commands[] =
     { "bt", "Bluetooth related commands",
       "allows you to retrieve BT status or add/remove remote devices\r\n", NULL,
       NULL, bt_commands },
+
+    { "ussd", "USSD related commands",
+      "allows you to simulate an inbound USSD response\r\n", NULL,
+      NULL, ussd_commands },
 
     { NULL, NULL, NULL, NULL, NULL, NULL }
 };
