@@ -18,6 +18,8 @@
 #include "nfc-rf.h"
 
 union nci_packet;
+struct ndef_rec;
+struct snep;
 
 /* NFC Remote Endpoint */
 struct nfc_re {
@@ -26,9 +28,12 @@ struct nfc_re {
     char nfcid3[10];
     uint8_t id;
     /* outer array is always remote SAP, inner array is local, emulated SAP */
-    struct llcp_connection_state llcp_cs[LLCP_NUMBER_OF_SAPS][LLCP_NUMBER_OF_SAPS];
-    int send_symm;
-    QEMUTimer *send_symm_timer;
+    struct llcp_data_link llcp_dl[LLCP_NUMBER_OF_SAPS][LLCP_NUMBER_OF_SAPS];
+    enum llcp_sap last_dsap; /* last remote SAP */
+    enum llcp_sap last_ssap; /* last local SAP */
+    int xmit_next; /* true if we are supposed to send the next PDU */
+    QEMUTimer *xmit_timer;
+    struct llcp_pdu_queue xmit_q;
     uint8_t connid;
     size_t sbufsiz;
     size_t rbufsiz;
@@ -36,14 +41,15 @@ struct nfc_re {
     uint8_t rbuf[1024]; /* data for reading from RE */
 };
 
-#define INIT_NFC_RE(re_, rfproto_, mode_, nfcid3_) \
+#define INIT_NFC_RE(re_, rfproto_, mode_, nfcid3_, addr_) \
     re_ = { \
         .rfproto = rfproto_, \
         .mode = mode_, \
         .nfcid3 = nfcid3_, \
         .id = 0, \
-        .send_symm = 0, \
-        .send_symm_timer = NULL, \
+        .xmit_next = 0, \
+        .xmit_timer = NULL, \
+        .xmit_q = QTAILQ_HEAD_INITIALIZER((addr_)->xmit_q), \
         .connid = 0, \
         .sbufsiz = 0, \
         .rbufsiz = 0 \
@@ -54,6 +60,9 @@ extern struct nfc_re nfc_res[3];
 
 struct nfc_re*
 nfc_get_re_by_id(uint8_t id);
+
+void
+nfc_clear_re(struct nfc_re* re);
 
 ssize_t
 nfc_re_write_sbuf(struct nfc_re* re, size_t len, const void* data);
@@ -77,5 +86,21 @@ nfc_re_create_rf_intf_activated_ntf_act(struct nfc_re* re, uint8_t* act);
 size_t
 nfc_re_create_dta_act(struct nfc_re* re, const void* data,
                       size_t len, uint8_t* act);
+
+int
+nfc_re_send_llcp_connect(struct nfc_re* re, unsigned char dsap,
+                         unsigned char ssap);
+
+int
+nfc_re_send_snep_put(struct nfc_re* re,
+                     enum llcp_sap dsap, enum llcp_sap ssap,
+                     ssize_t (*create_snep)(void*, size_t, struct snep*),
+                     void* data);
+
+int
+nfc_re_recv_snep_put(struct nfc_re* re,
+                     enum llcp_sap dsap, enum llcp_sap ssap,
+                     ssize_t (*process_ndef)(void*, size_t, const struct ndef_rec*),
+                     void* data);
 
 #endif

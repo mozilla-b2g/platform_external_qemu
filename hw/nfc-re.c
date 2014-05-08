@@ -17,13 +17,139 @@
 #include "nfc.h"
 #include "nfc-nci.h"
 #include "llcp.h"
+#include "snep.h"
+#include "llcp-snep.h"
 #include "nfc-re.h"
 
 struct nfc_re nfc_res[3] = {
-    INIT_NFC_RE([0], NCI_RF_PROTOCOL_NFC_DEP, NCI_RF_NFC_F_PASSIVE_LISTEN_MODE, "deadbeaf0"),
-    INIT_NFC_RE([1], NCI_RF_PROTOCOL_NFC_DEP, NCI_RF_NFC_F_PASSIVE_LISTEN_MODE, "deadbeaf1"),
-    INIT_NFC_RE([2], NCI_RF_PROTOCOL_T2T, NCI_RF_NFC_A_PASSIVE_LISTEN_MODE, "deadbeaf2")
+    INIT_NFC_RE([0], NCI_RF_PROTOCOL_NFC_DEP, NCI_RF_NFC_F_PASSIVE_LISTEN_MODE, "deadbeaf0", nfc_res+0),
+    INIT_NFC_RE([1], NCI_RF_PROTOCOL_NFC_DEP, NCI_RF_NFC_F_PASSIVE_LISTEN_MODE, "deadbeaf1", nfc_res+1),
+    INIT_NFC_RE([2], NCI_RF_PROTOCOL_T2T, NCI_RF_NFC_A_PASSIVE_LISTEN_MODE, "deadbeaf2", nfc_res+2)
 };
+
+struct create_nci_dta_param {
+    ssize_t (*create)(void*, struct llcp_pdu*);
+    void* data;
+    struct nfc_re* re;
+};
+
+#define CREATE_NCI_DTA_PARAM_INIT(_create, _data, _re) \
+    { \
+        .create = (_create), \
+        .data = (_data), \
+        .re = (_re) \
+    }
+
+/* helper function wrap an LLCP PDU in an NCI packet */
+static ssize_t
+create_nci_dta(void* data, struct nfc_device* nfc, size_t maxlen,
+               union nci_packet* dta)
+{
+    const struct create_nci_dta_param* param;
+    ssize_t len;
+
+    param = data;
+    assert(param);
+
+    len = param->create(param->data, (struct llcp_pdu*)dta->data.payload);
+    return nfc_create_nci_dta(dta, NCI_PBF_END, param->re->connid, len);
+}
+
+/* Sends an LLCP PDU from the RE to the guest. Sending
+ * means that the PDU is either generated and transmitted
+ * directly or enqueued for later transmission.
+ */
+static int
+send_pdu_from_re(ssize_t (*create)(void*, struct llcp_pdu*),
+                 void* data, struct nfc_re* re)
+{
+    if (re->xmit_next) {
+        /* it's our turn to xmit the next PDU; we do this
+         * immediately and cancel the possible timer for the
+         * SYMM PDU */
+        struct create_nci_dta_param param =
+            CREATE_NCI_DTA_PARAM_INIT(create, data, re);
+
+        goldfish_nfc_send_dta(create_nci_dta, &param);
+        re->xmit_next = 0;
+        if (re->xmit_timer) {
+            qemu_del_timer(re->xmit_timer);
+        }
+    } else {
+        /* we're waiting for the host to send a SYMM PDU, so
+         * we queue up PDUs for later delivery */
+        struct llcp_pdu_buf* buf = llcp_alloc_pdu_buf();
+        if (!buf) {
+            return -1;
+        }
+        buf->len = create(data, (struct llcp_pdu*)buf->pdu);
+        QTAILQ_INSERT_TAIL(&re->xmit_q, buf, entry);
+    }
+    return 0;
+}
+
+/* Fetches the next PDU from the RE's xmit queue and returns the PDU's
+ * length. 0 is returned if the queue is empty.
+ */
+static ssize_t
+fetch_pdu_from_re(struct llcp_pdu* llcp, struct nfc_re* re)
+{
+    ssize_t len;
+
+    assert(llcp);
+    assert(re);
+
+    if (QTAILQ_EMPTY(&re->xmit_q)) {
+        return 0;
+    }
+
+    struct llcp_pdu_buf* buf;
+    buf = QTAILQ_FIRST(&re->xmit_q);
+    len = buf->len;
+    memcpy(llcp, buf->pdu, len);
+    QTAILQ_REMOVE(&re->xmit_q, buf, entry);
+    llcp_free_pdu_buf(buf);
+
+    return len;
+}
+
+/* Transmits a PDU from the RE to the guest. If there is
+ * no queued PDU, a SYMM PDU is generated to fulfill LLCP
+ * requirements.
+ */
+static ssize_t
+xmit_pdu_or_symm_from_re(struct llcp_pdu* llcp, struct nfc_re* re)
+{
+    ssize_t len;
+
+    assert(re);
+
+    /* either xmit a queued PDU or... */
+    len = fetch_pdu_from_re(llcp, re);
+    if (!len) {
+        /* ...xmit a new SYMM PDU */
+        len = llcp_create_pdu(llcp, LLCP_SAP_LM, LLCP_PTYPE_SYMM, LLCP_SAP_LM);
+    }
+    re->xmit_next = 0;
+
+    return len;
+}
+
+/* When we're in charge of sending, we need to xmit something
+ * before the link timeout expires.
+ */
+static void
+prepare_xmit_timer(struct nfc_re* re, void (*xmit_next_cb)(void*))
+{
+    if (!re->xmit_timer) {
+        re->xmit_timer = qemu_new_timer_ms(vm_clock, xmit_next_cb, re);
+        assert(re->xmit_timer);
+    }
+    if (!qemu_timer_pending(re->xmit_timer)) {
+        /* xmit PDU in two seconds */
+        qemu_mod_timer(re->xmit_timer, qemu_get_clock_ms(vm_clock)+2000);
+    }
+}
 
 struct nfc_re*
 nfc_get_re_by_id(uint8_t id)
@@ -45,6 +171,23 @@ nfc_get_re_by_id(uint8_t id)
     }
 
     return NULL;
+}
+
+void
+nfc_clear_re(struct nfc_re* re)
+{
+    size_t dsap, ssap;
+
+    assert(re);
+
+    for (dsap = 0; dsap < ARRAY_SIZE(re->llcp_dl); ++dsap) {
+        for (ssap = 0; ssap < ARRAY_SIZE(re->llcp_dl[dsap]); ++ssap) {
+            llcp_init_data_link(re->llcp_dl[dsap]+ssap);
+        }
+    }
+
+    re->last_dsap = LLCP_SAP_LM;
+    re->last_ssap = LLCP_SAP_LM;
 }
 
 static ssize_t
@@ -110,27 +253,45 @@ nfc_re_read_rbuf(struct nfc_re* re, size_t len, void* data)
     return read_buf(&re->rbufsiz, re->rbuf, len, data);
 }
 
+/*
+ * LLCP support
+ */
+
+static void
+update_last_saps(struct nfc_re* re, enum llcp_sap dsap, enum llcp_sap ssap)
+{
+    assert(re);
+    assert(dsap < LLCP_NUMBER_OF_SAPS);
+    assert(ssap < LLCP_NUMBER_OF_SAPS);
+
+    re->last_dsap = dsap;
+    re->last_ssap = ssap;
+}
+
+static size_t (* const llcp_sap_cb[LLCP_NUMBER_OF_SAPS])(struct llcp_data_link*,
+                                                   const uint8_t*, size_t,
+                                                         struct snep*) = {
+    [LLCP_SAP_SNEP] = llcp_sap_snep
+};
+
 static ssize_t
-create_symm_dta(void* data, struct nfc_device* nfc, size_t maxlen,
-                union nci_packet* dta)
+create_dta(void* data, struct nfc_device* nfc, size_t maxlen,
+           union nci_packet* dta)
 {
     struct nfc_re* re;
-    size_t len;
-
-    assert(data);
+    ssize_t len;
 
     re = data;
+    assert(re);
 
-    len = llcp_create_pdu((struct llcp_pdu*)dta->data.payload,
-                          LLCP_SAP_LM, LLCP_PTYPE_SYMM, LLCP_SAP_LM);
-
+    len = xmit_pdu_or_symm_from_re((struct llcp_pdu*)dta->data.payload, re);
     return nfc_create_nci_dta(dta, NCI_PBF_END, re->connid, len);
 }
 
 static void
-send_symm_cb(void* opaque)
+xmit_next_cb(void* opaque)
 {
-    goldfish_nfc_send_dta(create_symm_dta, opaque);
+    goldfish_nfc_send_dta(create_dta, opaque);
 }
 
 static size_t
@@ -142,29 +303,9 @@ process_ptype_symm(struct nfc_re* re, const struct llcp_pdu* llcp,
     assert(consumed);
     assert(rsp);
 
-    if (!re->send_symm) {
-        len = llcp_create_pdu(rsp, llcp->dsap, LLCP_PTYPE_SYMM, llcp->ssap);
-    } else {
-        len = 0;
-    }
-
-    re->send_symm = !re->send_symm;
-
     *consumed = sizeof(*llcp);
 
-    if (re->send_symm) {
-        /* prepare timer for llcp symm */
-        if (!re->send_symm_timer) {
-            re->send_symm_timer =
-                qemu_new_timer_ms(vm_clock, send_symm_cb, re);
-            assert(re->send_symm_timer);
-        }
-        /* send symm in one second */
-        qemu_mod_timer(re->send_symm_timer,
-                       qemu_get_clock_ms(vm_clock)+2000);
-    }
-
-    return len;
+    return 0;
 }
 
 static size_t
@@ -172,7 +313,7 @@ process_ptype_connect(struct nfc_re* re, const struct llcp_pdu* llcp,
                       size_t len, uint8_t* consumed,
                       struct llcp_pdu* rsp)
 {
-    struct llcp_connection_state* cs;
+    struct llcp_data_link* dl;
     const uint8_t* opt;
 
     assert(re);
@@ -180,7 +321,8 @@ process_ptype_connect(struct nfc_re* re, const struct llcp_pdu* llcp,
     assert(consumed);
     assert(rsp);
 
-    cs = llcp_init_connection_state(re->llcp_cs[llcp->ssap] + llcp->dsap);
+    dl = llcp_init_data_link(re->llcp_dl[llcp->ssap] + llcp->dsap);
+    dl->status = LLCP_DATA_LINK_CONNECTED;
 
     *consumed = sizeof(*llcp);
     len -= *consumed;
@@ -197,9 +339,9 @@ process_ptype_connect(struct nfc_re* re, const struct llcp_pdu* llcp,
                 {
                   const struct llcp_param_miux* param =
                       (const struct llcp_param_miux*)(opt + 2);
-                  cs->miu = param->miux - 128;
+                  dl->miu = param->miux - 128;
                 }
-                NFC_D("LLCP MIU size=%d", cs->miu);
+                NFC_D("LLCP MIU size=%d", dl->miu);
                 break;
             case LLCP_PARAM_RW:
                 if ((opt[1] != 1) || (len < opt[1])) {
@@ -208,9 +350,9 @@ process_ptype_connect(struct nfc_re* re, const struct llcp_pdu* llcp,
                 {
                   const struct llcp_param_rw* param =
                       (const struct llcp_param_rw*)(opt + 2);
-                  cs->rw_r = param->rw;
+                  dl->rw_r = param->rw;
                 }
-                NFC_D("LLCP remote RW size %d", cs->rw_r);
+                NFC_D("LLCP remote RW size %d", dl->rw_r);
                 break;
             case LLCP_PARAM_SN:
                 if (len < opt[1]) {
@@ -224,6 +366,8 @@ process_ptype_connect(struct nfc_re* re, const struct llcp_pdu* llcp,
         }
     }
 
+    update_last_saps(re, llcp->ssap, llcp->dsap);
+
     /* switch DSAP and SSAP in outgoing PDU */
     return llcp_create_pdu(rsp, llcp->ssap, LLCP_PTYPE_CC, llcp->dsap);
 }
@@ -233,9 +377,165 @@ process_ptype_disc(struct nfc_re* re, const struct llcp_pdu* llcp,
                    size_t len, uint8_t* consumed,
                    struct llcp_pdu* rsp)
 {
-  /* Theres nothing to do on disconnects. We
-     just have to handle the PDU. */
-  return 0;
+    struct llcp_data_link* dl;
+
+    dl = re->llcp_dl[llcp->ssap] + llcp->dsap;
+    dl->status = LLCP_DATA_LINK_DISCONNECTED;
+
+    *consumed = sizeof(*llcp);
+
+    update_last_saps(re, llcp->ssap, llcp->dsap);
+
+    /* switch DSAP and SSAP in outgoing PDU */
+    return llcp_create_pdu_dm(rsp, llcp->ssap, llcp->dsap, 0);
+}
+
+static size_t
+process_ptype_cc(struct nfc_re* re, const struct llcp_pdu* llcp,
+                 size_t len, uint8_t* consumed,
+                 struct llcp_pdu* rsp)
+{
+    struct llcp_data_link* dl;
+
+    dl = llcp_clear_data_link(re->llcp_dl[llcp->ssap] + llcp->dsap);
+    assert(dl->status == LLCP_DATA_LINK_CONNECTING);
+    dl->status = LLCP_DATA_LINK_CONNECTED;
+
+    /* move DL's pending PDUs to global xmit queue */
+    while (!QTAILQ_EMPTY(&dl->xmit_q)) {
+        struct llcp_pdu_buf* buf = QTAILQ_FIRST(&dl->xmit_q);
+        QTAILQ_REMOVE(&dl->xmit_q, buf, entry);
+        QTAILQ_INSERT_TAIL(&re->xmit_q, buf, entry);
+    }
+
+    update_last_saps(re, llcp->ssap, llcp->dsap);
+
+    *consumed = sizeof(*llcp) + 1;
+
+    return 0;
+}
+
+static size_t
+process_ptype_dm(struct nfc_re* re, const struct llcp_pdu* llcp,
+                 size_t len, uint8_t* consumed,
+                 struct llcp_pdu* rsp)
+{
+    struct llcp_data_link* dl;
+
+    NFC_D("LLCP DM, reason=%d\n", llcp->info[0]);
+
+    dl = re->llcp_dl[llcp->ssap] + llcp->dsap;
+    dl->status = LLCP_DATA_LINK_DISCONNECTED;
+
+    update_last_saps(re, llcp->ssap, llcp->dsap);
+
+    /* consume 1 extra byte for 'reason' field */
+    *consumed = sizeof(*llcp) + 1;
+
+    return 0;
+}
+
+static size_t
+process_ptype_frmr(struct nfc_re* re, const struct llcp_pdu* llcp,
+                size_t len, uint8_t* consumed, struct llcp_pdu* rsp)
+{
+    unsigned int flags = (llcp->info[0] >> 4) & 0xf;
+    unsigned int ptype =  llcp->info[0] & 0xf;
+    unsigned int v_s = (llcp->info[2] >> 4) & 0xf;
+    unsigned int v_r =  llcp->info[2] & 0xf;
+    unsigned int v_sa = (llcp->info[3] >> 4) & 0xf;
+    unsigned int v_ra =  llcp->info[3] & 0xf;
+
+    NFC_D("LLCP FRMR flags=%x ptype=%u sequence=%u v_s=%u v_r=%u v_sa=%u "
+          "v_sr=%u\n", flags, ptype, llcp->info[1], v_s, v_r, v_sa, v_ra);
+
+    update_last_saps(re, llcp->ssap, llcp->dsap);
+
+    *consumed = sizeof(*llcp) + 4;
+
+    return 0;
+}
+
+static size_t
+process_ptype_i(struct nfc_re* re, const struct llcp_pdu* llcp,
+                size_t len, uint8_t* consumed, struct llcp_pdu* rsp)
+{
+    const uint8_t* info;
+    struct llcp_data_link* dl;
+    ssize_t res;
+
+    dl = re->llcp_dl[llcp->ssap] + llcp->dsap;
+    dl->v_r = (dl->v_r + 1) % 16;
+
+    /* I PDUs transfer messages (i.e., 'Service Data Units' in LLCP
+     * speak) over LLCP connections. In our case we hand over the
+     * payload to the next higher-layered protocol, or simply put
+     * it into the RE's send buffer.
+     */
+
+    update_last_saps(re, llcp->ssap, llcp->dsap);
+
+    /* consume llcp header and sequence numbers */
+    *consumed = sizeof(*llcp) + 1;
+    len -= *consumed;
+
+    info = ((const uint8_t*)llcp) + *consumed;
+    if (llcp_sap_cb[llcp->dsap]) {
+        /* there's a handler for this SAP, call it and build an LLCP
+         * header if there is a response */
+        res = llcp_sap_cb[llcp->dsap](dl, info, len,
+                                      (struct snep*)rsp->info+1);
+        if (res) {
+            res += llcp_create_pdu_i(rsp, llcp->ssap, llcp->dsap,
+                                     dl->v_s, dl->v_r);
+        }
+    } else {
+        /* copy information field into re->sbuf */
+        llcp_dl_write_rbuf(dl, len, info);
+        res = 0;
+    }
+
+    return res;
+}
+
+static size_t
+process_ptype_rr(struct nfc_re* re, const struct llcp_pdu* llcp,
+                size_t len, uint8_t* consumed, struct llcp_pdu* rsp)
+{
+    struct llcp_data_link* dl;
+    unsigned int nr;
+
+    nr = llcp->info[0] & 0xf;
+
+    NFC_D("LLCP RR N(R)=%d", nr);
+
+    dl = re->llcp_dl[llcp->ssap] + llcp->dsap;
+    dl->v_sa = nr;
+
+    update_last_saps(re, llcp->ssap, llcp->dsap);
+
+    *consumed = sizeof(*llcp) + 1;
+    return 0;
+}
+
+static size_t
+process_ptype_rnr(struct nfc_re* re, const struct llcp_pdu* llcp,
+                  size_t len, uint8_t* consumed, struct llcp_pdu* rsp)
+{
+    struct llcp_data_link* dl;
+    unsigned int nr;
+
+    nr = llcp->info[0] & 0xf;
+
+    NFC_D("LLCP RNR N(R)=%d", nr);
+
+    dl = re->llcp_dl[llcp->ssap] + llcp->dsap;
+    dl->v_sa = nr;
+
+    update_last_saps(re, llcp->ssap, llcp->dsap);
+
+    *consumed = sizeof(*llcp) + 1;
+    return 0;
 }
 
 static size_t
@@ -247,16 +547,32 @@ process_llcp(struct nfc_re* re, const struct llcp_pdu* llcp,
          size_t, uint8_t*, struct llcp_pdu*) = {
         [LLCP_PTYPE_SYMM] = process_ptype_symm,
         [LLCP_PTYPE_CONNECT] = process_ptype_connect,
-        [LLCP_PTYPE_DISC] = process_ptype_disc
+        [LLCP_PTYPE_DISC] = process_ptype_disc,
+        [LLCP_PTYPE_CC] = process_ptype_cc,
+        [LLCP_PTYPE_DM] = process_ptype_dm,
+        [LLCP_PTYPE_FRMR] = process_ptype_frmr,
+        [LLCP_PTYPE_I] = process_ptype_i,
+        [LLCP_PTYPE_RR] = process_ptype_rr,
+        [LLCP_PTYPE_RNR] = process_ptype_rnr
     };
 
-    unsigned char ptype = llcp_ptype(llcp);
+    unsigned char ptype;
+
+    ptype = llcp_ptype(llcp);
 
     NFC_D("LLCP dsap=%x ptype=%x ssap=%x", llcp->dsap, ptype, llcp->ssap);
 
     assert(process[ptype]);
 
-    return process[ptype](re, llcp, len, consumed, rsp);
+    len = process[ptype](re, llcp, len, consumed, rsp);
+
+    /* we implicitely received send permission */
+    re->xmit_next = 1;
+
+    /* prepare timer for LLCP SYMM */
+    prepare_xmit_timer(re, xmit_next_cb);
+
+    return len;
 }
 
 size_t
@@ -343,13 +659,218 @@ size_t
 nfc_re_create_dta_act(struct nfc_re* re, const void* data,
                       size_t len, uint8_t* act)
 {
+  struct llcp_data_link* dl;
   size_t llcp_len;
 
   assert(act);
 
-  llcp_len = llcp_create_pdu((struct llcp_pdu*)act, LLCP_SAP_SNEP,
-                             LLCP_PTYPE_UI, LLCP_SAP_SNEP);
+  dl = re->llcp_dl[LLCP_SAP_SNEP] + LLCP_SAP_SNEP;
+  llcp_len = llcp_create_pdu_i((struct llcp_pdu*)act,
+                               LLCP_SAP_SNEP, LLCP_SAP_SNEP,
+                               dl->v_s, dl->v_r);
+  dl->v_s = (dl->v_s+1) % 16;
+  dl->v_r = (dl->v_r+1) % 16;
+
   memcpy(act+len, data, len);
 
   return llcp_len + len;
+}
+
+/*
+ * LLCP CONNECT
+ */
+
+struct llcp_connect_param {
+    struct nfc_re* re;
+    unsigned char dsap;
+    unsigned char ssap;
+};
+
+#define LLCP_CONNECT_PARAM_INIT(_re, _dsap, _ssap) \
+    { \
+        .re = (_re), \
+        .dsap = (_dsap), \
+        .ssap = (_ssap) \
+    }
+
+static ssize_t
+create_connect_dta(void* data, struct llcp_pdu* llcp)
+{
+    const struct llcp_connect_param* param;
+    struct llcp_data_link* dl;
+
+    param = data;
+    assert(param);
+
+    dl = param->re->llcp_dl[param->dsap] + param->ssap;
+
+    assert(dl->status == LLCP_DATA_LINK_DISCONNECTED);
+    dl->status = LLCP_DATA_LINK_CONNECTING;
+
+    return llcp_create_pdu(llcp, param->dsap, LLCP_PTYPE_CONNECT, param->ssap);
+}
+
+int
+nfc_re_send_llcp_connect(struct nfc_re* re, unsigned char dsap, unsigned char ssap)
+{
+    struct llcp_connect_param param = LLCP_CONNECT_PARAM_INIT(re, dsap, ssap);
+    return send_pdu_from_re(create_connect_dta, &param, re);
+}
+
+/*
+ * SNEP PUT
+ */
+
+struct llcp_i_param {
+    struct nfc_re* re;
+    unsigned char dsap;
+    unsigned char ssap;
+    ssize_t (*create_snep)(void*, size_t, struct snep*);
+    void* data;
+};
+
+#define LLCP_I_PARAM_INIT(_re, _dsap, _ssap, _create_snep, _data) \
+    { \
+        .re = (_re), \
+        .dsap = (_dsap), \
+        .ssap = (_ssap), \
+        .create_snep = (_create_snep), \
+        .data =  (_data) \
+    }
+
+static ssize_t
+create_i_pdu(void* data, struct llcp_pdu* llcp)
+{
+    const struct llcp_i_param* param;
+    struct llcp_data_link* dl;
+    size_t len;
+    struct snep* snep;
+    ssize_t res;
+
+    param = data;
+    assert(param);
+
+    dl = param->re->llcp_dl[param->dsap] + param->ssap;
+    len = llcp_create_pdu_i(llcp, param->dsap, param->ssap, dl->v_s, dl->v_r);
+
+    snep = (struct snep*)(llcp->info + (len-sizeof(*llcp)));
+    res = param->create_snep(param->data, 200-len, snep);
+    if (res < 0) {
+        return -1;
+    }
+    dl->v_s = (dl->v_s + 1) % 16;
+
+    return len + res;
+}
+
+static int
+send_snep_over_llcp(struct nfc_re* re,
+                    enum llcp_sap dsap, enum llcp_sap ssap,
+                    ssize_t (*create)(void*, size_t, struct snep*),
+                    void* data)
+{
+    int res;
+    struct llcp_data_link* dl;
+    struct llcp_i_param i_param =
+        LLCP_I_PARAM_INIT(re, dsap, ssap, create, data);
+
+    res = 0;
+    dl = re->llcp_dl[dsap] + ssap;
+
+    if (dl->status == LLCP_DATA_LINK_DISCONNECTED) {
+        /* enqueue request for later delivery and connect first */
+        struct llcp_pdu_buf* buf;
+        struct llcp_connect_param connect_param =
+            LLCP_CONNECT_PARAM_INIT(re, dsap, ssap);
+        buf = llcp_alloc_pdu_buf();
+        if (!buf) {
+            return -1;
+        }
+        buf->len = create_i_pdu(&i_param, (struct llcp_pdu*)buf->pdu);
+        QTAILQ_INSERT_TAIL(&dl->xmit_q, buf, entry);
+        /* on connecting successfully, pending packets will be delivered */
+        res = send_pdu_from_re(create_connect_dta, &connect_param, re);
+    } else if (dl->status == LLCP_DATA_LINK_CONNECTING) {
+        /* connecting in process; only enqueue request for later delivery */
+        struct llcp_pdu_buf* buf = llcp_alloc_pdu_buf();
+        if (!buf) {
+            return -1;
+        }
+        buf->len = create_i_pdu(&i_param, (struct llcp_pdu*)buf->pdu);
+        QTAILQ_INSERT_TAIL(&dl->xmit_q, buf, entry);
+    } else if (dl->status == LLCP_DATA_LINK_CONNECTED) {
+        /* normal operation; send a SNEP request */
+        res = send_pdu_from_re(create_i_pdu, &i_param, re);
+    } else {
+        /* don't send a request for disconnecting links */
+        assert(dl->status == LLCP_DATA_LINK_DISCONNECTING);
+    }
+    return res;
+}
+
+int
+nfc_re_send_snep_put(struct nfc_re* re,
+                     enum llcp_sap dsap, enum llcp_sap ssap,
+                     ssize_t (*create_snep)(void*, size_t, struct snep*),
+                     void* data)
+{
+    int res;
+
+    assert(re);
+
+    switch (re->rfproto) {
+        case NCI_RF_PROTOCOL_NFC_DEP:
+            /* send SNEP over LLCP */
+            res = send_snep_over_llcp(re, dsap, ssap, create_snep, data);
+            break;
+        default:
+            /* TODO: support over protocols */
+            return -1;
+    }
+    return res;
+}
+
+static int
+recv_snep_over_llcp(struct nfc_re* re,
+                    enum llcp_sap dsap, enum llcp_sap ssap,
+                    ssize_t (*process)(void*, size_t, const struct ndef_rec*),
+                    void* data)
+{
+    struct llcp_data_link* dl;
+    ssize_t res;
+
+    dl = re->llcp_dl[dsap] + ssap;
+
+    /* normal operation; process last received SNEP request */
+    assert(dl->status == LLCP_DATA_LINK_CONNECTED);
+
+    res = process(data, dl->rlen, (const struct ndef_rec*)dl->rbuf);
+    if (res < 0) {
+        return -1;
+    }
+
+    return 0;
+}
+
+int
+nfc_re_recv_snep_put(struct nfc_re* re,
+                     enum llcp_sap dsap, enum llcp_sap ssap,
+                     ssize_t (*process_ndef)(void*, size_t,
+                                       const struct ndef_rec*),
+                     void* data)
+{
+    int res;
+
+    assert(re);
+
+    switch (re->rfproto) {
+        case NCI_RF_PROTOCOL_NFC_DEP:
+            /* send SNEP over LLCP */
+            res = recv_snep_over_llcp(re, dsap, ssap, process_ndef, data);
+            break;
+        default:
+            /* TODO: support over protocols */
+            return -1;
+    }
+    return res;
 }

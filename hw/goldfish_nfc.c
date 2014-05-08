@@ -305,3 +305,20 @@ goldfish_nfc_send_ntf(ssize_t (*create)(void*, struct nfc_device*, size_t,
 
     return 0;
 }
+
+int
+goldfish_nfc_recv_dta(ssize_t (*recv)(void*, struct nfc_device*), void* data)
+{
+    struct nfc_state* s;
+    ssize_t res;
+
+    assert(recv);
+
+    s = &_nfc_states[0];
+
+    res = recv(data, &s->nfc);
+    if (res < 0) {
+      return -1;
+    }
+    return 0;
+}
