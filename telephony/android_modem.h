@@ -226,6 +226,7 @@ extern int    amodem_update_call( AModem  modem, const char*  number, ACallState
 extern int    amodem_disconnect_call( AModem  modem, const char*  number );
 extern int    amodem_remote_call_busy( AModem  modem, const char*  number );
 extern void   amodem_send_stk_unsol_proactive_command( AModem  modem, const char*  stkCmdPdu );
+extern void   amodem_send_ussd_unsol_response( AModem  modem, int type, const char*  message );
 
 /** Cell Location
  **/
