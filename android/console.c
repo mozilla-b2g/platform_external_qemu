@@ -3679,6 +3679,37 @@ nfc_recv_snep_put_cb(void* data,  struct nfc_device* nfc)
 }
 
 static int
+parse_sap(ControlClient client, const char* field,
+          char** args, long* sap, int can_autodetect)
+{
+    const char* p;
+
+    assert(args);
+    assert(sap);
+
+    p = strsep(args, " ");
+    if (!p) {
+        control_write(client, "KO: no %s given\r\n", field);
+        return -1;
+    }
+    errno = 0;
+    *sap = strtol(p, NULL, 0);
+    if (errno) {
+        control_write(client,
+                      "KO: invalid %s '%s', error %d(%s)\r\n",
+                      field, p, errno, strerror(errno));
+        return -1;
+    }
+    if (((*sap == -1) && !can_autodetect) ||
+         (*sap < -1) || !(*sap < LLCP_NUMBER_OF_SAPS)) {
+        control_write(client, "KO: invalid %s '%ld'\r\n",
+                      field, *sap);
+        return -1;
+    }
+    return 0;
+}
+
+static int
 do_nfc_snep( ControlClient  client, char*  args )
 {
     char *p;
@@ -3698,41 +3729,11 @@ do_nfc_snep( ControlClient  client, char*  args )
         struct nfc_snep_param param = NFC_SNEP_PARAM_INIT(client);
 
         /* read DSAP */
-        p = strsep(&args, " ");
-        if (!p) {
-            control_write(client, "KO: no DSAP given\r\n");
-            return -1;
-        }
-        errno = 0;
-        param.dsap = strtol(p, NULL, 0);
-        if (errno) {
-            control_write(client,
-                          "KO: invalid DSAP '%s', error %d(%s)\r\n",
-                          p, errno, strerror(errno));
-            return -1;
-        }
-        if ((param.dsap < -1) || !(param.dsap < LLCP_NUMBER_OF_SAPS)) {
-            control_write(client, "KO: invalid DSAP '%ld'\r\n",
-                          param.dsap);
+        if (parse_sap(client, "DSAP", &args, &param.dsap, 1) < 0) {
             return -1;
         }
         /* read SSAP */
-        p = strsep(&args, " ");
-        if (!p) {
-            control_write(client, "KO: no SSAP given\r\n");
-            return -1;
-        }
-        errno = 0;
-        param.ssap = strtol(p, NULL, 0);
-        if (errno) {
-            control_write(client,
-                          "KO: invalid SSAP '%s', error %d(%s)\r\n",
-                          p, errno, strerror(errno));
-            return -1;
-        }
-        if ((param.ssap < -1) || !(param.ssap < LLCP_NUMBER_OF_SAPS)) {
-            control_write(client, "KO: invalid SSAP '%ld'\r\n",
-                          param.ssap);
+        if (parse_sap(client, "SSAP", &args, &param.ssap, 1) < 0) {
             return -1;
         }
 
@@ -4052,8 +4053,8 @@ do_nfc_nci( ControlClient  client, char*  args )
 
 struct nfc_llcp_param {
     ControlClient client;
-    enum llcp_sap dsap;
-    enum llcp_sap ssap;
+    long dsap;
+    long ssap;
 };
 
 #define NFC_LLCP_PARAM_INIT(_client) \
@@ -4074,17 +4075,17 @@ nfc_llcp_connect_cb(void* data, struct nfc_device* nfc, size_t maxlen,
         control_write(param->client, "KO: no active remote endpoint\n");
         return -1;
     }
-    if (!param->dsap && !param->ssap) {
+    if ((param->dsap < 0) && (param->ssap < 0)) {
         param->dsap = nfc->active_re->last_dsap;
         param->ssap = nfc->active_re->last_ssap;
-        if (!param->dsap) {
-            control_write(param->client, "KO: DSAP is 0\r\n");
-            return -1;
-        }
-        if (!param->ssap) {
-            control_write(param->client, "KO: SSAP is 0\r\n");
-            return -1;
-        }
+    }
+    if (!param->dsap) {
+        control_write(param->client, "KO: DSAP is 0\r\n");
+        return -1;
+    }
+    if (!param->ssap) {
+        control_write(param->client, "KO: SSAP is 0\r\n");
+        return -1;
     }
     res = nfc_re_send_llcp_connect(nfc->active_re, param->dsap, param->ssap);
     if (res < 0) {
@@ -4113,41 +4114,11 @@ do_nfc_llcp( ControlClient  client, char*  args )
         struct nfc_llcp_param param = NFC_LLCP_PARAM_INIT(client);
 
         /* read DSAP */
-        p = strsep(&args, " ");
-        if (!p) {
-            control_write(client, "KO: no DSAP given\r\n");
-            return -1;
-        }
-        errno = 0;
-        param.dsap = strtoul(p, NULL, 0);
-        if (errno) {
-            control_write(client,
-                          "KO: invalid DSAP '%s', error %d(%s)\r\n",
-                          p, errno, strerror(errno));
-            return -1;
-        }
-        if (!(param.dsap < LLCP_NUMBER_OF_SAPS)) {
-            control_write(client, "KO: invalid DSAP '%u'\r\n",
-                          param.dsap);
+        if (parse_sap(client, "DSAP", &args, &param.dsap, 1) < 0) {
             return -1;
         }
         /* read SSAP */
-        p = strsep(&args, " ");
-        if (!p) {
-            control_write(client, "KO: no SSAP given\r\n");
-            return -1;
-        }
-        errno = 0;
-        param.ssap = strtoul(p, NULL, 0);
-        if (errno) {
-            control_write(client,
-                          "KO: invalid SSAP '%s', error %d(%s)\r\n",
-                          p, errno, strerror(errno));
-            return -1;
-        }
-        if (!(param.ssap < LLCP_NUMBER_OF_SAPS)) {
-            control_write(client, "KO: invalid SSAP '%u'\r\n",
-                          param.ssap);
+        if (parse_sap(client, "SSAP", &args, &param.ssap, 1) < 0) {
             return -1;
         }
         if (goldfish_nfc_send_dta(nfc_llcp_connect_cb, &param) < 0) {
