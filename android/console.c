@@ -3709,6 +3709,114 @@ parse_sap(ControlClient client, const char* field,
     return 0;
 }
 
+/* Each record is given by its flag bits, TNF value, type,
+ * payload, and id. Id is optional. Type, payload, and id
+ * are given in base64url encoding.
+ */
+static int
+parse_ndef_rec(ControlClient client, char** args,
+               struct nfc_ndef_record_param* record)
+{
+    const char* p;
+
+    assert(args);
+    assert(record);
+
+    /* read opening bracket */
+    p = strsep(args, "[");
+    if (!p) {
+        control_write(client, "KO: no NDEF record given\r\n");
+        return -1;
+    }
+    /* read flags */
+    p = strsep(args, " ,");
+    if (!p) {
+        control_write(client, "KO: no NDEF flags given\r\n");
+        return -1;
+    }
+    errno = 0;
+    record->flags = strtoul(p, NULL, 0);
+    if (errno) {
+        control_write(client,
+                      "KO: invalid NDEF flags '%s', error %d(%s)\r\n",
+                      p, errno, strerror(errno));
+        return -1;
+    }
+    if (record->flags & ~NDEF_FLAG_BITS) {
+        control_write(client, "KO: invalid NDEF flags '%u'\r\n",
+                      record->flags);
+        return -1;
+    }
+    /* read TNF */
+    p = strsep(args, " ,");
+    if (!p) {
+        control_write(client, "KO: no NDEF TNF given\r\n");
+        return -1;
+    }
+    errno = 0;
+    record->tnf = strtoul(p, NULL, 0);
+    if (errno) {
+        control_write(client,
+                      "KO: invalid NDEF TNF '%s', error %d(%s)\r\n",
+                      p, errno, strerror(errno));
+        return -1;
+    }
+    if (!(record->tnf < NDEF_NUMBER_OF_TNFS)) {
+        control_write(client, "KO: invalid NDEF TNF '%u'\r\n",
+                      record->tnf);
+        return -1;
+    }
+    /* read type */
+    record->type = strsep(args, " ,");
+    if (!record->type) {
+        control_write(client, "KO: no NDEF type given\r\n");
+        return -1;
+    }
+    if (!strlen(record->type)) {
+        control_write(client, "KO: empty NDEF type\r\n");
+        return -1;
+    }
+    /* read payload */
+    record->payload = strsep(args, " ,");
+    if (!record->payload) {
+        control_write(client, "KO: no NDEF payload given\r\n");
+        return -1;
+    }
+    if (!strlen(record->payload)) {
+        control_write(client, "KO: empty NDEF payload\r\n");
+        return -1;
+    }
+    /* read id; might by empty */
+    record->id = strsep(args, "]");
+    if (!record->id) {
+        control_write(client, "KO: no NDEF ID given\r\n");
+        return -1;
+    }
+    return 0;
+}
+
+static ssize_t
+parse_ndef_msg(ControlClient client, char** args, size_t nrecs,
+               struct nfc_ndef_record_param* rec)
+{
+    size_t i;
+
+    assert(args);
+
+    for (i = 0; i < nrecs && *args && strlen(*args); ++i) {
+        if (parse_ndef_rec(client, args, rec+i) < 0) {
+          return -1;
+        }
+    }
+    if (*args && strlen(*args)) {
+        control_write(client,
+                      "KO: invalid characters near EOL: %s\r\n",
+                      *args);
+        return -1;
+    }
+    return i;
+}
+
 static int
 do_nfc_snep( ControlClient  client, char*  args )
 {
@@ -3725,7 +3833,7 @@ do_nfc_snep( ControlClient  client, char*  args )
         return -1;
     }
     if (!strcmp(p, "put")) {
-        size_t i;
+        ssize_t nrecords;
         struct nfc_snep_param param = NFC_SNEP_PARAM_INIT(client);
 
         /* read DSAP */
@@ -3736,95 +3844,17 @@ do_nfc_snep( ControlClient  client, char*  args )
         if (parse_sap(client, "SSAP", &args, &param.ssap, 1) < 0) {
             return -1;
         }
-
-        /* The emulator supports up to 4 NDEF records per message. Each
-         * record is given by its flag bits, TNF value, type, payload,
-         * and id. Id is optional. Type, payload, and id are given in
-         * base64url encoding.
-         *
-         * If no NDEF records are given, the emulator will print the current
-         * content of the LLCP data-link buffer.
+        /* The emulator supports up to 4 records per NDEF
+         * message. If no records are given, the emulator
+         * will print the current content of the LLCP data-
+         * link buffer.
          */
-        for (i = 0; i < ARRAY_SIZE(param.record) && args && strlen(args); ++i) {
-            struct nfc_ndef_record_param* record = param.record + i;
-            /* read opening bracket */
-            p = strsep(&args, "[");
-            if (!p) {
-                control_write(client, "KO: no NDEF record given\r\n");
-                return -1;
-            }
-            /* read flags */
-            p = strsep(&args, " ,");
-            if (!p) {
-                control_write(client, "KO: no NDEF flags given\r\n");
-                return -1;
-            }
-            errno = 0;
-            record->flags = strtoul(p, NULL, 0);
-            if (errno) {
-                control_write(client,
-                              "KO: invalid NDEF flags '%s', error %d(%s)\r\n",
-                              p, errno, strerror(errno));
-                return -1;
-            }
-            if (record->flags & ~NDEF_FLAG_BITS) {
-                control_write(client, "KO: invalid NDEF flags '%u'\r\n",
-                              record->flags);
-                return -1;
-            }
-            /* read TNF */
-            p = strsep(&args, " ,");
-            if (!p) {
-                control_write(client, "KO: no NDEF TNF given\r\n");
-                return -1;
-            }
-            errno = 0;
-            record->tnf = strtoul(p, NULL, 0);
-            if (errno) {
-                control_write(client,
-                              "KO: invalid NDEF TNF '%s', error %d(%s)\r\n",
-                              p, errno, strerror(errno));
-                return -1;
-            }
-            if (!(record->tnf < NDEF_NUMBER_OF_TNFS)) {
-                control_write(client, "KO: invalid NDEF TNF '%u'\r\n",
-                              record->tnf);
-                return -1;
-            }
-            /* read type */
-            record->type = strsep(&args, " ,");
-            if (!record->type) {
-                control_write(client, "KO: no NDEF type given\r\n");
-                return -1;
-            }
-            if (!strlen(record->type)) {
-                control_write(client, "KO: empty NDEF type\r\n");
-                return -1;
-            }
-            /* read payload */
-            record->payload = strsep(&args, " ,");
-            if (!record->payload) {
-                control_write(client, "KO: no NDEF payload given\r\n");
-                return -1;
-            }
-            if (!strlen(record->payload)) {
-                control_write(client, "KO: empty NDEF payload\r\n");
-                return -1;
-            }
-            /* read id; might by empty */
-            record->id = strsep(&args, "]");
-            if (!record->id) {
-                control_write(client, "KO: no NDEF ID given\r\n");
-                return -1;
-            }
-            ++param.nrecords;
-        }
-        if (args && strlen(args)) {
-            control_write(client,
-                          "KO: invalid characters near EOL: %s\r\n",
-                          args);
+        nrecords = parse_ndef_msg(client, &args, ARRAY_SIZE(param.record),
+                                  param.record);
+        if (nrecords < 0) {
             return -1;
         }
+        param.nrecords = nrecords;
         if (param.nrecords) {
             /* put SNEP request onto SNEP server */
             if (goldfish_nfc_send_dta(nfc_send_snep_put_cb, &param) < 0) {
