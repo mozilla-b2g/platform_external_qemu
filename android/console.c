@@ -3847,6 +3847,33 @@ parse_re_index(ControlClient client, char** args, unsigned long nres,
 }
 
 static int
+parse_nci_ntf_type(ControlClient client, char** args, unsigned long* ntype)
+{
+    const char* p;
+
+    assert(args);
+
+    p = strsep(args, " ");
+    if (!p) {
+        control_write(client, "KO: no discover notification type given\r\n");
+        return -1;
+    }
+    errno = 0;
+    *ntype = strtoul(p, NULL, 0);
+    if (errno) {
+        control_write(client,
+                      "KO: invalid discover notification type '%s', error %d(%s)\r\n",
+                      p, errno, strerror(errno));
+        return -1;
+    }
+    if (!(*ntype < NUMBER_OF_NCI_NOTIFICATION_TYPES)) {
+        control_write(client, "KO: unknown discover notification type %zu\r\n", *ntype);
+        return -1;
+    }
+    return 0;
+}
+
+static int
 do_nfc_snep( ControlClient  client, char*  args )
 {
     char *p;
@@ -4017,23 +4044,10 @@ do_nfc_nci( ControlClient  client, char*  args )
         param.re = nfc_res + i;
 
         /* read discover notification type */
-        p = strsep(&args, " ");
-        if (!p) {
-            control_write(client, "KO: no discover notification type given\r\n");
+        if (parse_nci_ntf_type(client, &args, &param.ntype) < 0) {
             return -1;
         }
-        errno = 0;
-        param.ntype = strtoul(p, NULL, 0);
-        if (errno) {
-            control_write(client,
-                          "KO: invalid discover notification type '%s', error %d(%s)\r\n",
-                          p, errno, strerror(errno));
-            return -1;
-        }
-        if (!(param.ntype < NUMBER_OF_NCI_NOTIFICATION_TYPES)) {
-            control_write(client, "KO: unknown discover notification type %zu\r\n", param.ntype);
-            return -1;
-        }
+
         /* generate RF_DISCOVER_NTF */
         if (goldfish_nfc_send_ntf(nfc_rf_discovery_ntf_cb, &param) < 0) {
             /* error message generated in create function */
