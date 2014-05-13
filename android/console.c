@@ -3818,6 +3818,35 @@ parse_ndef_msg(ControlClient client, char** args, size_t nrecs,
 }
 
 static int
+parse_re_index(ControlClient client, char** args, unsigned long nres,
+               unsigned long* i)
+{
+    const char* p;
+
+    assert(args);
+    assert(i);
+
+    p = strsep(args, " ");
+    if (!p) {
+        control_write(client, "KO: no remote endpoint given\r\n");
+        return -1;
+    }
+    errno = 0;
+    *i = strtoul(p, NULL, 0);
+    if (errno) {
+        control_write(client,
+                      "KO: invalid remote endpoint '%s', error %d(%s)\r\n",
+                      p, errno, strerror(errno));
+        return -1;
+    }
+    if (!(*i < nres)) {
+        control_write(client, "KO: unknown remote endpoint %zu\r\n", *i);
+        return -1;
+    }
+    return 0;
+}
+
+static int
 do_nfc_snep( ControlClient  client, char*  args )
 {
     char *p;
@@ -3979,26 +4008,13 @@ do_nfc_nci( ControlClient  client, char*  args )
         return -1;
     }
     if (!strcmp(p, "rf_discover_ntf")) {
-        size_t i;
+        unsigned long i;
         struct nfc_ntf_param param = NFC_NTF_PARAM_INIT(client);
         /* read remote-endpoint index */
-        p = strsep(&args, " ");
-        if (!p) {
-            control_write(client, "KO: no remote endpoint given\r\n");
+        if (parse_re_index(client, &args, ARRAY_SIZE(nfc_res), &i) < 0) {
             return -1;
         }
-        errno = 0;
-        i = strtoul(p, NULL, 0);
-        if (errno) {
-            control_write(client,
-                          "KO: invalid remote endpoint '%s', error %d(%s)\r\n",
-                          p, errno, strerror(errno));
-            return -1;
-        }
-        if (!(i < sizeof(nfc_res)/sizeof(nfc_res[0])) ) {
-            control_write(client, "KO: unknown remote endpoint %zu\r\n", i);
-            return -1;
-        }
+        param.re = nfc_res + i;
 
         /* read discover notification type */
         p = strsep(&args, " ");
@@ -4018,7 +4034,6 @@ do_nfc_nci( ControlClient  client, char*  args )
             control_write(client, "KO: unknown discover notification type %zu\r\n", param.ntype);
             return -1;
         }
-        param.re = nfc_res + i;
         /* generate RF_DISCOVER_NTF */
         if (goldfish_nfc_send_ntf(nfc_rf_discovery_ntf_cb, &param) < 0) {
             /* error message generated in create function */
@@ -4026,20 +4041,10 @@ do_nfc_nci( ControlClient  client, char*  args )
         }
     } else if (!strcmp(p, "rf_intf_activated_ntf")) {
         struct nfc_ntf_param param = NFC_NTF_PARAM_INIT(client);
-        /* read remote-endpoint index */
-        p = strsep(&args, " ");
-        if (p) {
-            size_t i;
-            errno = 0;
-            i = strtoul(p, NULL, 0);
-            if (errno) {
-                control_write(client,
-                              "KO: invalid remote endpoint '%s', error %d(%s)\r\n",
-                              p, errno, strerror(errno));
-                return -1;
-            }
-            if (!(i < sizeof(nfc_res)/sizeof(nfc_res[0]))) {
-                control_write(client, "KO: unknown remote endpoint %zu\r\n", i);
+        if (args && *args) {
+            unsigned long i;
+            /* read remote-endpoint index */
+            if (parse_re_index(client, &args, ARRAY_SIZE(nfc_res), &i) < 0) {
                 return -1;
             }
             param.re = nfc_res + i;
