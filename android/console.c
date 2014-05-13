@@ -3874,6 +3874,31 @@ parse_nci_ntf_type(ControlClient client, char** args, unsigned long* ntype)
 }
 
 static int
+parse_rf_index(ControlClient client, char** args, unsigned long* rf)
+{
+    const char* p;
+
+    assert(client);
+    assert(args);
+    assert(rf);
+
+    p = strsep(args, " ");
+    errno = 0;
+    *rf = strtol(p, NULL, 0);
+    if (errno) {
+        control_write(client,
+                      "KO: invalid rf index '%s', error %d(%s)\r\n",
+                      p, errno, strerror(errno));
+        return -1;
+    }
+    if (*rf < -1 || *rf >= NUMBER_OF_SUPPORTED_NCI_RF_INTERFACES) {
+        control_write(client, "KO: unknown rf index %d\r\n", *rf);
+        return -1;
+    }
+    return 0;
+}
+
+static int
 do_nfc_snep( ControlClient  client, char*  args )
 {
     char *p;
@@ -4063,24 +4088,13 @@ do_nfc_nci( ControlClient  client, char*  args )
             }
             param.re = nfc_res + i;
 
-            /* read rf interface index */
-            p = strsep(&args, " ");
-            if (!p) {
-                param.rf = -1;
+            if (args && *args) {
+                /* read rf interface index */
+                if (parse_rf_index(client, &args, &param.rf) < 0) {
+                    return -1;
+                }
             } else {
-                errno = 0;
-                param.rf = strtol(p, NULL, 0);
-                if (errno) {
-                    control_write(client,
-                                  "KO: invalid rf index '%s', error %d(%s)\r\n",
-                                  p, errno, strerror(errno));
-                    return -1;
-                }
-                if (param.rf < -1 ||
-                    param.rf >= NUMBER_OF_SUPPORTED_NCI_RF_INTERFACES) {
-                    control_write(client, "KO: unknown rf index %d\r\n", param.rf);
-                    return -1;
-                }
+                param.rf = -1;
             }
         } else {
             param.re = NULL;
