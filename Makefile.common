@@ -656,7 +656,8 @@ TELEPHONY_SOURCES := \
     sim_card.c \
     sysdeps_qemu.c \
     sms.c \
-    remote_call.c
+    remote_call.c \
+    supplementary_service.c
 
 common_LOCAL_SRC_FILES += $(TELEPHONY_SOURCES:%=telephony/%)
 EMULATOR_LIBQEMU_CFLAGS += -I$(LOCAL_PATH)/telephony

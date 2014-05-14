@@ -22,6 +22,7 @@
 #include "hw/hw.h"
 #include "qemu-common.h"
 #include "sim_card.h"
+#include "supplementary_service.h"
 #include "sysdeps.h"
 #include <memory.h>
 #include <stdarg.h>
@@ -366,6 +367,9 @@ typedef struct AModemRec_
 
     /* SIM card */
     ASimCard      sim;
+
+    /* Supplementary Service */
+    ASupplementaryService    supplementary;
 
     /* voice and data network registration */
     ARegistrationUnsolMode   voice_mode;
@@ -814,6 +818,7 @@ amodem_create( int  base_port, int instance_id, AModemUnsolFunc  unsol_func, voi
     modem->unsol_opaque = unsol_opaque;
 
     modem->sim = asimcard_create(base_port, instance_id);
+    modem->supplementary = asupplementary_create(base_port, instance_id);
 
     sys_main_init();
     // We don't know the exact number of instances to create here, it's
@@ -854,6 +859,9 @@ amodem_destroy( AModem  modem )
 {
     asimcard_destroy( modem->sim );
     modem->sim = NULL;
+
+    asupplementary_destroy( modem->supplementary );
+    modem->supplementary = NULL;
 }
 
 
