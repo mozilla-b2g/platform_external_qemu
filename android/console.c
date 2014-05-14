@@ -3678,26 +3678,94 @@ nfc_recv_snep_put_cb(void* data,  struct nfc_device* nfc)
     return 0;
 }
 
+static const char*
+lex_token(ControlClient client, const char* field, const char* delim, char** args)
+{
+    const char *tok;
+
+    assert(args);
+
+    tok = strsep(args, delim);
+    if (!tok) {
+        control_write(client, "KO: no token %s given\r\n", field);
+        return NULL;
+    }
+    return tok;
+}
+
+static int
+parse_token_l(ControlClient client, const char* field, const char* delim,
+              char** args, long* val)
+{
+    const char* tok;
+
+    assert(val);
+
+    tok = lex_token(client, field, delim, args);
+    if (!tok) {
+        return -1;
+    }
+    errno = 0;
+    *val = strtol(tok, NULL, 0);
+    if (errno) {
+        control_write(client,
+                      "KO: invalid value '%s' for token %s, error %d(%s)\r\n",
+                      tok, field, errno, strerror(errno));
+        return -1;
+    }
+    return 0;
+}
+
+static int
+parse_token_ul(ControlClient client, const char* field, const char* delim,
+               char** args, unsigned long* val)
+{
+    const char* tok;
+
+    assert(val);
+
+    tok = lex_token(client, field, delim, args);
+    if (!tok) {
+        return -1;
+    }
+    errno = 0;
+    *val = strtoul(tok, NULL, 0);
+    if (errno) {
+        control_write(client,
+                      "KO: invalid value '%s' for token %s, error %d(%s)\r\n",
+                      tok, field, errno, strerror(errno));
+        return -1;
+    }
+    return 0;
+}
+
+static int
+parse_token_s(ControlClient client, const char* field, const char* delim,
+              char** args, const char** val, int allow_empty)
+{
+    // TODO: we could add support for escaped characters, if necessary
+
+    assert(val);
+
+    *val = lex_token(client, field, delim, args);
+    if (!*val) {
+        return -1;
+    }
+    if (!allow_empty && !(*val)[0]) {
+        control_write(client, "KO: empty token %s\r\n", field);
+        return -1;
+    }
+    return 0;
+}
+
 static int
 parse_sap(ControlClient client, const char* field,
           char** args, long* sap, int can_autodetect)
 {
-    const char* p;
-
     assert(args);
     assert(sap);
 
-    p = strsep(args, " ");
-    if (!p) {
-        control_write(client, "KO: no %s given\r\n", field);
-        return -1;
-    }
-    errno = 0;
-    *sap = strtol(p, NULL, 0);
-    if (errno) {
-        control_write(client,
-                      "KO: invalid %s '%s', error %d(%s)\r\n",
-                      field, p, errno, strerror(errno));
+    if (parse_token_l(client, field, " ", args, sap) < 0) {
         return -1;
     }
     if (((*sap == -1) && !can_autodetect) ||
@@ -3718,6 +3786,7 @@ parse_ndef_rec(ControlClient client, char** args,
                struct nfc_ndef_record_param* record)
 {
     const char* p;
+    unsigned long tnf;
 
     assert(args);
     assert(record);
@@ -3729,17 +3798,7 @@ parse_ndef_rec(ControlClient client, char** args,
         return -1;
     }
     /* read flags */
-    p = strsep(args, " ,");
-    if (!p) {
-        control_write(client, "KO: no NDEF flags given\r\n");
-        return -1;
-    }
-    errno = 0;
-    record->flags = strtoul(p, NULL, 0);
-    if (errno) {
-        control_write(client,
-                      "KO: invalid NDEF flags '%s', error %d(%s)\r\n",
-                      p, errno, strerror(errno));
+    if (parse_token_ul(client, "NDEF flags", " ,", args, &record->flags) < 0) {
         return -1;
     }
     if (record->flags & ~NDEF_FLAG_BITS) {
@@ -3748,48 +3807,25 @@ parse_ndef_rec(ControlClient client, char** args,
         return -1;
     }
     /* read TNF */
-    p = strsep(args, " ,");
-    if (!p) {
-        control_write(client, "KO: no NDEF TNF given\r\n");
+    if (parse_token_ul(client, "NDEF TNF", " ,", args, &tnf) < 0) {
         return -1;
     }
-    errno = 0;
-    record->tnf = strtoul(p, NULL, 0);
-    if (errno) {
-        control_write(client,
-                      "KO: invalid NDEF TNF '%s', error %d(%s)\r\n",
-                      p, errno, strerror(errno));
-        return -1;
-    }
-    if (!(record->tnf < NDEF_NUMBER_OF_TNFS)) {
+    if (!(tnf < NDEF_NUMBER_OF_TNFS)) {
         control_write(client, "KO: invalid NDEF TNF '%u'\r\n",
                       record->tnf);
         return -1;
     }
+    record->tnf = tnf;
     /* read type */
-    record->type = strsep(args, " ,");
-    if (!record->type) {
-        control_write(client, "KO: no NDEF type given\r\n");
-        return -1;
-    }
-    if (!strlen(record->type)) {
-        control_write(client, "KO: empty NDEF type\r\n");
+    if (parse_token_s(client, "NDEF type", " ,", args, &record->type, 0) < 0) {
         return -1;
     }
     /* read payload */
-    record->payload = strsep(args, " ,");
-    if (!record->payload) {
-        control_write(client, "KO: no NDEF payload given\r\n");
-        return -1;
-    }
-    if (!strlen(record->payload)) {
-        control_write(client, "KO: empty NDEF payload\r\n");
+    if (parse_token_s(client, "NDEF payload", " ,", args, &record->payload, 0) < 0) {
         return -1;
     }
     /* read id; might by empty */
-    record->id = strsep(args, "]");
-    if (!record->id) {
-        control_write(client, "KO: no NDEF ID given\r\n");
+    if (parse_token_s(client, "NDEF id", "]", args, &record->id, 1) < 0) {
         return -1;
     }
     return 0;
@@ -3821,26 +3857,13 @@ static int
 parse_re_index(ControlClient client, char** args, unsigned long nres,
                unsigned long* i)
 {
-    const char* p;
-
-    assert(args);
     assert(i);
 
-    p = strsep(args, " ");
-    if (!p) {
-        control_write(client, "KO: no remote endpoint given\r\n");
-        return -1;
-    }
-    errno = 0;
-    *i = strtoul(p, NULL, 0);
-    if (errno) {
-        control_write(client,
-                      "KO: invalid remote endpoint '%s', error %d(%s)\r\n",
-                      p, errno, strerror(errno));
+    if (parse_token_ul(client, "remote endpoint", " ", args, i) < 0) {
         return -1;
     }
     if (!(*i < nres)) {
-        control_write(client, "KO: unknown remote endpoint %zu\r\n", *i);
+        control_write(client, "KO: unknown remote endpoint %lu\r\n", *i);
         return -1;
     }
     return 0;
@@ -3849,50 +3872,28 @@ parse_re_index(ControlClient client, char** args, unsigned long nres,
 static int
 parse_nci_ntf_type(ControlClient client, char** args, unsigned long* ntype)
 {
-    const char* p;
+    assert(ntype);
 
-    assert(args);
-
-    p = strsep(args, " ");
-    if (!p) {
-        control_write(client, "KO: no discover notification type given\r\n");
-        return -1;
-    }
-    errno = 0;
-    *ntype = strtoul(p, NULL, 0);
-    if (errno) {
-        control_write(client,
-                      "KO: invalid discover notification type '%s', error %d(%s)\r\n",
-                      p, errno, strerror(errno));
+    if (parse_token_ul(client, "discover notification type", " ", args, ntype) < 0) {
         return -1;
     }
     if (!(*ntype < NUMBER_OF_NCI_NOTIFICATION_TYPES)) {
-        control_write(client, "KO: unknown discover notification type %zu\r\n", *ntype);
+        control_write(client, "KO: unknown discover notification type %lu\r\n", *ntype);
         return -1;
     }
     return 0;
 }
 
 static int
-parse_rf_index(ControlClient client, char** args, unsigned long* rf)
+parse_rf_index(ControlClient client, char** args, long* rf)
 {
-    const char* p;
-
-    assert(client);
-    assert(args);
     assert(rf);
 
-    p = strsep(args, " ");
-    errno = 0;
-    *rf = strtol(p, NULL, 0);
-    if (errno) {
-        control_write(client,
-                      "KO: invalid rf index '%s', error %d(%s)\r\n",
-                      p, errno, strerror(errno));
+    if (parse_token_l(client, "rf index", " ", args, rf) < 0) {
         return -1;
     }
     if (*rf < -1 || *rf >= NUMBER_OF_SUPPORTED_NCI_RF_INTERFACES) {
-        control_write(client, "KO: unknown rf index %d\r\n", *rf);
+        control_write(client, "KO: unknown rf index %lu\r\n", *rf);
         return -1;
     }
     return 0;
