@@ -464,8 +464,20 @@ enum nci_rf_deactivation_type {
     NCI_RF_DEACT_DISCOVERY = 0x03
 };
 
+enum nci_rf_deactivation_reason {
+    NCI_RF_DEACT_DH_REQUEST = 0x00,
+    NCI_RF_DEACT_ENDPOINT_REQUEST = 0x01,
+    NCI_RF_DEACT_RF_LINK_LOSS = 0x02,
+    NCI_RF_DEACT_NFC_B_BAD_AFI = 0x03
+};
+
 struct nci_rf_deactivate_cmd {
     uint8_t type;
+};
+
+struct nci_rf_deactivate_ntf {
+    uint8_t type;
+    uint8_t reason;
 };
 
 /* NCI_RF_FIELD_INFO */
@@ -540,6 +552,11 @@ size_t
 nfc_create_rf_intf_activated_ntf(struct nfc_re* re,
                                  struct nfc_device* nfc,
                                  union nci_packet* ntf);
+
+size_t
+nfc_create_deactivate_ntf(enum nci_rf_deactivation_type type,
+                          enum nci_rf_deactivation_reason reason,
+                          union nci_packet* ntf);
 
 size_t
 nfc_create_rf_field_info_ntf(struct nfc_device* nfc,

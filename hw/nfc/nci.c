@@ -1106,6 +1106,25 @@ nfc_create_rf_intf_activated_ntf(struct nfc_re* re,
 }
 
 size_t
+nfc_create_deactivate_ntf(enum nci_rf_deactivation_type type,
+                          enum nci_rf_deactivation_reason reason,
+                          union nci_packet* ntf)
+{
+    struct nci_rf_deactivate_ntf* payload;
+
+    assert(ntf);
+
+    payload = (struct nci_rf_deactivate_ntf*)ntf->control.payload;
+
+    payload->type = type;
+    payload->reason = reason;
+
+    return nfc_create_nci_ntf(ntf, NCI_PBF_END, NCI_GID_RF,
+                              NCI_OID_RF_DEACTIVATED_NTF,
+                              sizeof(*payload));
+}
+
+size_t
 nfc_create_rf_field_info_ntf(struct nfc_device* nfc,
                              union nci_packet* ntf)
 {
