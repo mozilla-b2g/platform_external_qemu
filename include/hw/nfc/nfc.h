@@ -54,7 +54,6 @@ struct nfc_device {
     uint8_t config_id_value[128];
 };
 
-
 /* supplied to process_{nci,hci}_message */
 struct nfc_delivery_cb {
     enum nfc_buf_type type;

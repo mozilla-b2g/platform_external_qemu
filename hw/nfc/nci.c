@@ -647,6 +647,27 @@ status_rejected:
                                      cmd->control.oid, NCI_STATUS_REJECTED);
 }
 
+struct nfc_deactivate_ntf_param {
+    uint8_t type;
+    uint8_t reason;
+};
+
+static ssize_t
+nfc_delivery_deactivate_cmd_cb(void* data, union nci_packet* pkt)
+{
+    struct nfc_deactivate_ntf_param* param;
+    ssize_t res;
+
+    assert(data);
+
+    param = (struct nfc_deactivate_ntf_param*)data;
+    res = nfc_create_deactivate_ntf(param->type, param->reason, pkt);
+
+    g_free(param);
+
+    return res;
+}
+
 static size_t
 init_process_oid_rf_deactivate_cmd(const union nci_packet* cmd,
                                    struct nfc_device* nfc,
@@ -657,6 +678,7 @@ init_process_oid_rf_deactivate_cmd(const union nci_packet* cmd,
     unsigned long bits;
     enum nfc_rfst rfst;
     size_t i;
+    int send_ntf = 1;
 
     payload = (struct nci_rf_deactivate_cmd*)cmd->control.payload;
 
@@ -690,6 +712,19 @@ init_process_oid_rf_deactivate_cmd(const union nci_packet* cmd,
             rfst = NUMBER_OF_NFC_RFSTS;
     }
 
+    // According to NCI Spec Figure 10.
+    switch (nfc->rf_state) {
+        case NFC_RFST_DISCOVERY:
+        case NFC_RFST_W4_ALL_DISCOVERIES:
+        case NFC_RFST_W4_HOST_SELECT:
+        case NFC_RFST_LISTEN_SLEEP:
+            if (payload->type == NCI_RF_DEACT_IDLE_MODE)
+                send_ntf = false;
+            break;
+        default:
+            break;
+    }
+
     rfst = nfc_rf_state_transition(&nfc->rf_state, bits, rfst);
     assert(rfst != NUMBER_OF_NFC_RFSTS);
 
@@ -700,6 +735,17 @@ init_process_oid_rf_deactivate_cmd(const union nci_packet* cmd,
 
     for (i = 0; i < sizeof(nfc_res)/sizeof(nfc_res[0]); ++i) {
         nfc_res[i].id = 0;
+    }
+
+    if (send_ntf) {
+        struct nfc_deactivate_ntf_param* data;
+
+        data = g_malloc(sizeof(struct nfc_deactivate_ntf_param));
+        data->type = payload->type;
+        data->reason = NCI_RF_DEACT_DH_REQUEST;
+
+        nfc_delivery_cb_setup(cb, NTFN_BUF, data,
+            nfc_delivery_deactivate_cmd_cb);
     }
 
     return create_control_status_rsp(rsp, cmd->control.gid,
