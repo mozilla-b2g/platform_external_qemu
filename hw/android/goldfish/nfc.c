@@ -107,6 +107,16 @@ goldfish_nfc_load(QEMUFile* f, void* opaque, int version_id)
 }
 
 static void
+goldfish_nfc_set_status(struct nfc_state* s, int status, int set)
+{
+    assert(s);
+
+    s->status |= status * set;
+    s->status |= STATUS_INTR;
+    goldfish_device_set_irq(&s->dev, 0, 1);
+}
+
+static void
 goldfish_nfc_process_ctrl(struct nfc_state* s)
 {
     int res;
@@ -135,10 +145,8 @@ goldfish_nfc_process_ctrl(struct nfc_state* s)
                                 (union nci_packet*)s->resp);
 
       s->status &= ~STATUS_NCI_CMND;
-      s->status |= STATUS_NCI_RESP * !!res;
 
-      s->status |= STATUS_INTR;
-      goldfish_device_set_irq(&s->dev, 0, 1);
+      goldfish_nfc_set_status(s, STATUS_NCI_RESP, !!res);
 
     } else if (s->ctrl == CTRL_HCI_CMND_SNT) {
       if (s->status&(STATUS_NCI_RESP|STATUS_HCI_RESP))
@@ -151,10 +159,8 @@ goldfish_nfc_process_ctrl(struct nfc_state* s)
                                 (union hci_answer*)s->resp);
 
       s->status &= ~STATUS_HCI_CMND;
-      s->status |= STATUS_HCI_RESP * !!res;
 
-      s->status |= STATUS_INTR;
-      goldfish_device_set_irq(&s->dev, 0, 1);
+      goldfish_nfc_set_status(s, STATUS_HCI_RESP, !!res);
     }
 }
 
@@ -276,9 +282,7 @@ goldfish_nfc_send_dta(ssize_t (*create)(void*, struct nfc_device*, size_t,
     if (res < 0)
       return -1;
 
-    s->status |= STATUS_NCI_DATA * !!res;
-    s->status |= STATUS_INTR;
-    goldfish_device_set_irq(&s->dev, 0, 1);
+    goldfish_nfc_set_status(s, STATUS_NCI_DATA, !!res);
 
     return 0;
 }
@@ -301,9 +305,7 @@ goldfish_nfc_send_ntf(ssize_t (*create)(void*, struct nfc_device*, size_t,
     if (res < 0)
       return -1;
 
-    s->status |= STATUS_NCI_NTFN * !!res;
-    s->status |= STATUS_INTR;
-    goldfish_device_set_irq(&s->dev, 0, 1);
+    goldfish_nfc_set_status(s, STATUS_NCI_NTFN, !!res);
 
     return 0;
 }
