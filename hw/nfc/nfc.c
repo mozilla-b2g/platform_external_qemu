@@ -14,6 +14,7 @@
 #include <string.h>
 #include "qemu-common.h"
 #include "hw/nfc/nfc.h"
+#include "hw/nfc/nci.h"
 
 void
 nfc_device_init(struct nfc_device* nfc)
@@ -75,4 +76,15 @@ nfc_find_rf_by_rf_interface(struct nfc_device* nfc, enum nci_rf_interface iface)
         }
     }
     return NULL;
+}
+
+void
+nfc_delivery_cb_setup(struct nfc_delivery_cb* cb, enum nfc_buf_type type,
+                      void* data, ssize_t (*func)(void*, union nci_packet*))
+{
+    assert(cb);
+
+    cb->type = type;
+    cb->data = data;
+    cb->func = func;
 }

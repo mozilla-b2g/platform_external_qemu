@@ -16,10 +16,12 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "hw/nfc/rf.h"
+#include "qemu-common.h"
 
 struct nfc_re;
+union nci_packet;
 
-enum nfc_rf_interface_count {
+enum {
     NUMBER_OF_SUPPORTED_NCI_RF_INTERFACES = 2
 };
 
@@ -28,6 +30,13 @@ enum nfc_fsm_state {
     NFC_FSM_STATE_RESET,
     NFC_FSM_STATE_INITIALIZED,
     NUMBER_OF_NFC_FSM_STATES
+};
+
+/* the buffer-type for the delivery callback */
+enum nfc_buf_type {
+    NO_BUF = 0,
+    NTFN_BUF,
+    DATA_BUF
 };
 
 struct nfc_device {
@@ -43,6 +52,14 @@ struct nfc_device {
 
     /* stores all config options */
     uint8_t config_id_value[128];
+};
+
+
+/* supplied to process_{nci,hci}_message */
+struct nfc_delivery_cb {
+    enum nfc_buf_type type;
+    void* data;
+    ssize_t (*func)(void* /*user_data*/, union nci_packet*);
 };
 
 void
@@ -61,4 +78,9 @@ nfc_device_incr_id(struct nfc_device* nfc);
 
 struct nfc_rf*
 nfc_find_rf_by_rf_interface(struct nfc_device* nfc, enum nci_rf_interface iface);
+
+void
+nfc_delivery_cb_setup(struct nfc_delivery_cb* cb, enum nfc_buf_type type,
+                      void* data, ssize_t (*func)(void*, union nci_packet*));
+
 #endif

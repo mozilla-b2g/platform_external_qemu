@@ -22,6 +22,7 @@
 
 struct nfc_device;
 struct nfc_re;
+struct nfc_delivery_cb;
 
 enum nci_mt {
     NCI_MT_DTA = 0x0,
@@ -518,8 +519,8 @@ struct nci_bcm2079x_get_patch_version_rsp {
 } __attribute__((packed));
 
 size_t
-nfc_process_nci_msg(const union nci_packet* cmd, struct nfc_device* nfc,
-                    union nci_packet* rsp);
+nfc_process_nci_msg(const union nci_packet* pkt, struct nfc_device* nfc,
+                    union nci_packet* rsp, struct nfc_delivery_cb* cb);
 
 size_t
 nfc_create_nci_dta(union nci_packet* rsp, enum nci_pbf pbf,

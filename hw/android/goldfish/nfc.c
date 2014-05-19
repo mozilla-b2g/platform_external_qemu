@@ -68,6 +68,7 @@ struct nfc_state {
     uint8_t reserved2[2556]; /* ceil to 4096 */
 
     struct nfc_device nfc;
+    struct nfc_delivery_cb cb;
 };
 
 /* update this each time you update the nfc_state struct */
@@ -117,6 +118,37 @@ goldfish_nfc_set_status(struct nfc_state* s, int status, int set)
 }
 
 static void
+goldfish_handle_pending_cb(struct nfc_state* s)
+{
+    ssize_t res;
+    size_t maxlen;
+
+    assert(s);
+
+    if (!s->cb.func) {
+        return;
+    }
+
+    if (s->cb.type == NTFN_BUF) {
+        maxlen = MIN(sizeof(s->ntfn), MAX_NCI_PAYLOAD_LENGTH);
+        res = s->cb.func(s->cb.data, (union nci_packet*)s->ntfn);
+
+        goldfish_nfc_set_status(s, STATUS_NCI_NTFN, !!res);
+
+    } else if (s->cb.type == DATA_BUF) {
+        maxlen = MIN(sizeof(s->data), MAX_NCI_PAYLOAD_LENGTH);
+        res = s->cb.func(s->cb.data, (union nci_packet*)s->data);
+
+        goldfish_nfc_set_status(s, STATUS_NCI_DATA, !!res);
+
+    } else {
+        assert(0);
+    }
+
+    s->cb.func = NULL;
+}
+
+static void
 goldfish_nfc_process_ctrl(struct nfc_state* s)
 {
     int res;
@@ -127,6 +159,7 @@ goldfish_nfc_process_ctrl(struct nfc_state* s)
 
     } else if (s->ctrl == CTRL_RESP_RCV) {
         s->status &= ~(STATUS_NCI_RESP|STATUS_HCI_RESP);
+        goldfish_handle_pending_cb(s);
 
     } else if (s->ctrl == CTRL_NTFN_RCV) {
         s->status ^= STATUS_NCI_NTFN;
@@ -141,8 +174,9 @@ goldfish_nfc_process_ctrl(struct nfc_state* s)
       s->status |= STATUS_NCI_CMND;
 
       memset(s->resp, 0, sizeof(s->resp));
+      memset(&s->cb, 0, sizeof(s->cb));
       res = nfc_process_nci_msg((const union nci_packet*)s->cmnd, &s->nfc,
-                                (union nci_packet*)s->resp);
+                                (union nci_packet*)s->resp, &s->cb);
 
       s->status &= ~STATUS_NCI_CMND;
 

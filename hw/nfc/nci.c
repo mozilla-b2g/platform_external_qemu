@@ -179,7 +179,8 @@ create_control_status_rsp(union nci_packet* rsp, enum nci_gid gid,
 static size_t
 create_semantic_error_rsp(const union nci_packet* cmd,
                           struct nfc_device* nfc,
-                          union nci_packet* rsp)
+                          union nci_packet* rsp,
+                          struct nfc_delivery_cb* cb)
 {
     assert(cmd);
 
@@ -193,7 +194,8 @@ create_semantic_error_rsp(const union nci_packet* cmd,
 static size_t
 idle_process_oid_core_reset_cmd(const union nci_packet* cmd,
                                 struct nfc_device* nfc,
-                                union nci_packet* rsp)
+                                union nci_packet* rsp,
+                                struct nfc_delivery_cb* cb)
 {
     assert(cmd);
     assert(nfc);
@@ -216,7 +218,8 @@ idle_process_oid_core_reset_cmd(const union nci_packet* cmd,
 static size_t
 idle_process_oid_bcm2079x_get_build_info_cmd(const union nci_packet* cmd,
                                              struct nfc_device* nfc,
-                                             union nci_packet* rsp)
+                                             union nci_packet* rsp,
+                                             struct nfc_delivery_cb* cb)
 {
     // status code
     rsp->control.payload[0] = NCI_STATUS_OK;
@@ -267,7 +270,8 @@ idle_process_oid_bcm2079x_get_build_info_cmd(const union nci_packet* cmd,
 static size_t
 idle_process_oid_bcm2079x_get_patch_version_cmd(const union nci_packet* cmd,
                                                 struct nfc_device* nfc,
-                                                union nci_packet* rsp)
+                                                union nci_packet* rsp,
+                                                struct nfc_delivery_cb* cb)
 {
     struct nci_bcm2079x_get_patch_version_rsp* payload;
 
@@ -302,10 +306,11 @@ idle_process_oid_bcm2079x_get_patch_version_cmd(const union nci_packet* cmd,
 
 static size_t
 idle_process_cmd(const union nci_packet* cmd, struct nfc_device* nfc,
-                 union nci_packet* rsp)
+                 union nci_packet* rsp, struct nfc_delivery_cb* cb)
 {
     static size_t (* const core_oid[NUMBER_OF_NCI_CMDS])
-      (const union nci_packet*, struct nfc_device*, union nci_packet*) = {
+      (const union nci_packet*, struct nfc_device*, union nci_packet*,
+       struct nfc_delivery_cb* cb) = {
         [NCI_OID_CORE_RESET_CMD] = idle_process_oid_core_reset_cmd,
         [NCI_OID_CORE_INIT_CMD] = create_semantic_error_rsp,
         [NCI_OID_CORE_SET_CONFIG_CMD] = create_semantic_error_rsp,
@@ -314,7 +319,8 @@ idle_process_cmd(const union nci_packet* cmd, struct nfc_device* nfc,
         [NCI_OID_CORE_CONN_CLOSE_CMD] = create_semantic_error_rsp
     };
     static size_t (* const rf_oid[NUMBER_OF_NCI_CMDS])
-      (const union nci_packet*, struct nfc_device*, union nci_packet*) = {
+      (const union nci_packet*, struct nfc_device*, union nci_packet*,
+       struct nfc_delivery_cb* cb) = {
         [NCI_OID_RF_DISCOVER_MAP_CMD] = create_semantic_error_rsp,
         [NCI_OID_RF_SET_LISTEN_MODE_ROUTING_CMD] = create_semantic_error_rsp,
         [NCI_OID_RF_GET_LISTEN_MODE_ROUTING_CMD] = create_semantic_error_rsp,
@@ -325,12 +331,14 @@ idle_process_cmd(const union nci_packet* cmd, struct nfc_device* nfc,
         [NCI_OID_RF_PARAMETER_UPDATE_CMD] = create_semantic_error_rsp
     };
     static size_t (* const nfcee_oid[NUMBER_OF_NCI_CMDS])
-      (const union nci_packet*, struct nfc_device*, union nci_packet*) = {
+      (const union nci_packet*, struct nfc_device*, union nci_packet*,
+       struct nfc_delivery_cb* cb) = {
         [NCI_OID_NFCEE_DISCOVER_CMD] = create_semantic_error_rsp,
         [NCI_OID_NFCEE_MODE_SET_CMD] = create_semantic_error_rsp
     };
     static size_t (* const prop_oid[NUMBER_OF_NCI_CMDS])
-      (const union nci_packet*, struct nfc_device*, union nci_packet*) = {
+      (const union nci_packet*, struct nfc_device*, union nci_packet*,
+       struct nfc_delivery_cb* cb) = {
         [NCI_OID_BCM2079x_GET_BUILD_INFO_CMD] =
           idle_process_oid_bcm2079x_get_build_info_cmd,
         [NCI_OID_BCM2079x_HCI_NETWK_CMD] = create_semantic_error_rsp,
@@ -340,7 +348,7 @@ idle_process_cmd(const union nci_packet* cmd, struct nfc_device* nfc,
     };
 
     size_t (*process)(const union nci_packet*, struct nfc_device*,
-                      union nci_packet* rsp);
+                      union nci_packet* rsp, struct nfc_delivery_cb* cb);
 
     assert(cmd);
 
@@ -362,7 +370,7 @@ idle_process_cmd(const union nci_packet* cmd, struct nfc_device* nfc,
     if (!process)
         return 0; /* [NCI] SEC 3.2.2, ignore unknown commands */
 
-    return process(cmd, nfc, rsp);
+    return process(cmd, nfc, rsp, cb);
 }
 
 /* RESET state */
@@ -370,7 +378,8 @@ idle_process_cmd(const union nci_packet* cmd, struct nfc_device* nfc,
 static size_t
 reset_process_oid_core_init_cmd(const union nci_packet* cmd,
                                 struct nfc_device* nfc,
-                                union nci_packet* rsp)
+                                union nci_packet* rsp,
+                                struct nfc_delivery_cb* cb)
 {
     struct nci_core_init_rsp* payload;
     uint8_t i;
@@ -401,10 +410,11 @@ reset_process_oid_core_init_cmd(const union nci_packet* cmd,
 
 static size_t
 reset_process_cmd(const union nci_packet* cmd, struct nfc_device* nfc,
-                  union nci_packet* rsp)
+                  union nci_packet* rsp, struct nfc_delivery_cb* cb)
 {
     static size_t (* const core_oid[NUMBER_OF_NCI_CMDS])
-      (const union nci_packet*, struct nfc_device*, union nci_packet*) = {
+      (const union nci_packet*, struct nfc_device*, union nci_packet*,
+       struct nfc_delivery_cb* cb) = {
         [NCI_OID_CORE_RESET_CMD] = create_semantic_error_rsp,
         [NCI_OID_CORE_INIT_CMD] = reset_process_oid_core_init_cmd,
         [NCI_OID_CORE_SET_CONFIG_CMD] = create_semantic_error_rsp,
@@ -413,7 +423,8 @@ reset_process_cmd(const union nci_packet* cmd, struct nfc_device* nfc,
         [NCI_OID_CORE_CONN_CLOSE_CMD] = create_semantic_error_rsp
     };
     static size_t (* const rf_oid[NUMBER_OF_NCI_CMDS])
-      (const union nci_packet*, struct nfc_device*, union nci_packet*) = {
+      (const union nci_packet*, struct nfc_device*, union nci_packet*,
+       struct nfc_delivery_cb* cb) = {
         [NCI_OID_RF_DISCOVER_MAP_CMD] = create_semantic_error_rsp,
         [NCI_OID_RF_SET_LISTEN_MODE_ROUTING_CMD] = create_semantic_error_rsp,
         [NCI_OID_RF_GET_LISTEN_MODE_ROUTING_CMD] = create_semantic_error_rsp,
@@ -424,12 +435,14 @@ reset_process_cmd(const union nci_packet* cmd, struct nfc_device* nfc,
         [NCI_OID_RF_PARAMETER_UPDATE_CMD] = create_semantic_error_rsp
     };
     static size_t (* const nfcee_oid[NUMBER_OF_NCI_CMDS])
-      (const union nci_packet*, struct nfc_device*, union nci_packet*) = {
+      (const union nci_packet*, struct nfc_device*, union nci_packet*,
+       struct nfc_delivery_cb* cb) = {
         [NCI_OID_NFCEE_DISCOVER_CMD] = create_semantic_error_rsp,
         [NCI_OID_NFCEE_MODE_SET_CMD] = create_semantic_error_rsp
     };
     static size_t (* const prop_oid[NUMBER_OF_NCI_CMDS])
-      (const union nci_packet*, struct nfc_device*, union nci_packet*) = {
+      (const union nci_packet*, struct nfc_device*, union nci_packet*,
+       struct nfc_delivery_cb* cb) = {
         [NCI_OID_BCM2079x_GET_BUILD_INFO_CMD] = create_semantic_error_rsp,
         [NCI_OID_BCM2079x_HCI_NETWK_CMD] = create_semantic_error_rsp,
         [NCI_OID_BCM2079x_SET_FWFSM_CMD] = create_semantic_error_rsp,
@@ -437,7 +450,7 @@ reset_process_cmd(const union nci_packet* cmd, struct nfc_device* nfc,
     };
 
     size_t (*process)(const union nci_packet*, struct nfc_device*,
-                      union nci_packet* rsp);
+                      union nci_packet* rsp, struct nfc_delivery_cb* cb);
 
     assert(cmd);
 
@@ -459,7 +472,7 @@ reset_process_cmd(const union nci_packet* cmd, struct nfc_device* nfc,
     if (!process)
         return 0; /* [NCI] SEC 3.2.2, ignore unknown commands */
 
-    return process(cmd, nfc, rsp);
+    return process(cmd, nfc, rsp, cb);
 }
 
 /* INITIALIZED state */
@@ -467,7 +480,8 @@ reset_process_cmd(const union nci_packet* cmd, struct nfc_device* nfc,
 static size_t
 init_process_oid_core_reset_cmd(const union nci_packet* cmd,
                                 struct nfc_device* nfc,
-                                union nci_packet* rsp)
+                                union nci_packet* rsp,
+                                struct nfc_delivery_cb* cb)
 {
     assert(cmd);
     assert(nfc);
@@ -490,7 +504,8 @@ init_process_oid_core_reset_cmd(const union nci_packet* cmd,
 static size_t
 init_process_oid_core_set_config_cmd(const union nci_packet* cmd,
                                      struct nfc_device* nfc,
-                                     union nci_packet* rsp)
+                                     union nci_packet* rsp,
+                                     struct nfc_delivery_cb* cb)
 {
     const struct nci_core_set_config_cmd *payload;
     unsigned char i, off;
@@ -525,7 +540,8 @@ init_process_oid_core_set_config_cmd(const union nci_packet* cmd,
 static size_t
 init_process_oid_rf_discover_map_cmd(const union nci_packet* cmd,
                                      struct nfc_device* nfc,
-                                     union nci_packet* rsp)
+                                     union nci_packet* rsp,
+                                     struct nfc_delivery_cb* cb)
 {
     const struct nci_rf_discover_map_cmd *payload;
     unsigned char i;
@@ -550,7 +566,8 @@ init_process_oid_rf_discover_map_cmd(const union nci_packet* cmd,
 static size_t
 init_process_oid_rf_discover_cmd(const union nci_packet* cmd,
                                  struct nfc_device* nfc,
-                                 union nci_packet* rsp)
+                                 union nci_packet* rsp,
+                                 struct nfc_delivery_cb* cb)
 {
     enum nfc_rfst rfst;
     const struct nci_rf_discover_cmd *payload;
@@ -580,7 +597,8 @@ init_process_oid_rf_discover_cmd(const union nci_packet* cmd,
 static size_t
 init_process_oid_rf_discover_select_cmd(const union nci_packet* cmd,
                                         struct nfc_device* nfc,
-                                        union nci_packet* rsp)
+                                        union nci_packet* rsp,
+                                        struct nfc_delivery_cb* cb)
 {
     const struct nci_rf_discover_select_cmd *payload;
     struct nfc_re* re;
@@ -632,7 +650,8 @@ status_rejected:
 static size_t
 init_process_oid_rf_deactivate_cmd(const union nci_packet* cmd,
                                    struct nfc_device* nfc,
-                                   union nci_packet* rsp)
+                                   union nci_packet* rsp,
+                                   struct nfc_delivery_cb* cb)
 {
     const struct nci_rf_deactivate_cmd *payload;
     unsigned long bits;
@@ -690,7 +709,8 @@ init_process_oid_rf_deactivate_cmd(const union nci_packet* cmd,
 static size_t
 init_process_oid_nfcee_discover_cmd(const union nci_packet* cmd,
                                     struct nfc_device* nfc,
-                                    union nci_packet* rsp)
+                                    union nci_packet* rsp,
+                                    struct nfc_delivery_cb* cb)
 {
     struct nci_nfcee_discovery_rsp* payload =
         (struct nci_nfcee_discovery_rsp*)rsp->control.payload;
@@ -705,7 +725,8 @@ init_process_oid_nfcee_discover_cmd(const union nci_packet* cmd,
 static size_t
 init_process_oid_bcm2079x_get_build_info_cmd(const union nci_packet* cmd,
                                              struct nfc_device* nfc,
-                                             union nci_packet* rsp)
+                                             union nci_packet* rsp,
+                                             struct nfc_delivery_cb* cb)
 {
     // status code
     rsp->control.payload[0] = NCI_STATUS_OK;
@@ -756,7 +777,8 @@ init_process_oid_bcm2079x_get_build_info_cmd(const union nci_packet* cmd,
 static size_t
 init_process_oid_bcm2079x_hci_netwk_cmd(const union nci_packet* cmd,
                                         struct nfc_device* nfc,
-                                        union nci_packet* rsp)
+                                        union nci_packet* rsp,
+                                        struct nfc_delivery_cb* cb)
 {
     return create_control_status_rsp(rsp, cmd->control.gid,
                                      cmd->control.oid, NCI_STATUS_OK);
@@ -765,7 +787,8 @@ init_process_oid_bcm2079x_hci_netwk_cmd(const union nci_packet* cmd,
 static size_t
 init_process_oid_bcm2079x_set_fwfsm_cmd(const union nci_packet* cmd,
                                         struct nfc_device* nfc,
-                                        union nci_packet* rsp)
+                                        union nci_packet* rsp,
+                                        struct nfc_delivery_cb* cb)
 {
     return create_control_status_rsp(rsp, cmd->control.gid,
                                      cmd->control.oid, NCI_STATUS_OK);
@@ -774,7 +797,8 @@ init_process_oid_bcm2079x_set_fwfsm_cmd(const union nci_packet* cmd,
 static size_t
 init_process_oid_bcm2079x_get_patch_version_cmd(const union nci_packet* cmd,
                                                 struct nfc_device* nfc,
-                                                union nci_packet* rsp)
+                                                union nci_packet* rsp,
+                                                struct nfc_delivery_cb* cb)
 {
     struct nci_bcm2079x_get_patch_version_rsp* payload;
 
@@ -809,11 +833,12 @@ init_process_oid_bcm2079x_get_patch_version_cmd(const union nci_packet* cmd,
 
 static size_t
 init_process_cmd(const union nci_packet* cmd, struct nfc_device* nfc,
-                 union nci_packet* rsp)
+                 union nci_packet* rsp, struct nfc_delivery_cb* cb)
 {
     /* fill NULL pointers if necessary */
     static size_t (* const core_oid[NUMBER_OF_NCI_CMDS])
-      (const union nci_packet*, struct nfc_device*, union nci_packet*) = {
+      (const union nci_packet*, struct nfc_device*, union nci_packet*,
+       struct nfc_delivery_cb* cb) = {
         [NCI_OID_CORE_RESET_CMD] = init_process_oid_core_reset_cmd,
         [NCI_OID_CORE_INIT_CMD] = create_semantic_error_rsp,
         [NCI_OID_CORE_SET_CONFIG_CMD] = init_process_oid_core_set_config_cmd,
@@ -822,7 +847,8 @@ init_process_cmd(const union nci_packet* cmd, struct nfc_device* nfc,
         [NCI_OID_CORE_CONN_CLOSE_CMD] = NULL
     };
     static size_t (* const rf_oid[NUMBER_OF_NCI_CMDS])
-      (const union nci_packet*, struct nfc_device*, union nci_packet*) = {
+      (const union nci_packet*, struct nfc_device*, union nci_packet*,
+       struct nfc_delivery_cb* cb) = {
         [NCI_OID_RF_DISCOVER_MAP_CMD] = init_process_oid_rf_discover_map_cmd,
         [NCI_OID_RF_SET_LISTEN_MODE_ROUTING_CMD] = NULL,
         [NCI_OID_RF_GET_LISTEN_MODE_ROUTING_CMD] = NULL,
@@ -833,12 +859,14 @@ init_process_cmd(const union nci_packet* cmd, struct nfc_device* nfc,
         [NCI_OID_RF_PARAMETER_UPDATE_CMD] = NULL
     };
     static size_t (* const nfcee_oid[NUMBER_OF_NCI_CMDS])
-      (const union nci_packet*, struct nfc_device*, union nci_packet*) = {
+      (const union nci_packet*, struct nfc_device*, union nci_packet*,
+       struct nfc_delivery_cb* cb) = {
         [NCI_OID_NFCEE_DISCOVER_CMD] = init_process_oid_nfcee_discover_cmd,
         [NCI_OID_NFCEE_MODE_SET_CMD] = NULL
     };
     static size_t (* const prop_oid[NUMBER_OF_NCI_CMDS])
-      (const union nci_packet*, struct nfc_device*, union nci_packet*) = {
+      (const union nci_packet*, struct nfc_device*, union nci_packet*,
+       struct nfc_delivery_cb* cb) = {
         [NCI_OID_BCM2079x_GET_BUILD_INFO_CMD] = init_process_oid_bcm2079x_get_build_info_cmd,
         [NCI_OID_BCM2079x_HCI_NETWK_CMD] = init_process_oid_bcm2079x_hci_netwk_cmd,
         [NCI_OID_BCM2079x_SET_FWFSM_CMD] = init_process_oid_bcm2079x_set_fwfsm_cmd,
@@ -846,7 +874,7 @@ init_process_cmd(const union nci_packet* cmd, struct nfc_device* nfc,
     };
 
     size_t (*process)(const union nci_packet*, struct nfc_device*,
-                      union nci_packet* rsp);
+                      union nci_packet* rsp, struct nfc_delivery_cb* cb);
 
     assert(cmd);
 
@@ -868,15 +896,16 @@ init_process_cmd(const union nci_packet* cmd, struct nfc_device* nfc,
     if (!process)
         return 0; /* [NCI] SEC 3.2.2, ignore unknown commands */
 
-    return process(cmd, nfc, rsp);
+    return process(cmd, nfc, rsp, cb);
 }
 
 static size_t
 process_nci_cmd(const union nci_packet* cmd, struct nfc_device* nfc,
-                union nci_packet* rsp)
+                union nci_packet* rsp, struct nfc_delivery_cb* cb)
 {
     static size_t (* const process[NUMBER_OF_NFC_FSM_STATES])
-      (const union nci_packet*, struct nfc_device*, union nci_packet*) = {
+      (const union nci_packet*, struct nfc_device*, union nci_packet*,
+       struct nfc_delivery_cb* cb) = {
         [NFC_FSM_STATE_IDLE] = idle_process_cmd,
         [NFC_FSM_STATE_RESET] = reset_process_cmd,
         [NFC_FSM_STATE_INITIALIZED] = init_process_cmd
@@ -888,7 +917,7 @@ process_nci_cmd(const union nci_packet* cmd, struct nfc_device* nfc,
     assert(nfc->state < NUMBER_OF_NFC_FSM_STATES);
     assert(process[nfc->state]);
 
-    return process[nfc->state](cmd, nfc, rsp);
+    return process[nfc->state](cmd, nfc, rsp, cb);
 }
 
 /*
@@ -897,14 +926,14 @@ process_nci_cmd(const union nci_packet* cmd, struct nfc_device* nfc,
 
 size_t
 nfc_process_nci_msg(const union nci_packet* pkt, struct nfc_device* nfc,
-                    union nci_packet* rsp)
+                    union nci_packet* rsp, struct nfc_delivery_cb* cb)
 {
     assert(pkt);
 
     if (pkt->common.mt == NCI_MT_DTA) {
         return process_nci_dta(pkt, nfc, rsp);
     } else if (pkt->common.mt == NCI_MT_CMD) {
-        return process_nci_cmd(pkt, nfc, rsp);
+        return process_nci_cmd(pkt, nfc, rsp, cb);
     } else {
         return 0; /* [NCI], Sec 3.2.2; ignore anything but commands */
     }
