@@ -23,13 +23,13 @@
 enum {
     OFFSET_STATUS = 0x000, /* R/W, 8 bits */
     OFFSET_CTRL = 0x001, /* R/W, 8 bits */
-    OFFSET_RESERVED0 = 0x002, /* R/W, 8 bits */
-    OFFSET_RESERVED1 = 0x003, /* R/W, 8 bits */
+    OFFSET_PU = 0x002, /* R/W, 8 bits */
+    OFFSET_WS = 0x003, /* R/W, 8 bits */
     OFFSET_CMND = 0x004, /* R/W, 384 bytes. */
     OFFSET_RESP = 0x184, /* R/W, 384 bytes */
     OFFSET_NTFN = 0x304, /* R/W, 384 bytes */
     OFFSET_DATA = 0x484, /* R/W, 384 bytes */
-    OFFSET_RESERVED2 = 0x604, /* R/W, 2556 bytes */
+    OFFSET_RESERVED0 = 0x604, /* R/W, 2556 bytes */
     END_OFFSET = 0x1000 /* no I/O, end at 4096 bytes */
 };
 
@@ -59,32 +59,32 @@ struct nfc_state {
 
     uint8_t status;
     uint8_t ctrl;
-    uint8_t reserved0;
-    uint8_t reserved1;
+    uint8_t pu; /* powered up: 0=off, 1=on */
+    uint8_t ws; /* wake state: 0=off, 1=on */
     uint8_t cmnd[384];
     uint8_t resp[384];
     uint8_t ntfn[384];
     uint8_t data[384];
-    uint8_t reserved2[2556]; /* ceil to 4096 */
+    uint8_t reserved0[2556]; /* ceil to 4096 */
 
     struct nfc_device nfc;
     struct nfc_delivery_cb cb;
 };
 
 /* update this each time you update the nfc_state struct */
-#define  NCIDEV_STATE_SAVE_VERSION  1
+#define  NCIDEV_STATE_SAVE_VERSION  2
 
 #define  QFIELD_STRUCT  struct nfc_state
 QFIELD_BEGIN(goldfish_nfc_fields)
     QFIELD_BYTE(status),
     QFIELD_BYTE(ctrl),
-    QFIELD_BYTE(reserved0),
-    QFIELD_BYTE(reserved1),
+    QFIELD_BYTE(pu),
+    QFIELD_BYTE(ws),
     QFIELD_BUFFER(cmnd),
     QFIELD_BUFFER(resp),
     QFIELD_BUFFER(ntfn),
     QFIELD_BUFFER(data),
-    QFIELD_BUFFER(reserved2),
+    QFIELD_BUFFER(reserved0),
 QFIELD_END
 #undef  QFIELD_STRUCT
 
@@ -198,6 +198,31 @@ goldfish_nfc_process_ctrl(struct nfc_state* s)
     }
 }
 
+static void
+goldfish_nfc_process_pu(struct nfc_state* s, unsigned char pu)
+{
+    if (pu > 1)
+        return;
+
+    s->pu = pu;
+}
+
+static void
+goldfish_nfc_process_ws(struct nfc_state* s, unsigned char ws)
+{
+    /* Nothing */
+    switch (ws) {
+        case 0: case 1: /* on/off */
+            s->ws = ws;
+            break;
+        case 2: /* toggle */
+            s->ws = !s->ws;
+            break;
+        default:
+            break;
+    }
+}
+
 static uint32_t
 goldfish_nfc_read8(void* opaque, hwaddr offset)
 {
@@ -208,10 +233,10 @@ goldfish_nfc_read8(void* opaque, hwaddr offset)
             return s->status;
         case OFFSET_CTRL:
             return s->ctrl;
-        case OFFSET_RESERVED0:
-            return s->reserved0;
-        case OFFSET_RESERVED1:
-            return s->reserved1;
+        case OFFSET_PU:
+            return s->pu;
+        case OFFSET_WS:
+            return s->ws;
         default:
             if (offset < OFFSET_RESP)
                 return s->cmnd[offset-OFFSET_CMND];
@@ -219,10 +244,10 @@ goldfish_nfc_read8(void* opaque, hwaddr offset)
                 return s->resp[offset-OFFSET_RESP];
             else if (offset < OFFSET_DATA)
                 return s->ntfn[offset-OFFSET_NTFN];
-            else if (offset < OFFSET_RESERVED2)
+            else if (offset < OFFSET_RESERVED0)
                 return s->data[offset-OFFSET_DATA];
             else if (offset < END_OFFSET)
-                return s->reserved2[offset-OFFSET_RESERVED2];
+                return s->reserved0[offset-OFFSET_RESERVED0];
 
             cpu_abort(cpu_single_env, "goldfish_nfc_read8: bad offset %x\n", offset);
     }
@@ -244,11 +269,11 @@ goldfish_nfc_write8(void* opaque, hwaddr offset,
             goldfish_nfc_process_ctrl(s);
             s->ctrl = 0;
             break;
-        case OFFSET_RESERVED0:
-            s->reserved0 = value;
+        case OFFSET_PU:
+            goldfish_nfc_process_pu(s, value);
             break;
-        case OFFSET_RESERVED1:
-            s->reserved1 = value;
+        case OFFSET_WS:
+            goldfish_nfc_process_ws(s, value);
             break;
         default:
             if (offset < OFFSET_RESP)
@@ -257,10 +282,10 @@ goldfish_nfc_write8(void* opaque, hwaddr offset,
                 s->resp[offset-OFFSET_RESP] = value;
             else if (offset < OFFSET_DATA)
                 s->ntfn[offset-OFFSET_NTFN] = value;
-            else if (offset < OFFSET_RESERVED2)
+            else if (offset < OFFSET_RESERVED0)
                 s->data[offset-OFFSET_DATA] = value;
             else if (offset < END_OFFSET)
-                s->reserved2[offset-OFFSET_RESERVED2] = value;
+                s->reserved0[offset-OFFSET_RESERVED0] = value;
             else
                 cpu_abort(cpu_single_env,
                           "goldfish_nfc_write8: bad offset %x\n", offset);
