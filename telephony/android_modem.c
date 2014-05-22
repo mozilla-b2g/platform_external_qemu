@@ -749,7 +749,7 @@ static void
 amodem_init_rmnets()
 {
     static int inited = 0;
-    int i, j;
+    int i, j, k;
 
     if ( inited ) {
         return;
@@ -773,9 +773,10 @@ amodem_init_rmnets()
         int ip = special_addr_ip + 100 + (net - _amodem_rmnets);
         net->addr.in.s_addr = htonl(ip);
         net->gw.in.s_addr = htonl(alias_addr_ip);
-        for ( i = 0; i < NUM_DNS_PER_RMNET && i < dns_addr_count; i++ ) {
-            ip = dns_addr[i];
-            net->dns[i].in.s_addr = htonl(ip);
+        // Currently, only 10.0.0.3 and 10.0.0.4 work as emulator dnses.
+        for ( k = 0; k < NUM_DNS_PER_RMNET; k++ ) {
+            ip = alias_addr_ip + k + 1;
+            net->dns[k].in.s_addr = htonl(ip);
         }
 
         /* Data connections are down by default. */
@@ -3361,11 +3362,11 @@ static const struct {
     { "+CGDCONT?", NULL, handleQueryPDPContext },
     { "+CGCONTRDP=?", NULL, handleQueryPDPDynamicProp },
     { "!+CGCONTRDP", NULL, handleListPDPDynamicProp },
-    { "+CGQREQ=1", NULL, NULL },
-    { "+CGQMIN=1", NULL, NULL },
+    { "!+CGQREQ=", NULL, NULL },
+    { "!+CGQMIN=", NULL, NULL },
     { "+CGEREP=1,0", NULL, NULL },
     { "!+CGACT=", NULL, handleActivatePDPContext },
-    { "D*99***1#", NULL, handleStartPDPContext },
+    { "!D*99***", NULL, handleStartPDPContext },
 
     /* see requestDial() */
     { "!D", NULL, handleDial },  /* the code says that success/error is ignored, the call state will
