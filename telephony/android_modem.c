@@ -3440,6 +3440,28 @@ EndCommand:
     return "+CMS ERROR: 304";
 }
 
+static const char*
+handleCdmaFlashCommand( const char*  cmd, AModem  modem )
+{
+    assert ( !memcmp( "+WFSH", cmd, 5 ) );
+
+    // 3gpp2, S.R0006-522-A v1.0 and S.R0006-507-A v1.0.
+    // http://igor.chudov.com/manuals/AT_Commands-For-CDMA-Modems-Incl_Qualcomm_U300.pdf
+    if (modem->call_count != 1) {
+        return "+CME ERROR: 3";
+    }
+
+    AVoiceCall  vcall = modem->calls;
+    ACall       call  = &vcall->call;
+    if (call->state != A_CALL_DIALING &&
+        call->state != A_CALL_ALERTING &&
+        call->state != A_CALL_ACTIVE) {
+        return "+CME ERROR: 3";
+    }
+
+    return "OK";
+}
+
 /* a function used to deal with a non-trivial request */
 typedef const char*  (*ResponseHandler)(const char*  cmd, AModem  modem);
 
@@ -3575,6 +3597,7 @@ static const struct {
     { "%CSTAT=1", NULL, NULL },
 
     { "!+CSCA", NULL, handleSmscAddress },
+    { "!+WFSH", NULL, handleCdmaFlashCommand },
 
     /* end of list */
     {NULL, NULL, NULL}
