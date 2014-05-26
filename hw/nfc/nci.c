@@ -1100,7 +1100,8 @@ nfc_create_rf_intf_activated_ntf(struct nfc_re* re,
     payload->actmode = nfc->active_rf->mode;
     payload->maxpayload = 255;
     payload->ncredits = 0xff; /* disable flow control */
-    payload->nparams = 0;
+    payload->nparams = nfc_re_create_rf_intf_activated_ntf_tech(
+        payload->actmode, re, payload->param);
 
     tail = (struct nci_rf_intf_activated_ntf_tail*)
         (payload->param + payload->nparams);
