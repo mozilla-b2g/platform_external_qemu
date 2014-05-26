@@ -90,6 +90,7 @@ HW_SOURCES := \
     nfc-nci.c \
     nfc-re.c \
     nfc-rf.c \
+    nfc-tag.c \
     pci.c \
     qdev.c \
     scsi-disk.c \

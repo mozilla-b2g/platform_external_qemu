@@ -16,15 +16,16 @@
 #include "nfc-debug.h"
 #include "nfc.h"
 #include "nfc-nci.h"
+#include "nfc-tag.h"
 #include "llcp.h"
 #include "snep.h"
 #include "llcp-snep.h"
 #include "nfc-re.h"
 
 struct nfc_re nfc_res[3] = {
-    INIT_NFC_RE([0], NCI_RF_PROTOCOL_NFC_DEP, NCI_RF_NFC_F_PASSIVE_LISTEN_MODE, "deadbeaf0", nfc_res+0),
-    INIT_NFC_RE([1], NCI_RF_PROTOCOL_NFC_DEP, NCI_RF_NFC_F_PASSIVE_LISTEN_MODE, "deadbeaf1", nfc_res+1),
-    INIT_NFC_RE([2], NCI_RF_PROTOCOL_T2T, NCI_RF_NFC_A_PASSIVE_LISTEN_MODE, "deadbeaf2", nfc_res+2)
+    INIT_NFC_RE([0], NCI_RF_PROTOCOL_NFC_DEP, NCI_RF_NFC_F_PASSIVE_LISTEN_MODE, NULL, "deadbeaf0", nfc_res+0),
+    INIT_NFC_RE([1], NCI_RF_PROTOCOL_NFC_DEP, NCI_RF_NFC_F_PASSIVE_LISTEN_MODE, NULL, "deadbeaf1", nfc_res+1),
+    INIT_NFC_RE([2], NCI_RF_PROTOCOL_T2T, NCI_RF_NFC_A_PASSIVE_LISTEN_MODE, nfc_tags+0, "deadbeaf2", nfc_res+2)
 };
 
 struct create_nci_dta_param {

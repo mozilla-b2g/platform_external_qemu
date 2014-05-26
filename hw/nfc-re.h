@@ -18,6 +18,7 @@
 #include "nfc-rf.h"
 
 union nci_packet;
+struct nfc_tag;
 struct ndef_rec;
 struct snep;
 
@@ -54,6 +55,7 @@ struct nfc_re {
     char nfcid1[10];
     char nfcid3[10];
     uint8_t id;
+    struct nfc_tag* tag;
     /* outer array is always remote SAP, inner array is local, emulated SAP */
     struct llcp_data_link llcp_dl[LLCP_NUMBER_OF_SAPS][LLCP_NUMBER_OF_SAPS];
     enum llcp_sap last_dsap; /* last remote SAP */
@@ -68,10 +70,11 @@ struct nfc_re {
     uint8_t rbuf[1024]; /* data for reading from RE */
 };
 
-#define INIT_NFC_RE(re_, rfproto_, mode_, nfcid_, addr_) \
+#define INIT_NFC_RE(re_, rfproto_, mode_, tag_, nfcid_, addr_) \
     re_ = { \
         .rfproto = rfproto_, \
         .mode = mode_, \
+        .tag = tag_, \
         .nfcid1 = nfcid_, \
         .nfcid3 = nfcid_, \
         .id = 0, \
