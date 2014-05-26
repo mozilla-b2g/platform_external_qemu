@@ -22,6 +22,41 @@ enum nfc_tag_type {
     T4T,
 };
 
+struct common_command_hdr {
+    uint8_t cmd;
+};
+
+/* [Digital], Table51 */
+
+enum t2t_command_set {
+    READ_SEGMENT_COMMAND = 0x10,
+    READ_COMMAND = 0x30,
+};
+
+struct t2t_read_command {
+    uint8_t cmd;
+    uint8_t bno;
+};
+
+/* [Digital], Table52 */
+struct t2t_read_response {
+    uint8_t payload[16];
+    /* status byte is not documented in NFC Digital.
+     * But libnfc-nci will read an extra status byte so add it in response packet.
+     */
+    uint8_t status;
+};
+
+union command_packet {
+    struct common_command_hdr common;
+    struct t2t_read_command read_cmd;
+};
+
+union response_packet {
+    struct t2t_read_response read_rsp;
+};
+
+
 enum {
     MAXIMUM_SUPPORTED_TAG_SIZE = 1024
 };
@@ -69,4 +104,7 @@ extern struct nfc_tag nfc_tags[1];
 int
 nfc_tag_set_data(const struct nfc_tag* tag, const uint8_t* ndef_msg, ssize_t len);
 
+size_t
+process_t2t(struct nfc_re* re, const union command_packet* cmd,
+            size_t len, uint8_t* consumed, union response_packet* rsp);
 #endif

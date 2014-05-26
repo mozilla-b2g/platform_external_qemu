@@ -600,6 +600,14 @@ nfc_re_process_data(struct nfc_re* re, const union nci_packet* dta,
                 len = nfc_create_nci_dta(rsp, NCI_PBF_END, re->connid, len);
             }
             break;
+        case NCI_RF_PROTOCOL_T2T:
+            len = process_t2t(re,
+                (const union command_packet*)dta->data.payload,
+                dta->data.l, &off, (union response_packet*)rsp->data.payload);
+            if (len) {
+                len = nfc_create_nci_dta(rsp, NCI_PBF_END, re->connid, len);
+            }
+            break;
         default:
             assert(0); /* TODO: support other RF protocols */
             len = 0;
