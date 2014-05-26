@@ -617,6 +617,68 @@ enum {
     NFC_DEP_PP_G = 0x02
 };
 
+static size_t
+nfc_re_create_activated_ntf_tech_nfca_poll(struct nfc_re* re, uint8_t* act)
+{
+    uint8_t* p;
+    enum nci_rf_protocol protocol;
+    size_t cid1_len;
+
+    assert(re);
+
+    p = act;
+    protocol = re->rfproto;
+    cid1_len = ARRAY_SIZE(re->nfcid1);
+
+    /* [NCI] Table54. */
+    /* [DIGITAL], Sec 4.6.3 SENS_RES */
+    if (cid1_len == 4) {
+        *p = SREN_RES_NFCID_4_BYTES;
+    } else if (cid1_len == 7) {
+        *p = SREN_RES_NFCID_7_BYTES;
+    } else if (cid1_len == 10) {
+        *p = SREN_RES_NFCID_10_BYTES;
+    } else {
+        assert(0);
+    }
+
+    if (protocol == NCI_RF_PROTOCOL_T1T) {
+        *p++ = *p | SREN_RES_BIT_FRAME_SDD_T1T;   /* Byte1 of SENS_RES */
+        *p++ = SREN_RES_T1T;                      /* Byte2 of SENS_RES */
+        *p++ = 0;                                 /* NFCID1 Length */
+        *p++ = 0;
+    } else {
+        *p++ = *p | SREN_RES_BIT_FRAME_SDD_OTHER_TAGS; /* Byte1 of SENS_RES */
+        *p++ = SREN_RES_OTHER_TAGS;                    /* Byte2 of SENS_RES */
+        *p++ = cid1_len;                               /* NFCID1 Length */
+        memcpy(p, re->nfcid1, cid1_len);               /* NFCID1 */
+        p += cid1_len;
+        *p++ = 1;                                      /* SEL_RES Response Length */
+        /* [DIGITAL], Sec 4.8.2 */
+        if (protocol == NCI_RF_PROTOCOL_T2T) {
+            *p++ = SEL_RES_T2T;
+        } else if (protocol == NCI_RF_PROTOCOL_NFC_DEP) {
+            *p++ = SEL_RES_NFC_NFC_DEP;
+        } else {
+            *p++ = SEL_RES_OTHER_TAGS;
+        }
+    }
+
+    return p-act;
+}
+
+size_t
+nfc_re_create_rf_intf_activated_ntf_tech(enum nci_rf_tech_mode mode,
+                                         struct nfc_re* re, uint8_t* act)
+{
+    switch (mode) {
+        case NCI_RF_NFC_A_PASSIVE_POLL_MODE:
+            return nfc_re_create_activated_ntf_tech_nfca_poll(re, act);
+        default:
+            return 0;
+    }
+}
+
 size_t
 nfc_re_create_rf_intf_activated_ntf_act(struct nfc_re* re, uint8_t* act)
 {

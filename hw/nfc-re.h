@@ -21,10 +21,37 @@ union nci_packet;
 struct ndef_rec;
 struct snep;
 
+/* [DIGITAL], Sec 4.6.3 SENS_RES */
+enum {
+    SREN_RES_NFCID_4_BYTES = 0x00,
+    SREN_RES_NFCID_7_BYTES = 0x40,
+    SREN_RES_NFCID_10_BYTES = 0x80,
+    SREN_RES_NFCID_RFU = 0xC0
+};
+
+enum {
+    SREN_RES_BIT_FRAME_SDD_T1T = 0x00,
+    SREN_RES_BIT_FRAME_SDD_OTHER_TAGS = 0x1F
+};
+
+enum {
+    SREN_RES_T1T = 0x0C,
+    SREN_RES_OTHER_TAGS = 0x00
+};
+
+/* [DIGITAL], Sec 4.8.2 SEL_RES */
+/* Assume NFCID1 complete */
+enum {
+    SEL_RES_T2T = 0x00,
+    SEL_RES_NFC_NFC_DEP = 0x60,
+    SEL_RES_OTHER_TAGS = 0x10
+};
+
 /* NFC Remote Endpoint */
 struct nfc_re {
     enum nci_rf_protocol rfproto;
     enum nci_rf_tech_mode mode;
+    char nfcid1[10];
     char nfcid3[10];
     uint8_t id;
     /* outer array is always remote SAP, inner array is local, emulated SAP */
@@ -41,11 +68,12 @@ struct nfc_re {
     uint8_t rbuf[1024]; /* data for reading from RE */
 };
 
-#define INIT_NFC_RE(re_, rfproto_, mode_, nfcid3_, addr_) \
+#define INIT_NFC_RE(re_, rfproto_, mode_, nfcid_, addr_) \
     re_ = { \
         .rfproto = rfproto_, \
         .mode = mode_, \
-        .nfcid3 = nfcid3_, \
+        .nfcid1 = nfcid_, \
+        .nfcid3 = nfcid_, \
         .id = 0, \
         .xmit_next = 0, \
         .xmit_timer = NULL, \
@@ -79,6 +107,10 @@ nfc_re_read_rbuf(struct nfc_re* re, size_t len, void* data);
 size_t
 nfc_re_process_data(struct nfc_re* re, const union nci_packet* dta,
                     union nci_packet* rsp);
+
+size_t
+nfc_re_create_rf_intf_activated_ntf_tech(enum nci_rf_tech_mode mode,
+                                         struct nfc_re* re, uint8_t* act);
 
 size_t
 nfc_re_create_rf_intf_activated_ntf_act(struct nfc_re* re, uint8_t* act);
