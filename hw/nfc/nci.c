@@ -208,7 +208,7 @@ idle_process_oid_core_reset_cmd(const union nci_packet* cmd,
     }
 
     rsp->control.payload[0] = NCI_STATUS_OK;
-    rsp->control.payload[1] = NCI_VERSION_1_0;
+    rsp->control.payload[1] = NCI_VERSION_1_0; /* Nexus 4 returns 0x0f here */
     rsp->control.payload[2] = cmd->control.payload[0];
 
     return create_control_rsp(rsp, NCI_PBF_END, cmd->control.gid,
@@ -393,16 +393,17 @@ reset_process_oid_core_init_cmd(const union nci_packet* cmd,
     payload->status = NCI_STATUS_OK;
     payload->features = cpu_to_le32(0x0);
     payload->nrfs = NUMBER_OF_SUPPORTED_NCI_RF_INTERFACES;
+
+    for (i = 0; i < payload->nrfs; ++i) {
+        payload->rf[i] = nfc->rf[i].iface;
+    }
+
     payload->nconns = 0;
     payload->maxrtabsize = cpu_to_le16(0x0);
     payload->payloadsize = 255;
     payload->maxlparamsize = cpu_to_le16(0x0);
     payload->vendor = 0x0;
     payload->device = cpu_to_le32(0x0);
-
-    for (i = 0; i < payload->nrfs; i++) {
-        payload->rf[i] = nfc->rf[i].iface;
-    }
 
     return create_control_rsp(rsp, NCI_PBF_END, cmd->control.gid,
                               cmd->control.oid, sizeof(*payload));
