@@ -22,6 +22,10 @@ enum nfc_tag_type {
     T4T,
 };
 
+enum {
+    MAXIMUM_SUPPORTED_TAG_SIZE = 1024
+};
+
 /* [Type 2 Tag Operation Specification 2.1]
  * Static Memory Structure.
  */
@@ -61,5 +65,8 @@ struct nfc_tag {
     }
 
 extern struct nfc_tag nfc_tags[1];
+
+int
+nfc_tag_set_data(const struct nfc_tag* tag, const uint8_t* ndef_msg, ssize_t len);
 
 #endif
