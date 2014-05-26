@@ -62,3 +62,52 @@ nfc_tag_set_data(const struct nfc_tag* tag, const uint8_t* ndef_msg, ssize_t len
 
     return 0;
 }
+
+static size_t
+process_t2t_read(const struct t2t_read_command* cmd, uint8_t* consumed,
+                 uint8_t* mem, struct t2t_read_response* rsp)
+{
+    size_t i;
+    size_t offset;
+    size_t max_read;
+
+    assert(cmd);
+    assert(consumed);
+    assert(mem);
+    assert(rsp);
+
+    offset = cmd->bno * 4;
+    max_read = ARRAY_SIZE(rsp->payload);
+
+    for (i = 0; i < max_read && offset < T2T_STATIC_MEMORY_SIZE; i++, offset++) {
+        rsp->payload[i] = mem[offset];
+    }
+    rsp->status = 0;
+
+    *consumed = sizeof(struct t2t_read_command);
+
+    return sizeof(struct t2t_read_response);
+}
+
+size_t
+process_t2t(struct nfc_re* re, const union command_packet* cmd,
+            size_t len, uint8_t* consumed, union response_packet* rsp)
+{
+    assert(cmd);
+    assert(rsp);
+
+    switch (cmd->common.cmd) {
+        case READ_COMMAND:
+            assert(re);
+            assert(re->tag);
+
+            len = process_t2t_read(&cmd->read_cmd, consumed,
+                                   re->tag->t2.raw.mem, &rsp->read_rsp);
+            break;
+        default:
+            assert(0);
+            break;
+    }
+
+    return len;
+}
