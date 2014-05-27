@@ -34,6 +34,7 @@
 #include "hw/nfc-re.h"
 #include "hw/nfc.h"
 #include "hw/nfc-nci.h"
+#include "hw/nfc-tag.h"
 #include "hw/power_supply.h"
 #include "hw/snep.h"
 #include "shaper.h"
@@ -4163,6 +4164,57 @@ do_nfc_llcp( ControlClient  client, char*  args )
     return 0;
 }
 
+static int
+do_nfc_tag( ControlClient client, char*  args )
+{
+    char *p;
+
+    if (!args) {
+        control_write(client, "KO: no arguments given\r\n");
+        return -1;
+    }
+
+    p = strsep(&args, " ");
+    if (!p) {
+        control_write(client, "KO: no operation given\r\n");
+        return -1;
+    }
+    if (!strcmp(p, "set")) {
+        unsigned long i;
+        ssize_t res;
+        ssize_t nrecords;
+        struct nfc_ndef_record_param record[4];
+        struct nfc_re* re;
+        uint8_t buf[MAXIMUM_SUPPORTED_TAG_SIZE];
+
+        /* read remote-endpoint index */
+        if (parse_re_index(client, &args, ARRAY_SIZE(nfc_res), &i) < 0) {
+            return -1;
+        }
+        re = nfc_res + i;
+
+        if (!re->tag) {
+            control_write(client, "KO: remote endpoint is not a tag\r\n");
+            return -1;
+        }
+
+        nrecords = parse_ndef_msg(client, &args, ARRAY_SIZE(record), record);
+        if (nrecords < 0) {
+            return -1;
+        }
+
+        res = build_ndef_msg(client, record, nrecords, buf, ARRAY_SIZE(buf));
+        if (res < 0) {
+            return -1;
+        }
+
+        if (nfc_tag_set_data(re->tag, buf, res) < 0) {
+            return -1;
+        }
+    }
+
+    return 0;
+}
 static const CommandDefRec  nfc_commands[] =
 {
     { "nci", "send NCI notification",
@@ -4184,6 +4236,11 @@ static const CommandDefRec  nfc_commands[] =
       "'nfc llcp connect <dsap> <ssap>' connects active Remote Endpoint's SSAP to host's SSAP\r\n",
       NULL,
       do_nfc_llcp, NULL },
+
+    { "tag", "data handling",
+      "'nfc tag set <i> <[<flags>,<tnf>,<type>,<payload>,]>' set NDEF data to Remote Endpoint <i>\r\n",
+      NULL,
+      do_nfc_tag, NULL },
 
     { NULL, NULL, NULL, NULL, NULL, NULL }
 };
