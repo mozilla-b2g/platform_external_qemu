@@ -15,6 +15,14 @@
 #include "nfc-re.h"
 #include "nfc-tag.h"
 
+#define T1T_UID { 0x01, 0x02, 0x03, 0x04, \
+                  0x05, 0x06, 0x07, 0x08 }
+
+#define T1T_RES { 0x00 }
+
+/* [Type 1 Tag Operation Specification], 6.1.4 Capability Container */
+static const uint8_t t1t_cc[4] = { 0xE1, 0x10, 0x0E, 0x00 };
+
 #define T2T_INTERNAL { 0x04, 0x82, 0x2f, 0x21, \
                        0x5a, 0x53, 0x28, 0x80, \
                        0xa1, 0x48 }
@@ -28,8 +36,10 @@
 static uint8_t NDEF_MESSAGE_TLV = 0x03;
 static uint8_t NDEF_TERMINATOR_TLV = 0xFE;
 
-struct nfc_tag nfc_tags[1] = {
-   INIT_NFC_T2T([0], T2T_INTERNAL, T2T_LOCK, T2T_CC)
+
+struct nfc_tag nfc_tags[2] = {
+   INIT_NFC_T1T([0], T1T_UID, T1T_RES),
+   INIT_NFC_T2T([1], T2T_INTERNAL, T2T_LOCK, T2T_CC)
 };
 
 int
@@ -43,9 +53,22 @@ nfc_tag_set_data(const struct nfc_tag* tag, const uint8_t* ndef_msg, ssize_t len
     assert(ndef_msg);
 
     switch (tag->type) {
-        case T2T:
-            tsize = sizeof(tag->t2.format.data)/sizeof(uint8_t);
+        case T1T:
+            tsize = ARRAY_SIZE(tag->t1.format.data);
+
             assert(len < tsize);
+
+            data = tag->t1.format.data;
+
+            /* [Type 1 Tag Operation Specificatio] 6.1 NDEF Management */
+            memcpy(data + offset, t1t_cc, ARRAY_SIZE(t1t_cc));
+            offset += ARRAY_SIZE(t1t_cc);
+            break;
+        case T2T:
+            tsize = ARRAY_SIZE(tag->t2.format.data);
+
+            assert(len < tsize);
+
             data = tag->t2.format.data;
             break;
         default:

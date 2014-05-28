@@ -15,6 +15,10 @@
 
 #include "qemu-common.h"
 
+enum {
+    MAXIMUM_SUPPORTED_TAG_SIZE = 1024
+};
+
 enum nfc_tag_type {
     T1T = 0,
     T2T,
@@ -56,9 +60,31 @@ union response_packet {
     struct t2t_read_response read_rsp;
 };
 
+/* [Type 1 Tag Operation Specification 2.1/2.2]
+ * Static Memory Structure.
+ */
+enum {
+    T1T_HRO = 0x11,
+    T1T_HR1 = 0x00
+};
 
 enum {
-    MAXIMUM_SUPPORTED_TAG_SIZE = 1024
+    T1T_STATIC_MEMORY_SIZE = 120
+};
+
+struct nfc_t1t_raw {
+    uint8_t mem[T1T_STATIC_MEMORY_SIZE];
+};
+
+struct nfc_t1t_format {
+    uint8_t uid[8];
+    uint8_t data[96];
+    uint8_t res[16];
+} __attribute__((packed));
+
+union nfc_t1t {
+    struct nfc_t1t_raw raw;
+    struct nfc_t1t_format format;
 };
 
 /* [Type 2 Tag Operation Specification 2.1]
@@ -77,7 +103,7 @@ struct nfc_t2t_format {
     uint8_t lock[2];
     uint8_t cc[4];
     uint8_t data[48];
-} __attribute__((packed));;
+} __attribute__((packed));
 
 union nfc_t2t {
     struct nfc_t2t_raw raw;
@@ -87,9 +113,17 @@ union nfc_t2t {
 struct nfc_tag {
     enum nfc_tag_type type;
     union {
+        union nfc_t1t t1;
         union nfc_t2t t2;
     };
 };
+
+#define INIT_NFC_T1T(tag_, uid_, res_) \
+    tag_ = { \
+        .type = T1T, \
+        .t1.format.uid = uid_, \
+        .t1.format.res = res_ \
+    }
 
 #define INIT_NFC_T2T(tag_, internal_, lock_, cc_) \
     tag_ = { \
@@ -99,7 +133,7 @@ struct nfc_tag {
         .t2.format.cc = cc_ \
     }
 
-extern struct nfc_tag nfc_tags[1];
+extern struct nfc_tag nfc_tags[2];
 
 int
 nfc_tag_set_data(const struct nfc_tag* tag, const uint8_t* ndef_msg, ssize_t len);
