@@ -100,7 +100,7 @@ process_t2t_read(const struct t2t_read_command* cmd, uint8_t* consumed,
     assert(rsp);
 
     offset = cmd->bno * 4;
-    max_read = ARRAY_SIZE(rsp->payload);
+    max_read = sizeof(rsp->payload);
 
     for (i = 0; i < max_read && offset < T2T_STATIC_MEMORY_SIZE; i++, offset++) {
         rsp->payload[i] = mem[offset];
@@ -110,6 +110,80 @@ process_t2t_read(const struct t2t_read_command* cmd, uint8_t* consumed,
     *consumed = sizeof(struct t2t_read_command);
 
     return sizeof(struct t2t_read_response);
+}
+
+static size_t
+process_t1t_rid(struct nfc_tag* tag, const struct t1t_rid_command* cmd,
+                uint8_t* consumed, struct t1t_rid_response* rsp)
+{
+    assert(tag);
+    assert(cmd);
+    assert(consumed);
+    assert(rsp);
+
+    rsp->hr[0] = T1T_HRO;
+    rsp->hr[1] = T1T_HR1;
+
+    memcpy(rsp->uid, tag->t.t1.format.uid, sizeof(rsp->uid));
+
+    rsp->status = 0;
+
+    *consumed = sizeof(struct t1t_rid_command);
+
+    return sizeof(struct t1t_rid_response);
+}
+
+static size_t
+process_t1t_rall(const struct t1t_rall_command* cmd, uint8_t* consumed,
+                 uint8_t* mem, struct t1t_rall_response* rsp)
+{
+    size_t i;
+    size_t offset;
+
+    assert(cmd);
+    assert(consumed);
+    assert(rsp);
+
+    offset = 0;
+
+    rsp->payload[offset++] = T1T_HRO;
+    rsp->payload[offset++] = T1T_HR1;
+
+    for (i = 0; i < T1T_STATIC_MEMORY_SIZE ; i++) {
+        rsp->payload[offset++] = mem[i];
+    }
+
+    rsp->status = 0;
+
+    *consumed = sizeof(struct t1t_rall_command);
+
+    return sizeof(struct t1t_rall_response);
+}
+
+size_t
+process_t1t(struct nfc_re* re, const union command_packet* cmd,
+            size_t len, uint8_t* consumed, union response_packet* rsp)
+{
+    assert(cmd);
+    assert(rsp);
+
+    switch (cmd->common.cmd) {
+        case RALL_COMMAND:
+            assert(re);
+            assert(re->tag);
+            len = process_t1t_rall(&cmd->rall_cmd, consumed,
+                                   re->tag->t.t1.raw.mem, &rsp->rall_rsp);
+            break;
+        case RID_COMMAND:
+            assert(re);
+            len = process_t1t_rid(re->tag, &cmd->rid_cmd, consumed, &rsp->rid_rsp);
+            break;
+        default:
+            assert(0);
+            break;
+    }
+
+    return len;
 }
 
 size_t
