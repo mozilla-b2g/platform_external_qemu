@@ -601,6 +601,14 @@ nfc_re_process_data(struct nfc_re* re, const union nci_packet* dta,
                 len = nfc_create_nci_dta(rsp, NCI_PBF_END, re->connid, len);
             }
             break;
+        case NCI_RF_PROTOCOL_T1T:
+            len = process_t1t(re,
+                (const union command_packet*)dta->data.payload,
+                dta->data.l, &off, (union response_packet*)rsp->data.payload);
+            if (len) {
+                len = nfc_create_nci_dta(rsp, NCI_PBF_END, re->connid, len);
+            }
+            break;
         case NCI_RF_PROTOCOL_T2T:
             len = process_t2t(re,
                 (const union command_packet*)dta->data.payload,
@@ -628,7 +636,7 @@ enum {
 };
 
 static size_t
-nfc_re_create_activated_ntf_tech_nfca_poll(struct nfc_re* re, uint8_t* act)
+create_activated_ntf_tech_nfca_poll(struct nfc_re* re, uint8_t* act)
 {
     uint8_t* p;
     enum nci_rf_protocol protocol;
@@ -683,14 +691,35 @@ nfc_re_create_rf_intf_activated_ntf_tech(enum nci_rf_tech_mode mode,
 {
     switch (mode) {
         case NCI_RF_NFC_A_PASSIVE_POLL_MODE:
-            return nfc_re_create_activated_ntf_tech_nfca_poll(re, act);
+            return create_activated_ntf_tech_nfca_poll(re, act);
         default:
             return 0;
     }
 }
 
-size_t
-nfc_re_create_rf_intf_activated_ntf_act(struct nfc_re* re, uint8_t* act)
+/**
+ * [NCI], Table 61 says there are no Activation Parameters defined for
+ * the Frame RF Interface.
+ * But from libnfc-nci it seems proprietary parameters is required for
+ * t1t tag.
+ */
+static size_t
+create_activated_ntf_t1t(struct nfc_re* re, uint8_t* act)
+{
+    uint8_t* p;
+
+    assert(re);
+
+    p = act;
+
+    *p++ = T1T_HRO;
+    *p++ = T1T_HR1;
+
+    return p - act;
+}
+
+static size_t
+create_activated_ntf_nfc_dep(struct nfc_re* re, uint8_t* act)
 {
     uint8_t* p;
 
@@ -725,6 +754,21 @@ nfc_re_create_rf_intf_activated_ntf_act(struct nfc_re* re, uint8_t* act)
     act[0] = (p-act)-1;
 
     return p-act;
+}
+
+size_t
+nfc_re_create_rf_intf_activated_ntf_act(struct nfc_re* re, uint8_t* act)
+{
+    assert(re);
+
+    switch (re->rfproto) {
+        case NCI_RF_PROTOCOL_T1T:
+            return create_activated_ntf_t1t(re, act);
+        case NCI_RF_PROTOCOL_NFC_DEP:
+            return create_activated_ntf_nfc_dep(re, act);
+        default:
+            return 0;
+    }
 }
 
 size_t

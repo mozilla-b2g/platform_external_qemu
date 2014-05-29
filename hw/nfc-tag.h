@@ -30,8 +30,36 @@ struct common_command_hdr {
     uint8_t cmd;
 };
 
-/* [Digital], Table51 */
+enum t1t_command_set {
+    RALL_COMMAND = 0x00,
+    RID_COMMAND = 0x78
+};
 
+/* [Type 1 Tag Operation Specification 5.7] */
+struct t1t_rall_command {
+    uint8_t cmd;
+};
+
+struct t1t_rall_response {
+    uint8_t payload[122];
+    uint8_t status;
+};
+
+/* [Digital], Table48 */
+struct t1t_rid_command {
+    uint8_t cmd;
+    uint8_t add;
+    uint8_t data;
+    uint8_t uid;
+};
+
+struct t1t_rid_response {
+    uint8_t hr[2];
+    uint8_t uid[4];
+    uint8_t status;
+};
+
+/* [Digital], Table51 */
 enum t2t_command_set {
     READ_SEGMENT_COMMAND = 0x10,
     READ_COMMAND = 0x30,
@@ -53,10 +81,14 @@ struct t2t_read_response {
 
 union command_packet {
     struct common_command_hdr common;
+    struct t1t_rall_command rall_cmd;
+    struct t1t_rid_command rid_cmd;
     struct t2t_read_command read_cmd;
 };
 
 union response_packet {
+    struct t1t_rall_response rall_rsp;
+    struct t1t_rid_response rid_rsp;
     struct t2t_read_response read_rsp;
 };
 
@@ -137,6 +169,10 @@ extern struct nfc_tag nfc_tags[2];
 
 int
 nfc_tag_set_data(const struct nfc_tag* tag, const uint8_t* ndef_msg, ssize_t len);
+
+size_t
+process_t1t(struct nfc_re* re, const union command_packet* cmd,
+            size_t len, uint8_t* consumed, union response_packet* rsp);
 
 size_t
 process_t2t(struct nfc_re* re, const union command_packet* cmd,
