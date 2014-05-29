@@ -88,21 +88,21 @@ struct nfc_tag {
     enum nfc_tag_type type;
     union {
         union nfc_t2t t2;
-    };
+    }t;
 };
 
 #define INIT_NFC_T2T(tag_, internal_, lock_, cc_) \
     tag_ = { \
         .type = T2T, \
-        .t2.format.internal = internal_, \
-        .t2.format.lock = lock_, \
-        .t2.format.cc = cc_ \
+        .t.t2.format.internal = internal_, \
+        .t.t2.format.lock = lock_, \
+        .t.t2.format.cc = cc_ \
     }
 
 extern struct nfc_tag nfc_tags[1];
 
 int
-nfc_tag_set_data(const struct nfc_tag* tag, const uint8_t* ndef_msg, ssize_t len);
+nfc_tag_set_data(struct nfc_tag* tag, const uint8_t* ndef_msg, ssize_t len);
 
 size_t
 process_t2t(struct nfc_re* re, const union command_packet* cmd,

@@ -33,7 +33,7 @@ struct nfc_tag nfc_tags[1] = {
 };
 
 int
-nfc_tag_set_data(const struct nfc_tag* tag, const uint8_t* ndef_msg, ssize_t len)
+nfc_tag_set_data(struct nfc_tag* tag, const uint8_t* ndef_msg, ssize_t len)
 {
     uint8_t offset = 0;
     uint8_t* data;
@@ -44,9 +44,9 @@ nfc_tag_set_data(const struct nfc_tag* tag, const uint8_t* ndef_msg, ssize_t len
 
     switch (tag->type) {
         case T2T:
-            tsize = sizeof(tag->t2.format.data)/sizeof(uint8_t);
+            tsize = sizeof(tag->t.t2.format.data)/sizeof(uint8_t);
             assert(len < tsize);
-            data = tag->t2.format.data;
+            data = tag->t.t2.format.data;
             break;
         default:
             assert(0);
@@ -104,7 +104,7 @@ process_t2t(struct nfc_re* re, const union command_packet* cmd,
             assert(re->tag);
 
             len = process_t2t_read(&cmd->read_cmd, consumed,
-                                   re->tag->t2.raw.mem, &rsp->read_rsp);
+                                   re->tag->t.t2.raw.mem, &rsp->read_rsp);
             break;
         default:
             assert(0);
