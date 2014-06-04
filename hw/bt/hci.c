@@ -1843,6 +1843,7 @@ static void bt_submit_hci(struct HCIInfo *info,
 
     case cmd_opcode_pack(OGF_HOST_CTL, OCF_RESET):
         bt_hci_reset(hci);
+        hci->last_cmd = cpu_to_le16(cmd);
         bt_hci_event_complete_status(hci, HCI_SUCCESS);
         break;
 
