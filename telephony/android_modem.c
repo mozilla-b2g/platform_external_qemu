@@ -776,9 +776,8 @@ amodem_init_rmnets()
         int ip = special_addr_ip + 100 + (net - _amodem_rmnets);
         net->addr.in.s_addr = htonl(ip);
         net->gw.in.s_addr = htonl(alias_addr_ip);
-        // Currently, only 10.0.0.3 and 10.0.0.4 work as emulator dnses.
-        for ( k = 0; k < NUM_DNS_PER_RMNET; k++ ) {
-            ip = alias_addr_ip + k + 1;
+        for ( k = 0; k < NUM_DNS_PER_RMNET && k < dns_addr_count; k++ ) {
+            ip = dns_addr[k];
             net->dns[k].in.s_addr = htonl(ip);
         }
 
