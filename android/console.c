@@ -1453,6 +1453,7 @@ call_state_to_string( ACallState  state )
     switch (state) {
         case A_CALL_ACTIVE:   return "active";
         case A_CALL_HELD:     return "held";
+        case A_CALL_DIALING:  return "dialing";
         case A_CALL_ALERTING: return "ringing";
         case A_CALL_WAITING:  return "waiting";
         case A_CALL_INCOMING: return "incoming";
