@@ -2444,7 +2444,6 @@ handleChangeOrEnterPIN( const char*  cmd, AModem  modem )
     return "+CME ERROR: BAD FORMAT";
 }
 
-
 static const char*
 handleGetRemainingRetries( const char* cmd, AModem modem )
 {
@@ -2489,12 +2488,162 @@ handleListCurrentCalls( const char*  cmd, AModem  modem )
     return amodem_end_line( modem );
 }
 
-
 static const char*
 handleLastCallFailCause( const char* cmd, AModem modem )
 {
     amodem_add_line( modem, "+CEER: %d\n", modem->last_call_fail_cause );
     return amodem_end_line( modem );
+}
+
+static const char*
+handleCallForwardGetReq( const char* cmd, AModem modem )
+{
+    int i, j;
+    int reason = 0;
+    // According to TS 27.007, the default value is 7.
+    int classx = 7;
+    ACallForward records[CALL_FORWARDING_MAX_CLASSX_OFFSET + 1];
+    bool records_processed[CALL_FORWARDING_MAX_CLASSX_OFFSET + 1];
+
+    if (sscanf(cmd, "+CCFC=%d,%*[^,],,,%d", &reason, &classx) < 1) {
+        // Incorrect parameters
+        return "+CME ERROR: 50";
+    }
+
+    if ((classx >> (CALL_FORWARDING_MAX_CLASSX_OFFSET + 1))) {
+        // Invalid classx
+        return "+CME ERROR: 50";
+    }
+
+    // Iterative all service.
+    for (i = 0; i <= CALL_FORWARDING_MAX_CLASSX_OFFSET; i++) {
+        records[i] = NULL;
+        if (classx & (0x1 << i)) {
+            records[i] = asupplementary_get_call_foward(modem->supplementary,
+                                                        reason, i);
+            records_processed[i] = false;
+        } else {
+            records_processed[i] = true;
+        }
+    }
+
+    amodem_begin_line(modem);
+    for (i = 0; i <= CALL_FORWARDING_MAX_CLASSX_OFFSET; i++) {
+        if (records_processed[i]) {
+            continue;
+        }
+
+        // Merge if the configuration is the same.
+        // (For example, if both data and voice are forwarded to +18005551212,
+        // then a single CCFC can be returned with the service class set to
+        // "data + voice = 3")
+        classx = (0x1 << i);
+        for (j = i + 1; j <= CALL_FORWARDING_MAX_CLASSX_OFFSET; j++) {
+            if (records_processed[j]) {
+                continue;
+            }
+
+            if (records[i] == records[j] ||
+                (records[i] && records[j] &&
+                 records[i]->enabled == records[j]->enabled &&
+                 records[i]->toa == records[j]->toa &&
+                 records[i]->time == records[j]->time &&
+                 strcmp(records[i]->number, records[j]->number) == 0)) {
+                classx = classx | (0x1 << j);
+                records_processed[j] = true;
+            }
+        }
+
+        if (records[i]) {
+            amodem_add_line(modem, "+CCFC: %d,%d,\"%s\",%d,,,%d\r\n"
+                                 , (records[i]->enabled) ? 1 : 0
+                                 , classx
+                                 , records[i]->number
+                                 , records[i]->toa
+                                 , records[i]->time);
+        } else {
+            amodem_add_line(modem, "+CCFC: 0,%d\r\n", classx);
+        }
+    }
+    return amodem_end_line(modem);
+}
+
+static const char*
+handleCallForwardSetReq( const char* cmd, AModem modem )
+{
+    int i = 0;
+    int reason = 0;
+    int mode = 0;
+    int toa = 0;
+    // According to TS 27.007, the default value is 7.
+    int classx = 7;
+    // According to TS 27.007, the default value is 20.
+    int time = 20;
+    char number[CALL_FORWARDING_MAX_NUMBERS + 1];
+
+    if (sscanf(cmd, "+CCFC=%d,%d,\"%[^\"]\",%d,%d,,,%d",
+               &reason, &mode, number, &toa, &classx, &time) < 4) {
+        // Incorrect parameters
+        return "+CME ERROR: 50";
+    }
+
+    if ((classx >> (CALL_FORWARDING_MAX_CLASSX_OFFSET + 1))) {
+        // Invalid classx
+        return "+CME ERROR: 50";
+    }
+
+    // Iterative all service.
+    for (i = 0; i <= CALL_FORWARDING_MAX_CLASSX_OFFSET; i++) {
+        if (!(classx & (0x01 << i))) {
+            continue;
+        }
+
+        switch (mode) {
+            case A_CALL_FORWARDING_MODE_ERASURE:
+                asupplementary_remove_call_forward(modem->supplementary, reason, i);
+                break;
+            case A_CALL_FORWARDING_MODE_ENABLE:
+            case A_CALL_FORWARDING_MODE_REGISTRATION:
+                asupplementary_set_call_forward(modem->supplementary, reason, i,
+                                                true, number, toa, time);
+                break;
+            case A_CALL_FORWARDING_MODE_DISABLE:
+                asupplementary_set_call_forward(modem->supplementary, reason, i,
+                                                false, number, toa, time);
+                break;
+            default:
+                // Incorrect parameters
+                return "+CME ERROR: 50";
+        }
+    }
+
+    return "OK";
+}
+
+static const char*
+handleCallForwardReq( const char* cmd, AModem modem )
+{
+    int reason = 0;
+    int mode = 0;
+
+    if (sscanf(cmd, "+CCFC=%d,%d%*s", &reason, &mode) < 2) {
+        // Incorrect parameters
+        return "+CME ERROR: 50";
+    }
+
+    if (reason == A_CALL_FORWARDING_REASON_UNCONDITIONAL ||
+        reason == A_CALL_FORWARDING_REASON_NOT_REACHABLE) {
+        // We don't support A_CALL_FORWARDING_TYPE_ALL and
+        // A_CALL_FORWARDING_TYPE_ALL_CONDITIONAL for now, because there is no
+        // detail information about these two type in TS 22.082.
+        return "+CME ERROR: 50";
+    }
+
+    if (mode == A_CALL_FORWARDING_MODE_QUERY) {
+        return handleCallForwardGetReq(cmd, modem);
+    } else {
+        return handleCallForwardSetReq(cmd, modem);
+    }
 }
 
 /* Add a(n unsolicited) time response.
@@ -3405,6 +3554,7 @@ static const struct {
     { "!+CPIN=", NULL, handleChangeOrEnterPIN },
     { "!+CPINR=", NULL, handleGetRemainingRetries }, /* get remaining PIN retries*/
     { "+CEER", NULL, handleLastCallFailCause },
+    { "!+CCFC", NULL, handleCallForwardReq }, /* call forward request */
 
     /* see getSIMStatus() */
     { "+CPIN?", NULL, handleSIMStatusReq },
