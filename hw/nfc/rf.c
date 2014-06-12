@@ -22,7 +22,6 @@ nfc_rf_init(struct nfc_rf* rf, enum nci_rf_interface iface)
     rf->iface = iface;
     switch (iface) {
         case NCI_RF_INTERFACE_FRAME:
-            // TODO: this is also depend on protocol
             rf->mode = NCI_RF_NFC_A_PASSIVE_POLL_MODE;
             break;
         case NCI_RF_INTERFACE_NFC_DEP:
@@ -32,6 +31,27 @@ nfc_rf_init(struct nfc_rf* rf, enum nci_rf_interface iface)
             assert(0);
             break;
     }
+}
+
+int
+nfc_set_rf_mode_by_protocol(struct nfc_rf* rf, enum nci_rf_protocol proto)
+{
+    assert(rf);
+
+    switch(proto) {
+        case NCI_RF_PROTOCOL_T1T:
+        case NCI_RF_PROTOCOL_T2T:
+            rf->mode = NCI_RF_NFC_A_PASSIVE_POLL_MODE;
+            break;
+        case NCI_RF_PROTOCOL_T3T:
+        case NCI_RF_PROTOCOL_NFC_DEP:
+            rf->mode = NCI_RF_NFC_F_PASSIVE_POLL_MODE;
+            break;
+        default:
+            return -1;
+    }
+
+    return 0;
 }
 
 enum nfc_rfst

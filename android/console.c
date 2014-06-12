@@ -4035,6 +4035,9 @@ nfc_rf_intf_activated_ntf_cb(void* data,
     } else {
         nfc->active_rf = nfc->rf + param->rf;
     }
+
+    nfc_set_rf_mode_by_protocol(nfc->active_rf, param->re->rfproto);
+
     res = nfc_create_rf_intf_activated_ntf(param->re, nfc, ntf);
     if (res < 0) {
         control_write(param->client, "KO: rf_intf_activated_ntf failed\r\n");
