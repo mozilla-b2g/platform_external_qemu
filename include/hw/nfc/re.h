@@ -71,12 +71,13 @@ struct nfc_re {
     uint8_t rbuf[1024]; /* data for reading from RE */
 };
 
-#define INIT_NFC_RE(re_, rfproto_, mode_, tag_, nfcid_, addr_) \
+#define INIT_NFC_RE(re_, rfproto_, mode_, tag_, nfcid_, nfcid2_, addr_) \
     re_ = { \
         .rfproto = rfproto_, \
         .mode = mode_, \
         .tag = tag_, \
         .nfcid1 = nfcid_, \
+        .nfcid2 = nfcid2_, \
         .nfcid3 = nfcid_, \
         .id = 0, \
         .xmit_next = 0, \
@@ -88,7 +89,7 @@ struct nfc_re {
     }
 
 /* predefined NFC Remote Endpoints */
-extern struct nfc_re nfc_res[4];
+extern struct nfc_re nfc_res[5];
 
 struct nfc_re*
 nfc_get_re_by_id(uint8_t id);

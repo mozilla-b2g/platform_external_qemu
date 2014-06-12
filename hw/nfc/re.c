@@ -22,11 +22,18 @@
 #include "hw/nfc/snep.h"
 #include "hw/nfc/tag.h"
 
-struct nfc_re nfc_res[4] = {
-    INIT_NFC_RE([0], NCI_RF_PROTOCOL_NFC_DEP, NCI_RF_NFC_F_PASSIVE_LISTEN_MODE, NULL, "deadbeaf0", nfc_res+0),
-    INIT_NFC_RE([1], NCI_RF_PROTOCOL_NFC_DEP, NCI_RF_NFC_F_PASSIVE_LISTEN_MODE, NULL, "deadbeaf1", nfc_res+1),
-    INIT_NFC_RE([2], NCI_RF_PROTOCOL_T1T, NCI_RF_NFC_A_PASSIVE_LISTEN_MODE, nfc_tags+0, "deadbeaf2", nfc_res+2),
-    INIT_NFC_RE([3], NCI_RF_PROTOCOL_T2T, NCI_RF_NFC_A_PASSIVE_LISTEN_MODE, nfc_tags+1, "deadbeaf3", nfc_res+3)
+/* NFCID2 is defined in [Digital] Table44 */
+struct nfc_re nfc_res[5] = {
+    INIT_NFC_RE([0], NCI_RF_PROTOCOL_NFC_DEP, NCI_RF_NFC_F_PASSIVE_LISTEN_MODE,
+                NULL, "deadbeaf0", "\x01\xfe\x0\x0\x0\x0\x0", nfc_res+0),
+    INIT_NFC_RE([1], NCI_RF_PROTOCOL_NFC_DEP, NCI_RF_NFC_F_PASSIVE_LISTEN_MODE,
+                NULL, "deadbeaf1", "\x01\xfe\x0\x0\x0\x0\x1", nfc_res+1),
+    INIT_NFC_RE([2], NCI_RF_PROTOCOL_T1T, NCI_RF_NFC_A_PASSIVE_LISTEN_MODE,
+                nfc_tags+0, "deadbeaf2", "\x0\x0\x0\x0\x0\x0\x2", nfc_res+2),
+    INIT_NFC_RE([3], NCI_RF_PROTOCOL_T2T, NCI_RF_NFC_A_PASSIVE_LISTEN_MODE,
+                nfc_tags+1, "deadbeaf3", "\x0\x0\x0\x0\x0\x0\x3", nfc_res+3),
+    INIT_NFC_RE([4], NCI_RF_PROTOCOL_T3T, NCI_RF_NFC_F_PASSIVE_LISTEN_MODE,
+                nfc_tags+2, "deadbeaf4", "\x02\xfe\x0\x0\x0\x0\x4", nfc_res+4)
 };
 
 struct create_nci_dta_param {

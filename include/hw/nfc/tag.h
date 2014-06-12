@@ -142,11 +142,43 @@ union nfc_t2t {
     struct nfc_t2t_format format;
 };
 
+/**
+ * There is no specific size defined in T3T spec.
+ */
+enum {
+    T3T_BLOCK_SIZE = 16,
+    T3T_BLOCK_NUM = 64,
+    T3T_MEMORY_SIZE = T3T_BLOCK_NUM * T3T_BLOCK_SIZE
+};
+
+struct nfc_t3t_raw {
+    uint8_t mem[T3T_MEMORY_SIZE];
+};
+
+struct nfc_t3t_format {
+    uint8_t ver;
+    uint8_t nbr;
+    uint8_t nbw;
+    uint8_t nmaxb[2];
+    uint8_t unused[4];
+    uint8_t writef;
+    uint8_t rwflag;
+    uint8_t ln[3];
+    uint8_t cs[2];
+    uint8_t data[T3T_BLOCK_NUM - 1][T3T_BLOCK_SIZE];
+} __attribute__((packed));
+
+union nfc_t3t {
+    struct nfc_t3t_raw raw;
+    struct nfc_t3t_format format;
+};
+
 struct nfc_tag {
     enum nfc_tag_type type;
     union {
         union nfc_t1t t1;
         union nfc_t2t t2;
+        union nfc_t3t t3;
     }t;
 };
 
@@ -165,7 +197,21 @@ struct nfc_tag {
         .t.t2.format.cc = cc_ \
     }
 
-extern struct nfc_tag nfc_tags[2];
+#define INIT_NFC_T3T(tag_, v_, r_, w_, nb_, u_, wf_, rw_, ln_, cs_) \
+    tag_ = { \
+        .type = T3T, \
+        .t.t3.format.ver = v_, \
+        .t.t3.format.nbr = r_, \
+        .t.t3.format.nbw = w_, \
+        .t.t3.format.nmaxb = nb_, \
+        .t.t3.format.unused = u_, \
+        .t.t3.format.writef = wf_, \
+        .t.t3.format.rwflag = rw_, \
+        .t.t3.format.ln = ln_, \
+        .t.t3.format.cs = cs_, \
+    }
+
+extern struct nfc_tag nfc_tags[3];
 
 int
 nfc_tag_set_data(struct nfc_tag* tag, const uint8_t* ndef_msg, ssize_t len);
