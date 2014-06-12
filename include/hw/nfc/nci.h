@@ -148,6 +148,10 @@ enum {
     MAX_NCI_PAYLOAD_LENGTH = 256
 };
 
+enum {
+    ANY_VALUE = 0
+};
+
 struct nci_common_hdr {
 #if BITORDER_MSB_FIRST
     uint8_t mt:3;
@@ -480,6 +484,19 @@ struct nci_rf_deactivate_ntf {
     uint8_t reason;
 };
 
+/* [NCI] Table74 */
+struct nci_t3t_polling_cmd {
+    uint16_t sc;
+    uint8_t rc;
+    uint8_t tsn;
+} __attribute__((packed));
+
+struct nci_t3t_polling_ntf {
+    uint8_t status;
+    uint8_t nres;
+    uint8_t res[];
+} __attribute__((packed));
+
 /* NCI_RF_FIELD_INFO */
 
 enum nci_rf_field_status {
@@ -557,6 +574,10 @@ size_t
 nfc_create_deactivate_ntf(enum nci_rf_deactivation_type type,
                           enum nci_rf_deactivation_reason reason,
                           union nci_packet* ntf);
+
+size_t
+nfc_create_t3t_polling_ntf(const struct nfc_re* re,
+                           union nci_packet* ntf);
 
 size_t
 nfc_create_rf_field_info_ntf(struct nfc_device* nfc,

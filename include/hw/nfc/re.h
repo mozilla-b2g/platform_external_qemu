@@ -53,6 +53,7 @@ struct nfc_re {
     enum nci_rf_protocol rfproto;
     enum nci_rf_tech_mode mode;
     char nfcid1[10];
+    char nfcid2[8];
     char nfcid3[10];
     uint8_t id;
     struct nfc_tag* tag;
