@@ -229,7 +229,7 @@ process_t1t(struct nfc_re* re, const union command_packet* cmd,
     assert(cmd);
     assert(rsp);
 
-    switch (cmd->common.cmd) {
+    switch (cmd->t1t.cmd) {
         case RALL_COMMAND:
             assert(re);
             assert(re->tag);
@@ -255,13 +255,80 @@ process_t2t(struct nfc_re* re, const union command_packet* cmd,
     assert(cmd);
     assert(rsp);
 
-    switch (cmd->common.cmd) {
+    switch (cmd->t2t.cmd) {
         case READ_COMMAND:
             assert(re);
             assert(re->tag);
 
             len = process_t2t_read(&cmd->read_cmd, consumed,
                                    re->tag->t.t2.raw.mem, &rsp->read_rsp);
+            break;
+        default:
+            assert(0);
+            break;
+    }
+
+    return len;
+}
+
+static size_t
+process_t3t_check(const struct t3t_check_command* cmd, uint8_t* consumed,
+                  uint8_t* mem, struct t3t_check_response* rsp) {
+    struct t3t_check_command_tail* tail;
+    uint8_t bidx, i, j;
+    uint32_t bn;
+
+    tail = (struct t3t_check_command_tail*)
+        (cmd->scl + cmd->nsv);
+
+    /* [Digital] 5.4 Check Command */
+    for (bidx = 0, i = 0, j = 0; bidx < tail->nbl; bidx++) {
+        if (tail->bl[i] & T3T_BLOCK_LEN_BIT) {
+          /* 2 byte block */
+          bn = tail->bl[i+1];
+          i += 2;
+        } else {
+          /* 3 byte block */
+          bn = tail->bl[i+1] << 8 | tail->bl[i+2];
+          i += 3;
+        }
+
+        memcpy(rsp->data + j, mem + bn*T3T_BLOCK_SIZE, T3T_BLOCK_SIZE);
+        j += T3T_BLOCK_SIZE;
+    }
+
+    memcpy(rsp->id, cmd->id, sizeof(cmd->id));
+    rsp->status1 = 0x00;
+    rsp->status2 = 0x00;
+    rsp->nbl = tail->nbl;
+
+    /* This is status bit */
+    rsp->data[T3T_BLOCK_SIZE * rsp->nbl] = 0x00;
+
+    rsp->len = sizeof(struct t3t_check_response) +
+               T3T_BLOCK_SIZE * rsp->nbl +
+               1;
+    rsp->code = CHECK_RESPONSE;
+
+    *consumed = sizeof(struct t3t_check_command) + 2*cmd->nsv +
+                sizeof(struct t3t_check_command_tail) + i;
+
+    return rsp->len;
+}
+
+size_t
+process_t3t(struct nfc_re* re, const union command_packet* cmd,
+            size_t len, uint8_t* consumed, union response_packet* rsp)
+{
+    assert(cmd);
+    assert(rsp);
+
+    switch (cmd->t3t.cmd) {
+        case CHECK_COMMAND:
+            len = process_t3t_check(&cmd->check_cmd, consumed,
+                                    re->tag->t.t3.raw.mem, &rsp->check_rsp);
+            break;
+        case UPDATE_COMMAND:
             break;
         default:
             assert(0);

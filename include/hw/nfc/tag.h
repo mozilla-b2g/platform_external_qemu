@@ -26,16 +26,16 @@ enum nfc_tag_type {
     T4T,
 };
 
-struct common_command_hdr {
-    uint8_t cmd;
-};
-
 enum t1t_command_set {
     RALL_COMMAND = 0x00,
     RID_COMMAND = 0x78
 };
 
 /* [Type 1 Tag Operation Specification 5.7] */
+struct t1t_common_hdr {
+    uint8_t cmd;
+};
+
 struct t1t_rall_command {
     uint8_t cmd;
 };
@@ -65,6 +65,10 @@ enum t2t_command_set {
     READ_COMMAND = 0x30,
 };
 
+struct t2t_common_hdr {
+    uint8_t cmd;
+};
+
 struct t2t_read_command {
     uint8_t cmd;
     uint8_t bno;
@@ -79,17 +83,66 @@ struct t2t_read_response {
     uint8_t status;
 };
 
+struct t3t_common_hdr {
+    uint8_t len;
+    uint8_t cmd;
+};
+
+enum t3t_command_set {
+    POLLING_COMMAND = 0x00,
+    CHECK_COMMAND = 0x06,
+    UPDATE_COMMAND = 0x08
+};
+
+enum t3t_response_code {
+    POLLING_RESPONSE = 0x01,
+    CHECK_RESPONSE = 0x07,
+    UPDATE_RESPONSE = 0x09
+};
+
+enum {
+    T3T_BLOCK_LEN_BIT = 0x80
+};
+
+struct t3t_check_command {
+    uint8_t len;
+    uint8_t cmd;
+    uint8_t id[8];
+    uint8_t nsv;
+    uint16_t scl[];
+} __attribute__((packed));
+
+struct t3t_check_command_tail {
+    uint8_t nbl;
+    uint8_t bl[];
+} __attribute__((packed));
+
+struct t3t_check_response {
+    uint8_t len;
+    uint8_t code;
+    uint8_t id[8];
+    uint8_t status1;
+    uint8_t status2;
+    uint8_t nbl;
+    uint8_t data[];
+} __attribute__((packed));
+
 union command_packet {
-    struct common_command_hdr common;
+    struct t1t_common_hdr t1t;
+    struct t2t_common_hdr t2t;
+    struct t3t_common_hdr t3t;
+
     struct t1t_rall_command rall_cmd;
     struct t1t_rid_command rid_cmd;
     struct t2t_read_command read_cmd;
+    struct t3t_check_command check_cmd;
 };
 
 union response_packet {
     struct t1t_rall_response rall_rsp;
     struct t1t_rid_response rid_rsp;
     struct t2t_read_response read_rsp;
+    struct t3t_check_response check_rsp;
 };
 
 /* [Type 1 Tag Operation Specification 2.1/2.2]
@@ -222,5 +275,9 @@ process_t1t(struct nfc_re* re, const union command_packet* cmd,
 
 size_t
 process_t2t(struct nfc_re* re, const union command_packet* cmd,
+            size_t len, uint8_t* consumed, union response_packet* rsp);
+
+size_t
+process_t3t(struct nfc_re* re, const union command_packet* cmd,
             size_t len, uint8_t* consumed, union response_packet* rsp);
 #endif
