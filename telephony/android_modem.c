@@ -2631,11 +2631,11 @@ handleCallForwardReq( const char* cmd, AModem modem )
         return "+CME ERROR: 50";
     }
 
-    if (reason == A_CALL_FORWARDING_REASON_UNCONDITIONAL ||
-        reason == A_CALL_FORWARDING_REASON_NOT_REACHABLE) {
-        // We don't support A_CALL_FORWARDING_TYPE_ALL and
-        // A_CALL_FORWARDING_TYPE_ALL_CONDITIONAL for now, because there is no
-        // detail information about these two type in TS 22.082.
+    if (reason == A_CALL_FORWARDING_REASON_ALL ||
+        reason == A_CALL_FORWARDING_REASON_ALL_CONDITIONAL) {
+        // We don't support A_CALL_FORWARDING_REASON_ALL and
+        // A_CALL_FORWARDING_REASON_ALL_CONDITIONAL for now, because there is no
+        // detailed information about how to handle these two types in TS 22.082.
         return "+CME ERROR: 50";
     }
 
