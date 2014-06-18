@@ -15,43 +15,12 @@
 #include "hw/nfc/rf.h"
 
 void
-nfc_rf_init(struct nfc_rf* rf, enum nci_rf_interface iface)
+nfc_rf_init(struct nfc_rf* rf, enum nci_rf_interface iface, enum nci_rf_tech_mode mode)
 {
     assert(rf);
 
-    rf->iface = iface;
-    switch (iface) {
-        case NCI_RF_INTERFACE_FRAME:
-            rf->mode = NCI_RF_NFC_A_PASSIVE_POLL_MODE;
-            break;
-        case NCI_RF_INTERFACE_NFC_DEP:
-            rf->mode = NCI_RF_NFC_F_PASSIVE_POLL_MODE;
-            break;
-        default:
-            assert(0);
-            break;
-    }
-}
-
-int
-nfc_set_rf_mode_by_protocol(struct nfc_rf* rf, enum nci_rf_protocol proto)
-{
-    assert(rf);
-
-    switch(proto) {
-        case NCI_RF_PROTOCOL_T1T:
-        case NCI_RF_PROTOCOL_T2T:
-            rf->mode = NCI_RF_NFC_A_PASSIVE_POLL_MODE;
-            break;
-        case NCI_RF_PROTOCOL_T3T:
-        case NCI_RF_PROTOCOL_NFC_DEP:
-            rf->mode = NCI_RF_NFC_F_PASSIVE_POLL_MODE;
-            break;
-        default:
-            return -1;
-    }
-
-    return 0;
+    rf->iface = iface;  
+    rf->mode = mode;
 }
 
 enum nfc_rfst

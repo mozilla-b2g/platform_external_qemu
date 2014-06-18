@@ -627,7 +627,7 @@ init_process_oid_rf_discover_select_cmd(const union nci_packet* cmd,
     }
 
     /* make RF active */
-    nfc->active_rf = nfc_find_rf_by_rf_interface(nfc, payload->iface);
+    nfc->active_rf = nfc_find_rf_by_protocol_and_mode(nfc, re->rfproto, re->mode);
     if (!nfc->active_rf) {
         goto status_rejected;
     }

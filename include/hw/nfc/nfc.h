@@ -22,7 +22,7 @@ struct nfc_re;
 union nci_packet;
 
 enum {
-    NUMBER_OF_SUPPORTED_NCI_RF_INTERFACES = 2
+    NUMBER_OF_SUPPORTED_NCI_RF_INTERFACES = 8
 };
 
 enum nfc_fsm_state {
@@ -76,7 +76,8 @@ uint8_t
 nfc_device_incr_id(struct nfc_device* nfc);
 
 struct nfc_rf*
-nfc_find_rf_by_rf_interface(struct nfc_device* nfc, enum nci_rf_interface iface);
+nfc_find_rf_by_protocol_and_mode(struct nfc_device* nfc,
+                                 enum nci_rf_protocol proto, enum nci_rf_tech_mode mode);
 
 void
 nfc_delivery_cb_setup(struct nfc_delivery_cb* cb, enum nfc_buf_type type,

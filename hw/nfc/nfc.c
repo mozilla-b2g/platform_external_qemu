@@ -23,8 +23,16 @@ nfc_device_init(struct nfc_device* nfc)
 
     nfc->state = NFC_FSM_STATE_IDLE;
     nfc->rf_state = NFC_RFST_IDLE;
-    nfc_rf_init(&nfc->rf[0], NCI_RF_INTERFACE_NFC_DEP);
-    nfc_rf_init(&nfc->rf[1], NCI_RF_INTERFACE_FRAME);
+
+    nfc_rf_init(&nfc->rf[0], NCI_RF_INTERFACE_NFC_DEP,  NCI_RF_NFC_A_PASSIVE_POLL_MODE);
+    nfc_rf_init(&nfc->rf[1], NCI_RF_INTERFACE_NFC_DEP,  NCI_RF_NFC_F_PASSIVE_POLL_MODE);
+    nfc_rf_init(&nfc->rf[2], NCI_RF_INTERFACE_FRAME,    NCI_RF_NFC_A_PASSIVE_POLL_MODE);
+    nfc_rf_init(&nfc->rf[3], NCI_RF_INTERFACE_FRAME,    NCI_RF_NFC_B_PASSIVE_POLL_MODE);
+    nfc_rf_init(&nfc->rf[4], NCI_RF_INTERFACE_FRAME,    NCI_RF_NFC_F_PASSIVE_POLL_MODE);
+    nfc_rf_init(&nfc->rf[5], NCI_RF_INTERFACE_ISO_DEP,  NCI_RF_NFC_A_PASSIVE_POLL_MODE);
+    nfc_rf_init(&nfc->rf[6], NCI_RF_INTERFACE_ISO_DEP,  NCI_RF_NFC_B_PASSIVE_POLL_MODE);
+    nfc_rf_init(&nfc->rf[7], NCI_RF_INTERFACE_ISO_DEP,  NCI_RF_NFC_F_PASSIVE_POLL_MODE);
+
     nfc->id = 0;
     nfc->active_re = NULL;
     nfc->active_rf = NULL;
@@ -64,17 +72,54 @@ nfc_device_incr_id(struct nfc_device* nfc)
 }
 
 struct nfc_rf*
-nfc_find_rf_by_rf_interface(struct nfc_device* nfc, enum nci_rf_interface iface)
+nfc_find_rf_by_protocol_and_mode(struct nfc_device* nfc,
+                                 enum nci_rf_protocol proto,
+                                 enum nci_rf_tech_mode mode)
 {
-    size_t i;
+    uint8_t i;
+    enum nci_rf_interface rf_iface;
+    enum nci_rf_tech_mode rf_mode;
 
     assert(nfc);
 
+    switch (proto) {
+        case NCI_RF_PROTOCOL_T1T:
+        case NCI_RF_PROTOCOL_T2T:
+        case NCI_RF_PROTOCOL_T3T:
+            rf_iface = NCI_RF_INTERFACE_FRAME;
+            break;
+        case NCI_RF_PROTOCOL_ISO_DEP:
+            rf_iface = NCI_RF_INTERFACE_ISO_DEP;
+            break;
+        case NCI_RF_PROTOCOL_NFC_DEP:
+            rf_iface = NCI_RF_INTERFACE_NFC_DEP;
+            break;
+        default:
+            assert(0);
+            break;
+    }
+
+    switch (mode) {
+        case NCI_RF_NFC_A_PASSIVE_POLL_MODE:
+        case NCI_RF_NFC_A_PASSIVE_LISTEN_MODE:
+            rf_mode = NCI_RF_NFC_A_PASSIVE_POLL_MODE;
+            break;
+        case NCI_RF_NFC_B_PASSIVE_POLL_MODE:
+        case NCI_RF_NFC_B_PASSIVE_LISTEN_MODE:
+            rf_mode = NCI_RF_NFC_B_PASSIVE_POLL_MODE;
+            break;
+        case NCI_RF_NFC_F_PASSIVE_POLL_MODE:
+        case NCI_RF_NFC_F_PASSIVE_LISTEN_MODE:
+            rf_mode = NCI_RF_NFC_F_PASSIVE_POLL_MODE;
+            break;
+    }
+
     for (i = 0; i < ARRAY_SIZE(nfc->rf); i++) {
-        if (iface == nfc->rf[i].iface) {
-            return &nfc->rf[i];
+        if (nfc->rf[i].iface == rf_iface && nfc->rf[i].mode == rf_mode) {
+            return nfc->rf + i;
         }
     }
+
     return NULL;
 }
 

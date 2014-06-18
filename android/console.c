@@ -4005,29 +4005,10 @@ nfc_rf_intf_activated_ntf_cb(void* data,
     if (nfc->active_rf) {
         // Already select an active rf interface,so do nothing.
     } else if (param->rf == -1) {
-        // Auto select active rf interface based on remote-endpoint protocol.
-        enum nci_rf_interface iface;
-
-        switch(param->re->rfproto) {
-            case NCI_RF_PROTOCOL_T1T:
-            case NCI_RF_PROTOCOL_T2T:
-            case NCI_RF_PROTOCOL_T3T:
-                iface = NCI_RF_INTERFACE_FRAME;
-                break;
-            case NCI_RF_PROTOCOL_NFC_DEP:
-                iface = NCI_RF_INTERFACE_NFC_DEP;
-                break;
-            case NCI_RF_PROTOCOL_ISO_DEP:
-                iface = NCI_RF_INTERFACE_ISO_DEP;
-                break;
-            default:
-                control_write(param->client,
-                              "KO: invalid remote-endpoint protocol '%d'\n",
-                              param->re->rfproto);
-                return -1;
-        }
-
-        nfc->active_rf = nfc_find_rf_by_rf_interface(nfc, iface);
+        // Auto select active rf interface based on remote-endpoint protocol and mode.
+        nfc->active_rf = nfc_find_rf_by_protocol_and_mode(nfc,
+                                                          param->re->rfproto,
+                                                          param->re->mode);
         if (!nfc->active_rf) {
             control_write(param->client, "KO: no active rf interface\r\n");
             return -1;
@@ -4035,8 +4016,6 @@ nfc_rf_intf_activated_ntf_cb(void* data,
     } else {
         nfc->active_rf = nfc->rf + param->rf;
     }
-
-    nfc_set_rf_mode_by_protocol(nfc->active_rf, param->re->rfproto);
 
     res = nfc_create_rf_intf_activated_ntf(param->re, nfc, ntf);
     if (res < 0) {
