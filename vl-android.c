@@ -4010,6 +4010,9 @@ int main(int argc, char **argv, char **envp)
     if (nb_net_clients == 0) {
         /* if no clients, we use a default config */
         net_clients[nb_net_clients++] = "nic";
+
+        // Add another eth interface for testing.
+        net_clients[nb_net_clients++] = "nic";
 #ifdef CONFIG_SLIRP
         net_clients[nb_net_clients++] = "user";
 #endif
@@ -4053,6 +4056,9 @@ int main(int argc, char **argv, char **envp)
             snprintf(buf, sizeof(buf), " android.ifrename=eth%d:wlan%s",
                      index, (nd->name + 5));
             stralloc_add_str(kernel_params, buf);
+        } else if (!nd->name) {
+          // Case of adding ethernet interface.
+          continue;
         }
     }
     net_client_check();
