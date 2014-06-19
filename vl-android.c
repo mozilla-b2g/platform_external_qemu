@@ -3988,6 +3988,8 @@ int main(int argc, char **argv, char **envp)
 #ifdef CONFIG_SLIRP
         net_clients[nb_net_clients++] = "user";
 #endif
+        // Add another ethernet interface for testing.
+        net_clients[nb_net_clients++] = "nic";
 
         if (amodem_num_devices) {
             i = MAX_NET_CLIENTS - nb_net_clients;
@@ -4018,6 +4020,10 @@ int main(int argc, char **argv, char **envp)
         }
 
         nd = &nd_table[index];
+        if (!nd->name) {
+          continue;
+        }
+
         if (!strncmp(nd->name, "rmnet.", 6)) {
             char buf[32];
             snprintf(buf, sizeof(buf), " android.ifrename=eth%d:rmnet%s",
