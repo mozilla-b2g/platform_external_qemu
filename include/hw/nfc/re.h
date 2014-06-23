@@ -89,7 +89,7 @@ struct nfc_re {
     }
 
 /* predefined NFC Remote Endpoints */
-extern struct nfc_re nfc_res[5];
+extern struct nfc_re nfc_res[6];
 
 struct nfc_re*
 nfc_get_re_by_id(uint8_t id);

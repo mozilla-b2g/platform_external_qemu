@@ -127,6 +127,68 @@ struct t3t_check_response {
     uint8_t data[];
 } __attribute__((packed));
 
+enum t4t_file_select{
+    NONE,
+    CC_SELECT,
+    NDEF_SELECT
+};
+
+struct t4t_app_sel_command {
+    uint8_t cla;
+    uint8_t ins;
+    uint8_t p1;
+    uint8_t p2;
+    uint8_t lc;
+    uint8_t data[7];
+    uint8_t le;
+} __attribute__((packed));
+
+struct t4t_app_sel_response {
+    uint8_t sw1;
+    uint8_t sw2;
+} __attribute__((packed));
+
+struct t4t_cc_sel_command {
+    uint8_t cla;
+    uint8_t ins;
+    uint8_t p1;
+    uint8_t p2;
+    uint8_t lc;
+    uint8_t data[2];
+} __attribute__((packed));
+
+struct t4t_cc_sel_response {
+    uint8_t sw1;
+    uint8_t sw2;
+} __attribute__((packed));
+
+struct t4t_ndef_sel_command {
+    uint8_t cla;
+    uint8_t ins;
+    uint8_t p1;
+    uint8_t p2;
+    uint8_t lc;
+    uint8_t data[2];
+} __attribute__((packed));
+
+struct t4t_ndef_sel_response {
+    uint8_t sw1;
+    uint8_t sw2;
+} __attribute__((packed));
+
+struct t4t_rb_command {
+    uint8_t cla;
+    uint8_t ins;
+    uint8_t p1;
+    uint8_t p2;
+    uint8_t le;
+} __attribute__((packed));
+
+struct t4t_rb_response {
+    uint8_t data[0];
+    uint8_t data_tail[];
+} __attribute__((packed));
+
 union command_packet {
     struct t1t_common_hdr t1t;
     struct t2t_common_hdr t2t;
@@ -136,6 +198,10 @@ union command_packet {
     struct t1t_rid_command rid_cmd;
     struct t2t_read_command read_cmd;
     struct t3t_check_command check_cmd;
+    struct t4t_app_sel_command app_sel_cmd;
+    struct t4t_cc_sel_command cc_sel_cmd;
+    struct t4t_ndef_sel_command ndef_sel_cmd;
+    struct t4t_rb_command rb_cmd;
 };
 
 union response_packet {
@@ -143,6 +209,10 @@ union response_packet {
     struct t1t_rid_response rid_rsp;
     struct t2t_read_response read_rsp;
     struct t3t_check_response check_rsp;
+    struct t4t_app_sel_response app_sel_rsp;
+    struct t4t_cc_sel_response cc_sel_rsp;
+    struct t4t_ndef_sel_response ndef_sel_rsp;
+    struct t4t_rb_response rb_rsp;
 };
 
 /* [Type 1 Tag Operation Specification 2.1/2.2]
@@ -226,12 +296,26 @@ union nfc_t3t {
     struct nfc_t3t_format format;
 };
 
+/**
+ * There is no specific size defined in T3T spec.
+ * CC size is defined in [T4TOP4] Table 5.
+ */
+struct nfc_t4t_format {
+    uint8_t cc[15];
+    uint8_t data[1024];
+} __attribute__((packed));
+
+union nfc_t4t {
+    struct nfc_t4t_format format;
+};
+
 struct nfc_tag {
     enum nfc_tag_type type;
     union {
         union nfc_t1t t1;
         union nfc_t2t t2;
         union nfc_t3t t3;
+        union nfc_t4t t4;
     }t;
 };
 
@@ -264,7 +348,13 @@ struct nfc_tag {
         .t.t3.format.cs = cs_, \
     }
 
-extern struct nfc_tag nfc_tags[3];
+#define INIT_NFC_T4T(tag_, cc_) \
+    tag_ = { \
+        .type = T4T, \
+        .t.t4.format.cc = cc_, \
+    }
+
+extern struct nfc_tag nfc_tags[4];
 
 int
 nfc_tag_set_data(struct nfc_tag* tag, const uint8_t* ndef_msg, ssize_t len);
@@ -279,5 +369,9 @@ process_t2t(struct nfc_re* re, const union command_packet* cmd,
 
 size_t
 process_t3t(struct nfc_re* re, const union command_packet* cmd,
+            size_t len, uint8_t* consumed, union response_packet* rsp);
+
+size_t
+process_t4t(struct nfc_re* re, const union command_packet* cmd,
             size_t len, uint8_t* consumed, union response_packet* rsp);
 #endif

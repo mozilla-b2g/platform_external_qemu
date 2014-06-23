@@ -44,13 +44,34 @@ static const uint8_t t1t_cc[4] = { 0xE1, 0x10, 0x0E, 0x00 };
 #define T3T_LN { 0x00, 0x00, 0x00 }       // Actual size of the stored NDEF data in bytes
 #define T3T_CS { 0x00, 0x23 }             // Checksum: Byte0 + Byte1 + ... + Byte 13
 
+/* [Type 4 Tag Operation Specification] */
+static enum t4t_file_select t4t_file_sel = NONE;
+
+/* [T4TOP] Table5 */
+#define T4T_CC { 0x00, 0x0f, 0x20, 0x00, 0x3b, 0x00, 0x34, \
+                 0x04, 0x06, 0xE1, 0x04, 0x04, 0x00, 0x00, 0x00 }
+
+/* [T4TOP] Table 10 */
+static const uint8_t t4t_app_apdu[13] = { 0x00, 0xa4, 0x04, 0x00, 0x07, 0xd2, 0x76,
+                                          0x00, 0x00, 0x85, 0x01, 0x01, 0x00 };
+
+/* [T4TOP] Table 13 */
+static const uint8_t t4t_cc_apdu[7] = { 0x00, 0xa4, 0x00, 0x0c, 0x02, 0xe1, 0x03 };
+
+/* [T4TOP] Table 16 */
+static const uint8_t t4t_rb_apdu[2] = { 0x00, 0xb0 };
+
+/* [T4TOP] Table 19 */
+static const uint8_t t4t_ndef_apdu[5] = { 0x00, 0xa4, 0x00, 0x0c, 0x02 };
+
 static uint8_t NDEF_MESSAGE_TLV = 0x03;
 static uint8_t NDEF_TERMINATOR_TLV = 0xFE;
 
-struct nfc_tag nfc_tags[3] = {
+struct nfc_tag nfc_tags[4] = {
    INIT_NFC_T1T([0], T1T_UID, T1T_RES),
    INIT_NFC_T2T([1], T2T_INTERNAL, T2T_LOCK, T2T_CC),
-   INIT_NFC_T3T([2], T3T_V, T3T_R, T3T_W, T3T_NB, T3T_U, T3T_WF, T3T_RW, T3T_LN, T3T_CS)
+   INIT_NFC_T3T([2], T3T_V, T3T_R, T3T_W, T3T_NB, T3T_U, T3T_WF, T3T_RW, T3T_LN, T3T_CS),
+   INIT_NFC_T4T([3], T4T_CC)
 };
 
 static void
@@ -127,6 +148,19 @@ set_t3t_data(struct nfc_tag* tag, const uint8_t* ndef_msg, ssize_t len)
     memcpy(tag->t.t3.format.data , ndef_msg, len);
 }
 
+static void
+set_t4t_data(struct nfc_tag* tag, const uint8_t* ndef_msg, ssize_t len)
+{
+    assert(tag);
+    assert(ndef_msg);
+    assert(len + 2 < sizeof(tag->t.t4.format.data));
+
+    tag->t.t4.format.data[0] = (len >> 8) & 0xff;
+    tag->t.t4.format.data[1] = len & 0xff;
+
+    memcpy(tag->t.t4.format.data + 2 , ndef_msg, len);
+}
+
 int
 nfc_tag_set_data(struct nfc_tag* tag, const uint8_t* ndef_msg, ssize_t len)
 {
@@ -140,38 +174,15 @@ nfc_tag_set_data(struct nfc_tag* tag, const uint8_t* ndef_msg, ssize_t len)
         case T3T:
             set_t3t_data(tag, ndef_msg, len);
             break;
+        case T4T:
+            set_t4t_data(tag, ndef_msg, len);
+            break;
         default:
             assert(0);
             return -1;
     }
 
     return 0;
-}
-
-static size_t
-process_t2t_read(const struct t2t_read_command* cmd, uint8_t* consumed,
-                 uint8_t* mem, struct t2t_read_response* rsp)
-{
-    size_t i;
-    size_t offset;
-    size_t max_read;
-
-    assert(cmd);
-    assert(consumed);
-    assert(mem);
-    assert(rsp);
-
-    offset = cmd->bno * 4;
-    max_read = sizeof(rsp->payload);
-
-    for (i = 0; i < max_read && offset < T2T_STATIC_MEMORY_SIZE; i++, offset++) {
-        rsp->payload[i] = mem[offset];
-    }
-    rsp->status = 0;
-
-    *consumed = sizeof(struct t2t_read_command);
-
-    return sizeof(struct t2t_read_response);
 }
 
 static size_t
@@ -246,6 +257,32 @@ process_t1t(struct nfc_re* re, const union command_packet* cmd,
     }
 
     return len;
+}
+
+static size_t
+process_t2t_read(const struct t2t_read_command* cmd, uint8_t* consumed,
+                 uint8_t* mem, struct t2t_read_response* rsp)
+{
+    size_t i;
+    size_t offset;
+    size_t max_read;
+
+    assert(cmd);
+    assert(consumed);
+    assert(mem);
+    assert(rsp);
+
+    offset = cmd->bno * 4;
+    max_read = sizeof(rsp->payload);
+
+    for (i = 0; i < max_read && offset < T2T_STATIC_MEMORY_SIZE; i++, offset++) {
+        rsp->payload[i] = mem[offset];
+    }
+    rsp->status = 0;
+
+    *consumed = sizeof(struct t2t_read_command);
+
+    return sizeof(struct t2t_read_response);
 }
 
 size_t
@@ -333,6 +370,123 @@ process_t3t(struct nfc_re* re, const union command_packet* cmd,
         default:
             assert(0);
             break;
+    }
+
+    return len;
+}
+
+static size_t
+process_t4t_app_select(const struct t4t_app_sel_command* cmd, uint8_t* consumed,
+                       struct t4t_app_sel_response* rsp)
+{
+    assert(consumed);
+    assert(rsp);
+
+    rsp->sw1 = 0x90;
+    rsp->sw2 = 0x00;
+
+    *consumed = sizeof(struct t4t_app_sel_command);
+
+    return sizeof(struct t4t_app_sel_response);
+}
+
+static size_t
+process_t4t_cc_select(const struct t4t_cc_sel_command* cmd, uint8_t* consumed,
+                      struct t4t_cc_sel_response* rsp)
+{
+    assert(consumed);
+    assert(rsp);
+
+    t4t_file_sel = CC_SELECT;
+
+    // Assume capbility container always exists.
+    rsp->sw1 = 0x90;
+    rsp->sw2 = 0x00;
+
+    *consumed = sizeof(struct t4t_cc_sel_command);
+
+    return sizeof(struct t4t_cc_sel_response);
+}
+
+static size_t
+process_t4t_read_binary(const struct t4t_rb_command* cmd, uint8_t* consumed,
+                        const struct nfc_t4t_format* mem, struct t4t_rb_response* rsp)
+{
+    uint16_t offset;
+
+    assert(cmd);
+    assert(consumed);
+    assert(mem);
+    assert(rsp);
+
+    offset = (cmd->p1 & 0xff) << 8 | (cmd->p2 & 0xff);
+
+    switch (t4t_file_sel) {
+        case CC_SELECT:
+            assert(cmd->le + offset <= sizeof(mem->cc));
+            memcpy(rsp->data, mem->cc + offset, cmd->le);
+            break;
+        case NDEF_SELECT:
+            assert(cmd->le + offset <= sizeof(mem->data));
+            memcpy(rsp->data, mem->data + offset, cmd->le);
+            break;
+        default:
+            assert(0);
+            break;
+    }
+
+    *(rsp->data + cmd->le) = 0x90;
+    *(rsp->data + cmd->le + 1) = 0x00;
+
+    *consumed = sizeof(struct t4t_rb_command);
+
+    return cmd->le + 2;
+}
+
+static size_t
+process_t4t_ndef_select(const struct t4t_ndef_sel_command* cmd, uint8_t* consumed,
+                        struct t4t_ndef_sel_response* rsp)
+{
+    assert(cmd);
+    assert(consumed);
+    assert(rsp);
+
+    if (cmd->data[0] == 0xe1 && cmd->data[1] == 0x04) {
+      t4t_file_sel = NDEF_SELECT;
+
+      rsp->sw1 = 0x90;
+      rsp->sw2 = 0x00;
+    } else {
+      rsp->sw1 = 0x6a;
+      rsp->sw2 = 0x82;
+    }
+
+    *consumed = sizeof(struct t4t_ndef_sel_command);
+
+    return sizeof(struct t4t_ndef_sel_response);
+}
+
+size_t
+process_t4t(struct nfc_re* re, const union command_packet* cmd,
+            size_t len, uint8_t* consumed, union response_packet* rsp)
+{
+    assert(cmd);
+    assert(rsp);
+
+    if (memcmp(&cmd->app_sel_cmd, t4t_app_apdu, sizeof(t4t_app_apdu)) == 0) {
+        len = process_t4t_app_select(&cmd->app_sel_cmd, consumed,
+                                     &rsp->app_sel_rsp);
+    } else if (memcmp(&cmd->cc_sel_cmd, t4t_cc_apdu, sizeof(t4t_cc_apdu)) == 0) {
+        len = process_t4t_cc_select(&cmd->cc_sel_cmd, consumed,
+                                    &rsp->cc_sel_rsp);
+    } else if (memcmp(&cmd->rb_cmd, t4t_rb_apdu, sizeof(t4t_rb_apdu)) == 0) {
+        len = process_t4t_read_binary(&cmd->rb_cmd, consumed,
+                                      &re->tag->t.t4.format, &rsp->cc_sel_rsp);
+    } else if (memcmp(t4t_ndef_apdu, t4t_ndef_apdu, sizeof(t4t_ndef_apdu)) == 0) {
+        len = process_t4t_ndef_select(&cmd->ndef_sel_cmd, consumed,
+                                      &rsp->ndef_sel_rsp);
+    } else {
+        assert(0);
     }
 
     return len;
