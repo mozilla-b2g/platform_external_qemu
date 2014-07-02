@@ -465,14 +465,16 @@ enum nci_rf_deactivation_type {
     NCI_RF_DEACT_IDLE_MODE = 0x00,
     NCI_RF_DEACT_SLEEP_MODE = 0x01,
     NCI_RF_DEACT_SLEEP_AF_MODE = 0x02,
-    NCI_RF_DEACT_DISCOVERY = 0x03
+    NCI_RF_DEACT_DISCOVERY = 0x03,
+    NUMBER_OF_NCI_RF_DEACT_TYPE
 };
 
 enum nci_rf_deactivation_reason {
     NCI_RF_DEACT_DH_REQUEST = 0x00,
     NCI_RF_DEACT_ENDPOINT_REQUEST = 0x01,
     NCI_RF_DEACT_RF_LINK_LOSS = 0x02,
-    NCI_RF_DEACT_NFC_B_BAD_AFI = 0x03
+    NCI_RF_DEACT_NFC_B_BAD_AFI = 0x03,
+    NUMBER_OF_NCI_RF_DEACT_REASON
 };
 
 struct nci_rf_deactivate_cmd {
