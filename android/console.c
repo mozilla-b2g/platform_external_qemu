@@ -3506,6 +3506,83 @@ static const CommandDefRec  modem_commands[] =
 /********************************************************************************************/
 /********************************************************************************************/
 /*****                                                                                 ******/
+/*****                             S I M   C O M M A N D S                             ******/
+/*****                                                                                 ******/
+/********************************************************************************************/
+/********************************************************************************************/
+
+static void
+help_sim_status( ControlClient  client )
+{
+    int  nn;
+    control_write( client,
+            "'sim status': allows you to display the current status of sim.\r\n"
+            "'sim status <status>': allows you to change the status of sim.\r\n"
+            "valid values for <status> are the following:\r\n\r\n" );
+
+    for (nn = 0; ; nn++) {
+        const char* name = android_get_sim_status_name(nn);
+
+        if (!name) {
+            break;
+        }
+
+        control_write(client, "  %s\r\n", name);
+    }
+}
+
+static int
+do_sim_status_query( ControlClient client, char* args )
+{
+    ASimCard sim = amodem_get_sim(client->modem);
+    ASimStatus status = asimcard_get_status(sim);
+
+    control_write(client, "%s\r\n", android_get_sim_status_name(status));
+
+    return 0;
+}
+
+static int
+do_sim_status( ControlClient client, char* args )
+{
+    char* pnext  = NULL;
+    ASimCard sim;
+    ASimStatus status;
+
+    if (!client->modem) {
+        control_write(client, "KO: modem emulation not running\r\n");
+        return -1;
+    }
+
+    if (!args) {
+        return do_sim_status_query(client, args);
+    }
+
+    // Parse <status>
+    status = android_parse_sim_status(args);
+    if (status == A_SIM_STATUS_UNKNOWN) {
+        control_write(client, "KO: bad sim status name, try 'help sim status' for list of valid values\r\n");
+        return -1;
+    }
+
+    sim = amodem_get_sim(client->modem);
+    asimcard_set_status(sim, status);
+
+    return 0;
+}
+
+static const CommandDefRec  sim_commands[] =
+{
+    { "status", "query/set sim card status",
+      NULL, help_sim_status,
+      do_sim_status, NULL },
+
+    { NULL, NULL, NULL, NULL, NULL, NULL }
+};
+
+/********************************************************************************************/
+/********************************************************************************************/
+/*****                                                                                 ******/
 /*****                      B L U E T O O T H   C O M M A N D S                        ******/
 /*****                                                                                 ******/
 /********************************************************************************************/
@@ -4197,6 +4274,10 @@ static const CommandDefRec   main_commands[] =
     { "modem", "Modem related commands",
       "allows you to modify/retrieve modem info\r\n", NULL,
       NULL, modem_commands },
+
+    { "sim", "Sim related commands",
+      "allows you to modify/retrieve sim info\r\n", NULL,
+      NULL, sim_commands },
 
     { "bt", "Bluetooth related commands",
       "allows you to retrieve BT status or add/remove remote devices\r\n", NULL,

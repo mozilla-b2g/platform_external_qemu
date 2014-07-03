@@ -28,8 +28,12 @@ typedef enum {
     A_SIM_STATUS_READY,
     A_SIM_STATUS_PIN,
     A_SIM_STATUS_PUK,
-    A_SIM_STATUS_NETWORK_PERSONALIZATION
+    A_SIM_STATUS_NETWORK_PERSONALIZATION,
+    A_SIM_STATUS_UNKNOWN,
 } ASimStatus;
+
+extern ASimStatus   android_parse_sim_status( const char* status );
+extern const char*  android_get_sim_status_name( ASimStatus status );
 
 extern ASimStatus  asimcard_get_status( ASimCard  sim );
 extern void        asimcard_set_status( ASimCard  sim, ASimStatus  status );

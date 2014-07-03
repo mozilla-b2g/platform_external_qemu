@@ -57,6 +57,19 @@
 // sw1='69', sw2='85', Conditions of use not satisfied.
 #define  SIM_RESPONSE_CONDITION_NOT_SATISFIED "+CRSM: 105,133"
 
+static const struct {
+    const char* name;
+    ASimStatus status;
+} SIM_STATUS[] = {
+    { "absent",                  A_SIM_STATUS_ABSENT },
+    { "not_ready",               A_SIM_STATUS_NOT_READY },
+    { "ready",                   A_SIM_STATUS_READY },
+    { "pin",                     A_SIM_STATUS_PIN },
+    { "puk",                     A_SIM_STATUS_PUK },
+    { "network_personalization", A_SIM_STATUS_NETWORK_PERSONALIZATION },
+    { NULL,                      A_SIM_STATUS_UNKNOWN }
+};
+
 typedef union SimFileRec_ SimFileRec, *SimFile;
 
 typedef struct ASimCardRec_ {
@@ -78,6 +91,34 @@ typedef struct ASimCardRec_ {
 static int asimcard_ef_init( ASimCard sim );
 static void asimcard_ef_remove( ASimCard sim, SimFile ef );
 static ASimCardRec  _s_card[MAX_GSM_DEVICES];
+
+ASimStatus
+android_parse_sim_status( const char* status )
+{
+    int nn;
+
+    for (nn = 0; SIM_STATUS[nn].name; nn++) {
+        if (!strcmp(status, SIM_STATUS[nn].name)) {
+            return SIM_STATUS[nn].status;
+        }
+    }
+
+    return A_SIM_STATUS_UNKNOWN;
+}
+
+const char*
+android_get_sim_status_name( ASimStatus status )
+{
+    int nn;
+
+    for (nn = 0; SIM_STATUS[nn].name; nn++) {
+        if (SIM_STATUS[nn].status == status) {
+            return SIM_STATUS[nn].name;
+        }
+    }
+
+    return NULL;
+}
 
 ASimCard
 asimcard_create(int port, int instance_id)
@@ -1049,4 +1090,3 @@ asimcard_io( ASimCard  sim, const char*  cmd )
 
     return SIM_RESPONSE_INCORRECT_PARAMETERS;
 }
-
