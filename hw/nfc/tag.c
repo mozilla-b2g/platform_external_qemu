@@ -81,7 +81,7 @@ set_t1t_data(struct nfc_tag* tag, const uint8_t* ndef_msg, ssize_t len)
     uint8_t* data;
 
     assert(tag);
-    assert(ndef_msg);
+    assert(ndef_msg || !len);
     assert(len < sizeof(tag->t.t1.format.data));
 
     data = tag->t.t1.format.data;
@@ -107,7 +107,7 @@ set_t2t_data(struct nfc_tag* tag, const uint8_t* ndef_msg, ssize_t len)
     uint8_t* data;
 
     assert(tag);
-    assert(ndef_msg);
+    assert(ndef_msg || !len);
     assert(len < sizeof(tag->t.t2.format.data));
 
     data = tag->t.t2.format.data;
@@ -129,7 +129,7 @@ set_t3t_data(struct nfc_tag* tag, const uint8_t* ndef_msg, ssize_t len)
     uint8_t i;
 
     assert(tag);
-    assert(ndef_msg);
+    assert(ndef_msg || !len);
     assert(len < sizeof(tag->t.t3.format.data));
 
     /* Re-calculate LN & Checksum */
@@ -152,7 +152,7 @@ static void
 set_t4t_data(struct nfc_tag* tag, const uint8_t* ndef_msg, ssize_t len)
 {
     assert(tag);
-    assert(ndef_msg);
+    assert(ndef_msg || !len);
     assert(len + 2 < sizeof(tag->t.t4.format.data));
 
     tag->t.t4.format.data[0] = (len >> 8) & 0xff;
