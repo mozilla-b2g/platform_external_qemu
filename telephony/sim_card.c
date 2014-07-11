@@ -839,6 +839,15 @@ asimcard_ef_init( ASimCard card )
     asimcard_ef_update_linear(ef, 0xff, "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
     asimcard_ef_add(card, ef);
 
+    // Group Identifier Level 1(6F3E):
+    //   File size: 0x02
+    //   GID1: 5a4d
+    // @see 3GPP TS 51.011 section 10.3.9 EFgid1 (Group Identifier Level 1)
+    // @see 3GPP TS 31.102 section 4.2.10 EFgid1 (Group Identifier Level 1)
+    ef = asimcard_ef_new_dedicated(0x6f3e, SIM_FILE_READ_ONLY | SIM_FILE_NEED_PIN);
+    asimcard_ef_update_dedicated(ef, "5a4d");
+    asimcard_ef_add(card, ef);
+
     // Service Dialling Numbers(6F49)
     //   Record size: 0x20
     //   Record count: 0xff
