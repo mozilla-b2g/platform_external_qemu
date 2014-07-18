@@ -3637,7 +3637,7 @@ nfc_recv_process_ndef_cb(void* data, size_t len, const struct ndef_rec* ndef)
                       " \"id\": \"%.*s\","
                       " \"payload\": \"%.*s\"}",
                       ndef->flags & NDEF_TNF_BITS,
-                      tlen, base64[0], plen, base64[1], ilen, base64[2]);
+                      tlen, base64[0], ilen, base64[1], plen, base64[2]);
 
         /* advance record */
         reclen = ndef_rec_len(ndef);
