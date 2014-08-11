@@ -3105,6 +3105,11 @@ handleDial( const char*  cmd, AModem  modem )
     len  = strlen(cmd);
     if (len > 0 && cmd[len-1] == ';')
         len--;
+
+    /* clir */
+    if (len > 0 && (cmd[len-1] == 'I' || cmd[len-1] == 'i'))
+        len--;
+
     if (len >= sizeof(call->number))
         len = sizeof(call->number)-1;
 
