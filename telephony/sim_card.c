@@ -627,10 +627,10 @@ asimcard_ef_init( ASimCard card )
 
     // SIM Service Table(6F38):
     //   File size: 0x0f
-    //   Enabled: 1..4, 7, 9..19, 25..27, 29, 30, 38, 51..56
+    //   Enabled: 1..4, 7, 9..19, 25..27, 29, 30, 38, 39, 51..56
     // @see 3GPP TS 51.011 section 10.3.7 EFsst (SIM Service Table)
     ef = asimcard_ef_new_dedicated(0x6f38, SIM_FILE_READ_ONLY | SIM_FILE_NEED_PIN);
-    asimcard_ef_update_dedicated(ef, "ff30ffff3f003f0f000c0000f0ff00");
+    asimcard_ef_update_dedicated(ef, "ff30ffff3f003f0f003c0000f0ff00");
     asimcard_ef_add(card, ef);
 
     // Mailbox Identifier(6FC9):
@@ -672,21 +672,78 @@ asimcard_ef_init( ASimCard card )
     asimcard_ef_update_dedicated(ef, "00000003");
     asimcard_ef_add(card, ef);
 
+    // Image Instance Data Files(4FXX):
+    // @see 3GPP TS 51.011 section 10.6.1.2, Image Instance Data Files
+    // @see 3GPP TS 31.102 section 4.6.1.2, EFiidf (Image Instance Data Files)
+    //   File size: 0x1f
+    //   Image Instance Data (4f02):
+    //     Image width:                 08
+    //     Image length:                08
+    //     Bits per raster image point: 02
+    //     Number of CLUT entries:      03
+    //     Location of CLUT:            0016
+    //     Image body:                  see below
+    ef = asimcard_ef_new_dedicated(0x4f02, SIM_FILE_READ_ONLY | SIM_FILE_NEED_PIN);
+    asimcard_ef_update_dedicated(ef, "080802030016AAAA800285428142814281528002AAAAFF000000FF000000FF");
+    asimcard_ef_add(card, ef);
+    //   File size: 0x0a
+    //   Image Instance Data (4f04):
+    //     Image width:                 08
+    //     Image length:                08
+    //     Image body:                  see below
+    ef = asimcard_ef_new_dedicated(0x4f04, SIM_FILE_READ_ONLY | SIM_FILE_NEED_PIN);
+    asimcard_ef_update_dedicated(ef, "0808FF03A59999A5C3FF");
+    asimcard_ef_add(card, ef);
+
     // EF-IMG (4F20) : Each record of this EF identifies instances of one particular graphical image,
     //                 which graphical image is identified by this EF's record number.
     //   Record size: 0x14
-    //   Record count: 0x05
-    //   Number of image instance specified by this record:               01
-    //   Image instance width 8 points (raster image points):             08
-    //   Image instance heigh 8 points  (raster image points):            08
-    //   Color image coding scheme:                                       21
-    //   Image identifier id of the EF where is store the image instance: 4F02
-    //   Offset of the image instance in the 4F02 EF:                     0000
-    //   Length of image instance data:                                   0016
     // @see 3GPP TS 51.011 section 10.6.1.1, EF-img
-    ef = asimcard_ef_new_linear(0x4f20, 0x00, 0x14);
-    asimcard_ef_update_linear(ef, 0x01, "010808214f0200000016ffffffffffffffffffff");
-    asimcard_ef_update_linear(ef, 0x05, "ffffffffffffffffffffffffffffffffffffffff");
+    ef = asimcard_ef_new_linear(0x4f20, SIM_FILE_READ_ONLY | SIM_FILE_NEED_PIN, 0x14);
+    //   Record number: 0x01
+    //   Number of image instance specified by this record:                 01
+    //   Image instance width (raster image points):                        08
+    //   Image instance heigh (raster image points):                        08
+    //   Color image coding scheme:                                         11
+    //   Image identifier id of the EF where is store the image instance:   4F04
+    //   Offset of the image instance in the 4F04 EF:                       0000
+    //   Length of image instance data:                                     000A
+    asimcard_ef_update_linear(ef, 0x01, "010808114f040000000Affffffffffffffffffff");
+    //   Record number: 0x03
+    //   Number of image instance specified by this record:                 01
+    //   Image instance width (raster image points):                        08
+    //   Image instance heigh (raster image points):                        08
+    //   Color image coding scheme:                                         21
+    //   Image identifier id of the EF where is store the image instance:   4F02
+    //   Offset of the image instance in the 4F02 EF:                       0000
+    //   Length of image instance data:                                     0016
+    asimcard_ef_update_linear(ef, 0x03, "010808214f0200000016ffffffffffffffffffff");
+    //   Record number: 0x05
+    //   Number of image instance specified by this record:                 01
+    //   Image instance width (raster image points):                        08
+    //   Image instance heigh (raster image points):                        08
+    //   Color image coding scheme:                                         22
+    //   Image identifier id of the EF where is store the image instance:   4F02
+    //   Offset of the image instance in the 4F02 EF:                       0000
+    //   Length of image instance data:                                     0016
+    asimcard_ef_update_linear(ef, 0x05, "010808224f0200000016ffffffffffffffffffff");
+    //   Record number: 0x07
+    //   Number of image instance specified by this record:                 02
+    //   Descriptor of image instace 1:
+    //     Image instance width (raster image points):                      08
+    //     Image instance heigh (raster image points):                      08
+    //     Color image coding scheme:                                       21
+    //     Image identifier id of the EF where is store the image instance: 4F02
+    //     Offset of the image instance in the 4F02 EF:                     0000
+    //     Length of image instance data:                                   0016
+    //   Descriptor of image instace 2:
+    //     Image instance width (raster image points):                      08
+    //     Image instance heigh (raster image points):                      08
+    //     Color image coding scheme:                                       22
+    //     Image identifier id of the EF where is store the image instance: 4F02
+    //     Offset of the image instance in the 4F02 EF:                     0000
+    //     Length of image instance data:                                   0016
+    asimcard_ef_update_linear(ef, 0x07, "020808214f02000000160808224f0200000016ff");
     asimcard_ef_add(card, ef);
 
     // CPHS Information(6F16):
