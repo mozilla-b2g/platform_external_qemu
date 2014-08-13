@@ -16,6 +16,8 @@
 
 #define  A_SIM_PIN_RETRIES 3
 #define  A_SIM_PUK_RETRIES 6
+#define  A_SIM_PIN2_RETRIES A_SIM_PIN_RETRIES
+#define  A_SIM_PUK2_RETRIES A_SIM_PUK_RETRIES
 
 typedef struct ASimCardRec_*    ASimCard;
 
@@ -28,6 +30,8 @@ typedef enum {
     A_SIM_STATUS_READY,
     A_SIM_STATUS_PIN,
     A_SIM_STATUS_PUK,
+    A_SIM_STATUS_PIN2,
+    A_SIM_STATUS_PUK2,
     A_SIM_STATUS_NETWORK_PERSONALIZATION
 } ASimStatus;
 
@@ -44,6 +48,17 @@ extern int         asimcard_check_puk( ASimCard  sim, const char*  puk, const ch
 
 extern int         asimcard_get_pin_retries( ASimCard  sim );
 extern int         asimcard_get_puk_retries( ASimCard  sim );
+
+extern const char*  asimcard_get_pin2( ASimCard  sim );
+extern const char*  asimcard_get_puk2( ASimCard  sim );
+extern void         asimcard_set_pin2( ASimCard  sim, const char*  pin2 );
+extern void         asimcard_set_puk2( ASimCard  sim, const char*  puk2 );
+
+extern int         asimcard_check_pin2( ASimCard  sim, const char*  pin2 );
+extern int         asimcard_check_puk2( ASimCard  sim, const char*  puk2, const char*  pin2 );
+
+extern int         asimcard_get_pin2_retries( ASimCard  sim );
+extern int         asimcard_get_puk2_retries( ASimCard  sim );
 
 /* Restricted SIM Access command, as defined by 8.18 of 3GPP 27.007 */
 typedef enum {
