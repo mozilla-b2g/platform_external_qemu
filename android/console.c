@@ -4310,6 +4310,19 @@ do_nfc_tag( ControlClient client, char*  args )
         if (nfc_tag_set_data(re->tag, NULL, 0) < 0) {
             return -1;
         }
+    } else if (!strcmp(p, "format")) {
+        unsigned long i;
+        struct nfc_re* re;
+
+        /* read remote-endpoint index */
+        if (parse_re_index(client, &args, ARRAY_SIZE(nfc_res), &i) < 0) {
+            return -1;
+        }
+        re = nfc_res + i;
+
+        if (nfc_tag_format(re->tag) < 0) {
+            return -1;
+        }
     }
 
     return 0;
@@ -4340,7 +4353,8 @@ static const CommandDefRec  nfc_commands[] =
 
     { "tag", "data handling",
       "'nfc tag set <i> <[<flags>,<tnf>,<type>,,<payload>]>' set NDEF data to Remote Endpoint <i>\r\n"
-      "'nfc tag clear <i>' clear tag data of Remote Endpoint <i>\r\n",
+      "'nfc tag clear <i>' clear tag data of Remote Endpoint <i>\r\n"
+      "'nfc tag format <i>' format tag data of Remote Endpoint <i>\r\n",
       NULL,
       do_nfc_tag, NULL },
 

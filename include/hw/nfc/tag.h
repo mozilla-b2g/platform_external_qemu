@@ -354,10 +354,62 @@ struct nfc_tag {
         .t.t4.format.cc = cc_, \
     }
 
+#define FORMAT_NFC_T1T(tag_, uid_, res_) \
+    { \
+    static const uint8_t uid[] = uid_; \
+    static const uint8_t res[] = res_; \
+    tag_->type = T1T; \
+    memset(tag_->t.t1.format.data, 0, sizeof(tag_->t.t1.format.data)); \
+    memcpy(tag_->t.t1.format.uid, uid, sizeof(uid)); \
+    memcpy(tag_->t.t1.format.res, res, sizeof(res)); \
+    }
+
+#define FORMAT_NFC_T2T(tag_, itl_, lock_, cc_) \
+    { \
+    static const uint8_t itl[] = itl_; \
+    static const uint8_t lock[] = lock_; \
+    static const uint8_t cc[] = cc_; \
+    tag_->type = T2T; \
+    memset(tag_->t.t2.format.data, 0, sizeof(tag_->t.t2.format.data)); \
+    memcpy(tag_->t.t2.format.internal, itl, sizeof(itl)); \
+    memcpy(tag_->t.t2.format.lock, lock, sizeof(lock));   \
+    memcpy(tag_->t.t2.format.cc, cc, sizeof(cc)); \
+    }
+
+#define FORMAT_NFC_T3T(tag_, v_, r_, w_, nb_, u_, wf_, rw_, ln_, cs_) \
+    { \
+    static const uint8_t nb[] = nb_; \
+    static const uint8_t u[] = u_; \
+    static const uint8_t ln[] = ln_; \
+    static const uint8_t cs[] = cs_; \
+    tag_->type = T3T; \
+    memset(tag_->t.t3.format.data, 0, sizeof(tag_->t.t3.format.data)); \
+    tag_->t.t3.format.ver = v_; \
+    tag_->t.t3.format.nbr = r_; \
+    tag_->t.t3.format.nbw = w_; \
+    memcpy(tag_->t.t3.format.nmaxb, nb, sizeof(nb)); \
+    memcpy(tag_->t.t3.format.unused, u, sizeof(u));   \
+    tag_->t.t3.format.writef = wf_; \
+    tag_->t.t3.format.rwflag = rw_; \
+    memcpy(tag_->t.t3.format.ln, ln, sizeof(ln)); \
+    memcpy(tag_->t.t3.format.cs, cs, sizeof(cs)); \
+    }
+
+#define FORMAT_NFC_T4T(tag_, cc_) \
+    { \
+    static const uint8_t cc[] = cc_; \
+    tag_->type = T4T; \
+    memset(tag_->t.t4.format.data, 0, sizeof(tag_->t.t4.format.data)); \
+    memcpy(tag_->t.t4.format.cc, cc, sizeof(cc)); \
+    }
+
 extern struct nfc_tag nfc_tags[4];
 
 int
 nfc_tag_set_data(struct nfc_tag* tag, const uint8_t* ndef_msg, ssize_t len);
+
+int
+nfc_tag_format(struct nfc_tag* tag);
 
 size_t
 process_t1t(struct nfc_re* re, const union command_packet* cmd,

@@ -34,13 +34,13 @@ static const uint8_t t1t_cc[4] = { 0xE1, 0x10, 0x0E, 0x00 };
 #define T2T_CC { 0xe1, 0x10, 0x12, 0x00 }
 
 /* [Type 3 Tag Operation Specification] */
-#define T3T_V { 0x10 }                    // Version
-#define T3T_R { 0x04 }                    // Number of blocks can be read using one Check Command
-#define T3T_W { 0x01 }                    // Number of blocks can be written using one Update Command
+#define T3T_V 0x10                        // Version
+#define T3T_R 0x04                        // Number of blocks can be read using one Check Command
+#define T3T_W 0x01                        // Number of blocks can be written using one Update Command
 #define T3T_NB { 0x00, 0x0d }             // Maximum number of blocks available for NDEF data
 #define T3T_U { 0x00, 0x00, 0x00, 0x00 }  // Unused
-#define T3T_WF { 0x00 }                   // 00h:Writing data finished, 0Fh:Writing data in progress
-#define T3T_RW { 0x01 }                   // 00h:Read only, 01h:Read/Write available
+#define T3T_WF 0x00                       // 00h:Writing data finished, 0Fh:Writing data in progress
+#define T3T_RW 0x01                       // 00h:Read only, 01h:Read/Write available
 #define T3T_LN { 0x00, 0x00, 0x00 }       // Actual size of the stored NDEF data in bytes
 #define T3T_CS { 0x00, 0x23 }             // Checksum: Byte0 + Byte1 + ... + Byte 13
 
@@ -48,8 +48,11 @@ static const uint8_t t1t_cc[4] = { 0xE1, 0x10, 0x0E, 0x00 };
 static enum t4t_file_select t4t_file_sel = NONE;
 
 /* [T4TOP] Table5 */
-#define T4T_CC { 0x00, 0x0f, 0x20, 0x00, 0x3b, 0x00, 0x34, \
-                 0x04, 0x06, 0xE1, 0x04, 0x04, 0x00, 0x00, 0x00 }
+#define T4T_PROPRIETARY_CC { 0x00, 0x0f, 0x20, 0x00, 0x3b, 0x00, 0x34, \
+                             0x05, 0x06, 0xE1, 0x04, 0x04, 0x00, 0x00, 0x00 }
+
+#define T4T_NDEF_CC { 0x00, 0x0f, 0x20, 0x00, 0x3b, 0x00, 0x34, \
+                      0x04, 0x06, 0xE1, 0x04, 0x04, 0x00, 0x00, 0x00 }
 
 /* [T4TOP] Table 10 */
 static const uint8_t t4t_app_apdu[13] = { 0x00, 0xa4, 0x04, 0x00, 0x07, 0xd2, 0x76,
@@ -71,7 +74,7 @@ struct nfc_tag nfc_tags[4] = {
    INIT_NFC_T1T([0], T1T_UID, T1T_RES),
    INIT_NFC_T2T([1], T2T_INTERNAL, T2T_LOCK, T2T_CC),
    INIT_NFC_T3T([2], T3T_V, T3T_R, T3T_W, T3T_NB, T3T_U, T3T_WF, T3T_RW, T3T_LN, T3T_CS),
-   INIT_NFC_T4T([3], T4T_CC)
+   INIT_NFC_T4T([3], T4T_PROPRIETARY_CC)
 };
 
 static void
@@ -155,6 +158,9 @@ set_t4t_data(struct nfc_tag* tag, const uint8_t* ndef_msg, ssize_t len)
     assert(ndef_msg || !len);
     assert(len + 2 < sizeof(tag->t.t4.format.data));
 
+    uint8_t cc[] = T4T_NDEF_CC;
+    memcpy(tag->t.t4.format.cc, cc, sizeof(cc));
+
     tag->t.t4.format.data[0] = (len >> 8) & 0xff;
     tag->t.t4.format.data[1] = len & 0xff;
 
@@ -176,6 +182,30 @@ nfc_tag_set_data(struct nfc_tag* tag, const uint8_t* ndef_msg, ssize_t len)
             break;
         case T4T:
             set_t4t_data(tag, ndef_msg, len);
+            break;
+        default:
+            assert(0);
+            return -1;
+    }
+
+    return 0;
+}
+
+int
+nfc_tag_format(struct nfc_tag* tag)
+{
+    switch (tag->type) {
+        case T1T:
+            FORMAT_NFC_T1T(tag, T1T_UID, T1T_RES)
+            break;
+        case T2T:
+            FORMAT_NFC_T2T(tag, T2T_INTERNAL, T2T_LOCK, T2T_CC)
+            break;
+        case T3T:
+            FORMAT_NFC_T3T(tag, T3T_V, T3T_R, T3T_W, T3T_NB, T3T_U, T3T_WF, T3T_RW, T3T_LN, T3T_CS)
+            break;
+        case T4T:
+            FORMAT_NFC_T4T(tag, T4T_PROPRIETARY_CC)
             break;
         default:
             assert(0);
@@ -481,7 +511,7 @@ process_t4t(struct nfc_re* re, const union command_packet* cmd,
                                     &rsp->cc_sel_rsp);
     } else if (memcmp(&cmd->rb_cmd, t4t_rb_apdu, sizeof(t4t_rb_apdu)) == 0) {
         len = process_t4t_read_binary(&cmd->rb_cmd, consumed,
-                                      &re->tag->t.t4.format, &rsp->cc_sel_rsp);
+                                      &re->tag->t.t4.format, &rsp->rb_rsp);
     } else if (memcmp(t4t_ndef_apdu, t4t_ndef_apdu, sizeof(t4t_ndef_apdu)) == 0) {
         len = process_t4t_ndef_select(&cmd->ndef_sel_cmd, consumed,
                                       &rsp->ndef_sel_rsp);
