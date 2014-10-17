@@ -61,6 +61,7 @@ typedef union SimFileRec_ SimFileRec, *SimFile;
 
 typedef struct ASimCardRec_ {
     ASimStatus  status;
+    bool        pin_enabled;
     char        pin[ A_SIM_PIN_SIZE+1 ];
     char        puk[ A_SIM_PUK_SIZE+1 ];
     int         pin_retries;
@@ -88,6 +89,7 @@ asimcard_create(int port, int instance_id)
     card->puk_retries = 0;
     strncpy( card->pin, "0000", sizeof(card->pin) );
     strncpy( card->puk, "12345678", sizeof(card->puk) );
+    card->pin_enabled = false;
     card->port = port;
     card->instance_id = instance_id;
     asimcard_ef_init(card);
@@ -202,6 +204,22 @@ int
 asimcard_get_puk_retries( ASimCard sim )
 {
     return A_SIM_PUK_RETRIES - sim->puk_retries;
+}
+
+bool
+asimcard_get_pin_enabled( ASimCard sim )
+{
+    return sim->pin_enabled;
+}
+
+int
+asimcard_set_pin_enabled( ASimCard sim, bool enabled, const char* pin )
+{
+    if (asimcard_check_pin(sim, pin)) {
+        sim->pin_enabled = enabled;
+        return 1;
+    }
+    return 0;
 }
 
 typedef enum {

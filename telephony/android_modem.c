@@ -2655,6 +2655,57 @@ handleCallForwardReq( const char* cmd, AModem modem )
     }
 }
 
+static const char*
+handleFacilityLockReq( const char* cmd, AModem modem )
+{
+    char fac[64];
+    char passwd[64];
+    int mode;
+    // According to TS 27.007, the default value is 7.
+    int class = 7;
+
+    // AT+CLCK=<fac>,<mode>[,<password>[,<class>]].
+    int argc = sscanf(cmd, "+CLCK=\"%[^\"]\",%d,\"%[^\"]\",%d", fac, &mode, passwd, &class);
+    if (argc < 2) {
+        // Incorrect parameters
+        return "+CME ERROR: 50";
+    }
+
+    // Now we only support "pin" facility lock.
+    if (strcmp(fac, "SC")) {
+        // Operation not supported
+        return "+CME ERROR: 4";
+    }
+
+    // Now we only support voice service class.
+    if (!(class & 1)) {
+        // Operation not supported
+        return "+CME ERROR: 4";
+    }
+
+    switch (mode) {
+        case 0: // Unlock
+        case 1: // Lock
+            if (argc < 3) {
+                // Incorrect parameters
+                return "+CME ERROR: 50";
+            }
+
+            if (!asimcard_set_pin_enabled(modem->sim, (mode == 1), passwd)) {
+                // Incorrect password
+                return "+CME ERROR: 16";
+            }
+
+            return "OK";
+        case 2: //Query status.
+            return amodem_printf(modem, "+CLCK: %d,%d\r\n",
+                                 asimcard_get_pin_enabled(modem->sim) ? 1 : 0, 1);
+    }
+
+    // Incorrect parameters
+    return "+CME ERROR: 50";
+}
+
 /* Add a(n unsolicited) time response.
  *
  * retrieve the current time and zone in a format suitable
@@ -3587,6 +3638,7 @@ static const struct {
     { "!+CPINR=", NULL, handleGetRemainingRetries }, /* get remaining PIN retries*/
     { "+CEER", NULL, handleLastCallFailCause },
     { "!+CCFC", NULL, handleCallForwardReq }, /* call forward request */
+    { "!+CLCK", NULL, handleFacilityLockReq }, /* facility lock request */
 
     /* see getSIMStatus() */
     { "+CPIN?", NULL, handleSIMStatusReq },
