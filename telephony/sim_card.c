@@ -179,7 +179,7 @@ asimcard_check_pin( ASimCard  sim, const char*  pin )
 
     if (++sim->pin_retries == A_SIM_PIN_RETRIES) {
         if (sim->status != A_SIM_STATUS_READY) {
-            sim->status = 0;
+            sim->status = A_SIM_STATUS_PUK;
         }
     }
     return 0;
