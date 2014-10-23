@@ -127,6 +127,18 @@ asimcard_set_status( ASimCard  sim, ASimStatus  status )
     sim->status = status;
 }
 
+void
+asimcard_reset_status_after_radio_off( ASimCard  sim )
+{
+    if (sim->status != A_SIM_STATUS_READY) {
+        return;
+    }
+
+    if (sim->pin_enabled) {
+        sim->status = A_SIM_STATUS_PIN;
+    }
+}
+
 const char*
 asimcard_get_pin( ASimCard  sim )
 {
