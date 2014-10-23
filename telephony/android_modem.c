@@ -1923,6 +1923,7 @@ handleRadioPower( const char*  cmd, AModem  modem )
         case A_RADIO_STATE_OFF:
             amodem_set_voice_registration(modem, A_REGISTRATION_UNREGISTERED);
             amodem_set_data_registration(modem, A_REGISTRATION_UNREGISTERED);
+            asimcard_reset_status_after_radio_off(modem->sim);
             break;
         case A_RADIO_STATE_ON:
             amodem_set_voice_registration(modem, A_REGISTRATION_HOME);
