@@ -197,6 +197,7 @@ asimcard_check_puk( ASimCard  sim, const char* puk, const char*  pin )
         strncpy( sim->pin, pin, A_SIM_PIN_SIZE );
         sim->status      = A_SIM_STATUS_READY;
         sim->puk_retries = 0;
+        sim->pin_retries = 0;
         return 1;
     }
 

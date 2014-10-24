@@ -2435,12 +2435,12 @@ handleChangeOrEnterPIN( const char*  cmd, AModem  modem )
             else
                 return "+CME ERROR: BAD PIN";
 
-        case A_SIM_STATUS_PUK:
-            if (strlen(cmd) == 9 && cmd[4] == ',') {
-                char  puk[5];
-                memcpy( puk, cmd, 4 );
-                puk[4] = 0;
-                if ( asimcard_check_puk( modem->sim, puk, cmd+5 ) )
+        case A_SIM_STATUS_PUK:  /* waiting for PUK */
+            if (strlen(cmd) == 13 && cmd[8] == ',') {
+                char  puk[9];
+                memcpy( puk, cmd, 8 );
+                puk[8] = 0;
+                if ( asimcard_check_puk( modem->sim, puk, cmd+9 ) )
                     return "+CPIN: READY";
                 else
                     return "+CME ERROR: BAD PUK";
