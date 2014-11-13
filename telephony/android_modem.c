@@ -1232,14 +1232,26 @@ amodem_add_inbound_call( AModem  modem, const char*  number, const int  numPrese
     ACall       call  = &vcall->call;
     int         len;
     char        cnapName[ A_CALL_NAME_MAX_SIZE+1 ];
+    int         voice_call_count;
+    int         nn;
 
     if (call == NULL)
         return -1;
 
     call->dir   = A_CALL_INBOUND;
-    call->state = A_CALL_INCOMING;
     call->mode  = A_CALL_VOICE;
     call->multi = 0;
+
+    voice_call_count = 0;
+    for (nn = 0; nn < modem->call_count; nn++) {
+      AVoiceCall  vcall = modem->calls + nn;
+      ACall       call  = &vcall->call;
+      if (call->mode == A_CALL_VOICE) {
+        voice_call_count++;
+      }
+    }
+
+    call->state = (voice_call_count == 1) ? A_CALL_INCOMING : A_CALL_WAITING;
 
     vcall->is_remote = (remote_number_string_to_port(number, modem, NULL, NULL) > 0);
 
