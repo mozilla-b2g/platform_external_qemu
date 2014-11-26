@@ -124,17 +124,17 @@ size_t
 nfc_re_create_dta_act(struct nfc_re* re, const void* data,
                       size_t len, uint8_t* act);
 
-int
+ssize_t
 nfc_re_send_llcp_connect(struct nfc_re* re, unsigned char dsap,
                          unsigned char ssap);
 
-int
+ssize_t
 nfc_re_send_snep_put(struct nfc_re* re,
                      enum llcp_sap dsap, enum llcp_sap ssap,
                      ssize_t (*create_snep)(void*, size_t, struct snep*),
-                     void* data);
+                     void* data, size_t maxlen, union nci_packet* dta);
 
-int
+ssize_t
 nfc_re_recv_snep_put(struct nfc_re* re,
                      enum llcp_sap dsap, enum llcp_sap ssap,
                      ssize_t (*process_ndef)(void*, size_t, const struct ndef_rec*),

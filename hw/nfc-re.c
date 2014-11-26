@@ -53,27 +53,34 @@ struct create_nci_dta_param {
 
 /* helper function wrap an LLCP PDU in an NCI packet */
 static ssize_t
-create_nci_dta(void* data, struct nfc_device* nfc, size_t maxlen,
+create_nci_dta(const struct create_nci_dta_param* param, size_t maxlen,
                union nci_packet* dta)
 {
-    const struct create_nci_dta_param* param;
     ssize_t len;
 
-    param = data;
     assert(param);
 
     len = param->create(param->data, (struct llcp_pdu*)dta->data.payload);
     return nfc_create_nci_dta(dta, NCI_PBF_END, param->re->connid, len);
 }
 
+static ssize_t
+create_nci_dta_cb(void* data, struct nfc_device* nfc, size_t maxlen,
+                 union nci_packet* dta)
+{
+    return create_nci_dta(data, maxlen, dta);
+}
+
 /* Sends an LLCP PDU from the RE to the guest. Sending
  * means that the PDU is either generated and transmitted
  * directly or enqueued for later transmission.
  */
-static int
+static ssize_t
 send_pdu_from_re(ssize_t (*create)(void*, struct llcp_pdu*),
                  void* data, struct nfc_re* re)
 {
+    ssize_t res = 0;
+
     if (re->xmit_next) {
         /* it's our turn to xmit the next PDU; we do this
          * immediately and cancel the possible timer for the
@@ -81,7 +88,9 @@ send_pdu_from_re(ssize_t (*create)(void*, struct llcp_pdu*),
         struct create_nci_dta_param param =
             CREATE_NCI_DTA_PARAM_INIT(create, data, re);
 
-        goldfish_nfc_send_dta(create_nci_dta, &param);
+        res = goldfish_nfc_send_dta(create_nci_dta_cb, &param);
+        if (res < 0)
+            return -1;
         re->xmit_next = 0;
         if (re->xmit_timer) {
             qemu_del_timer(re->xmit_timer);
@@ -96,7 +105,7 @@ send_pdu_from_re(ssize_t (*create)(void*, struct llcp_pdu*),
         buf->len = create(data, (struct llcp_pdu*)buf->pdu);
         QTAILQ_INSERT_TAIL(&re->xmit_q, buf, entry);
     }
-    return 0;
+    return res;
 }
 
 /* Fetches the next PDU from the RE's xmit queue and returns the PDU's
@@ -851,7 +860,7 @@ create_connect_dta(void* data, struct llcp_pdu* llcp)
     return llcp_create_pdu(llcp, param->dsap, LLCP_PTYPE_CONNECT, param->ssap);
 }
 
-int
+ssize_t
 nfc_re_send_llcp_connect(struct nfc_re* re, unsigned char dsap, unsigned char ssap)
 {
     struct llcp_connect_param param = LLCP_CONNECT_PARAM_INIT(re, dsap, ssap);
@@ -904,13 +913,13 @@ create_i_pdu(void* data, struct llcp_pdu* llcp)
     return len + res;
 }
 
-static int
+static ssize_t
 send_snep_over_llcp(struct nfc_re* re,
                     enum llcp_sap dsap, enum llcp_sap ssap,
                     ssize_t (*create)(void*, size_t, struct snep*),
-                    void* data)
+                    void* data, size_t maxlen, union nci_packet* dta)
 {
-    int res;
+    ssize_t res;
     struct llcp_data_link* dl;
     struct llcp_i_param i_param =
         LLCP_I_PARAM_INIT(re, dsap, ssap, create, data);
@@ -923,6 +932,8 @@ send_snep_over_llcp(struct nfc_re* re,
         struct llcp_pdu_buf* buf;
         struct llcp_connect_param connect_param =
             LLCP_CONNECT_PARAM_INIT(re, dsap, ssap);
+        struct create_nci_dta_param dta_param =
+            CREATE_NCI_DTA_PARAM_INIT(create_connect_dta, &connect_param, re);
         buf = llcp_alloc_pdu_buf();
         if (!buf) {
             return -1;
@@ -930,7 +941,7 @@ send_snep_over_llcp(struct nfc_re* re,
         buf->len = create_i_pdu(&i_param, (struct llcp_pdu*)buf->pdu);
         QTAILQ_INSERT_TAIL(&dl->xmit_q, buf, entry);
         /* on connecting successfully, pending packets will be delivered */
-        res = send_pdu_from_re(create_connect_dta, &connect_param, re);
+        res = create_nci_dta(&dta_param, maxlen, dta);
     } else if (dl->status == LLCP_DATA_LINK_CONNECTING) {
         /* connecting in process; only enqueue request for later delivery */
         struct llcp_pdu_buf* buf = llcp_alloc_pdu_buf();
@@ -949,20 +960,21 @@ send_snep_over_llcp(struct nfc_re* re,
     return res;
 }
 
-int
+ssize_t
 nfc_re_send_snep_put(struct nfc_re* re,
                      enum llcp_sap dsap, enum llcp_sap ssap,
                      ssize_t (*create_snep)(void*, size_t, struct snep*),
-                     void* data)
+                     void* data, size_t maxlen, union nci_packet* dta)
 {
-    int res;
+    ssize_t res;
 
     assert(re);
 
     switch (re->rfproto) {
         case NCI_RF_PROTOCOL_NFC_DEP:
             /* send SNEP over LLCP */
-            res = send_snep_over_llcp(re, dsap, ssap, create_snep, data);
+            res = send_snep_over_llcp(re, dsap, ssap, create_snep,
+                                      data, maxlen, dta);
             break;
         default:
             /* TODO: support over protocols */
@@ -971,7 +983,7 @@ nfc_re_send_snep_put(struct nfc_re* re,
     return res;
 }
 
-static int
+static ssize_t
 recv_snep_over_llcp(struct nfc_re* re,
                     enum llcp_sap dsap, enum llcp_sap ssap,
                     ssize_t (*process)(void*, size_t, const struct ndef_rec*),
@@ -993,7 +1005,7 @@ recv_snep_over_llcp(struct nfc_re* re,
     return 0;
 }
 
-int
+ssize_t
 nfc_re_recv_snep_put(struct nfc_re* re,
                      enum llcp_sap dsap, enum llcp_sap ssap,
                      ssize_t (*process_ndef)(void*, size_t,

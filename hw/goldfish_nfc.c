@@ -11,6 +11,7 @@
 */
 
 #include "android/utils/debug.h"
+#include "nfc-debug.h"
 #include "nfc.h"
 #include "nfc-hci.h"
 #include "nfc-nci.h"
@@ -175,6 +176,7 @@ goldfish_nfc_process_ctrl(struct nfc_state* s)
       memset(&s->cb, 0, sizeof(s->cb));
       res = nfc_process_nci_msg((const union nci_packet*)s->cmnd, &s->nfc,
                                 (union nci_packet*)s->resp, &s->cb);
+      assert(res >= 0);
 
       s->status &= ~STATUS_NCI_CMND;
 
@@ -189,6 +191,7 @@ goldfish_nfc_process_ctrl(struct nfc_state* s)
       memset(s->resp, 0, sizeof(s->resp));
       res = nfc_process_hci_cmd((const union hci_packet*)s->cmnd, &s->nfc,
                                 (union hci_answer*)s->resp);
+      assert(res >= 0);
 
       s->status &= ~STATUS_HCI_CMND;
 
