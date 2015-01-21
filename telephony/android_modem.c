@@ -432,6 +432,9 @@ typedef struct AModemRec_
 
     // SMSC address
     SmsAddressRec   smsc_address;
+
+    // Modem Features
+    uint32_t features;
 } AModemRec;
 
 
@@ -694,6 +697,8 @@ amodem_reset( AModem  modem )
 
     tmp = amodem_nvram_get_str( modem, NV_MODEM_SMSC_ADDRESS, SMSC_ADDRESS);
     sms_address_from_str( &modem->smsc_address, tmp, strlen(tmp));
+
+    modem->features = A_MODEM_FEATURE_HOLD;
 }
 
 static AVoiceCall amodem_alloc_call( AModem   modem );
@@ -841,6 +846,24 @@ int
 amodem_get_instance_id( AModem  modem )
 {
     return modem->instance_id;
+}
+
+int
+amodem_set_feature( AModem  modem, AModemFeature  feature, bool  enable )
+{
+    if (enable)
+        modem->features |= feature;
+
+    else
+        modem->features &= ~feature;
+
+    return 0;
+}
+
+static bool
+amodem_has_feature( AModem  modem, AModemFeature  feature )
+{
+    return modem->features & feature;
 }
 
 void
@@ -3364,6 +3387,9 @@ handleHangup( const char*  cmd, AModem  modem )
                 break;
 
             case '2':
+                if (!amodem_has_feature(modem, A_MODEM_FEATURE_HOLD))
+                    return "ERROR: UNSUPPORTED";
+
                 if (cmd[1] == 0) {  /* place all active on hold, accept held or waiting one */
                     int waitingCallOnly = hasWaitingCall(modem);
                     for (nn = 0; nn < modem->call_count; nn++) {
