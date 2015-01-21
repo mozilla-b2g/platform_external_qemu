@@ -240,6 +240,15 @@ extern void amodem_set_gsm_location( AModem modem, int lac, int ci );
 extern int amodem_get_base_port( AModem  modem );
 extern int amodem_get_instance_id( AModem  modem );
 
+/** Enable/Disable the selected modem feature
+ **/
+
+typedef enum {
+    A_MODEM_FEATURE_HOLD = (0x01 << 0)
+} AModemFeature;
+
+extern int amodem_set_feature( AModem  modem, AModemFeature  feature, bool  enable );
+
 /**/
 
 #endif /* _android_modem_h_ */
