@@ -3206,6 +3206,8 @@ static int amodem_is_emergency( AModem modem, const char *number )
 static const char*
 handleDial( const char*  cmd, AModem  modem )
 {
+    assert( cmd[0] == 'D' );
+
     AVoiceCall  vcall = amodem_alloc_call( modem );
     ACall       call  = &vcall->call;
     int         len;
@@ -3213,7 +3215,6 @@ handleDial( const char*  cmd, AModem  modem )
     if (call == NULL)
         return "ERROR: TOO MANY CALLS";
 
-    assert( cmd[0] == 'D' );
     call->dir   = A_CALL_OUTBOUND;
     call->state = A_CALL_DIALING;
     call->mode  = A_CALL_VOICE;
@@ -3252,17 +3253,17 @@ handleDial( const char*  cmd, AModem  modem )
 
     amodem_send_calls_update( modem );
 
-    amodem_begin_line( modem );
-    if (amodem_is_emergency(modem, call->number)) {
-        modem->in_emergency_mode = 1;
-        amodem_add_line( modem, "+WSOS: 1" );
-    }
     vcall->is_remote = (remote_number_string_to_port(call->number, modem, NULL, NULL) > 0);
 
     vcall->timer = sys_timer_create();
     sys_timer_set( vcall->timer, sys_time_ms() + CALL_DELAY_DIAL,
                    voice_call_event, vcall );
 
+    amodem_begin_line( modem );
+    if (amodem_is_emergency(modem, call->number)) {
+        modem->in_emergency_mode = 1;
+        amodem_add_line( modem, "+WSOS: 1" );
+    }
     return amodem_end_line( modem );
 }
 
