@@ -1758,18 +1758,29 @@ do_gsm_enable_disable( ControlClient  client, char  *args, bool enable )
     if (strcmp( args, "hold" ) == 0)
         return amodem_set_feature(client->modem, A_MODEM_FEATURE_HOLD, enable);
 
+    control_write( client, "KO: '%s' cannot be enabled or disabled.\r\n", args );
     return -1;
 }
 
 static int
 do_gsm_enable( ControlClient  client, char  *args )
 {
+    if (!args) {
+        control_write( client, "KO: missing argument, try 'gsm enable <feature>'\r\n" );
+        return -1;
+    }
+
     return do_gsm_enable_disable(client, args, true);
 }
 
 static int
 do_gsm_disable( ControlClient  client, char  *args )
 {
+    if (!args) {
+        control_write( client, "KO: missing argument, try 'gsm disable <feature>'\r\n" );
+        return -1;
+    }
+
     return do_gsm_enable_disable(client, args, false);
 }
 
