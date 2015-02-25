@@ -661,7 +661,7 @@ asimcard_ef_init( ASimCard card )
     //   Enabled: 1..4, 7, 9..19, 25..27, 29, 30, 38, 39, 51..56
     // @see 3GPP TS 51.011 section 10.3.7 EFsst (SIM Service Table)
     ef = asimcard_ef_new_dedicated(0x6f38, SIM_FILE_READ_ONLY | SIM_FILE_NEED_PIN);
-    asimcard_ef_update_dedicated(ef, "ff30ffff3f003f0f003c0000f0ff00");
+    asimcard_ef_update_dedicated(ef, "ff30ffffbf003f0f003c0000f0ff00");
     asimcard_ef_add(card, ef);
 
     // Mailbox Identifier(6FC9):
@@ -918,7 +918,53 @@ asimcard_ef_init( ASimCard card )
     asimcard_ef_update_linear(ef, 0x03, "8106e04669726520ebffffffffffffffffff07815155258102f3ffffffffffff");
     // Alpha Id(Encoded with UCS2 0x82): "Huang \u9ec3", Dialling Number: 15555218204
     asimcard_ef_update_linear(ef, 0x04, "82079e804875616e6720c3ffffffffffffff07815155258102f4ffffffffffff");
+    // Alpha Id(Encoded with GSM 8 bit): "Contact001", Dialling Number: 99887766554433221100, Ext1: 01
+    asimcard_ef_update_linear(ef, 0x05, "436f6e74616374303031ffffffffffffffff0b8199887766554433221100ff01");
+    // Alpha Id(Encoded with GSM 8 bit): "Contact002", Dialling Number: 01234567890123456789, Ext1: 02
+    asimcard_ef_update_linear(ef, 0x06, "436f6e74616374303032ffffffffffffffff0b8110325476981032547698ff02");
     asimcard_ef_update_linear(ef, 0xff, "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
+    asimcard_ef_add(card, ef);
+
+    // Extension 1(6F4A):
+    //   Record size: 0x0d
+    //   Record count: 0xff
+    // @see 3GPP TS 51.011 section 4.4.2.4 EFext1 (Extension 1)
+    ef = asimcard_ef_new_linear(0x6f4a, SIM_FILE_NEED_PIN, 0x0d);
+    // Record type: 02, Extension data: 01234567890123456789, Identifier: FF
+    asimcard_ef_update_linear(ef, 0x01, "020a10325476981032547698ff");
+    // Record type: 02, Extension data: 99887766554433221100, Identifier: 03
+    asimcard_ef_update_linear(ef, 0x02, "020a9988776655443322110003");
+    // Record type: 02, Extension data: 11p12345, Identifier: FF
+    asimcard_ef_update_linear(ef, 0x03, "0204111c3254ffffffffffffff");
+    asimcard_ef_update_linear(ef, 0xff, "00ffffffffffffffffffffffff");
+    asimcard_ef_add(card, ef);
+
+    // Extension 2(6F4B):
+    //   Record size: 0x0d
+    //   Record count: 0xff
+    // @see 3GPP TS 51.011 section 10.5.11 EFext2 (Extension 2)
+    ef = asimcard_ef_new_linear(0x6f4b, SIM_FILE_NEED_PIN, 0x0d);
+    // Record type: 02, Extension data: 01234567890123456789, Identifier: FF
+    asimcard_ef_update_linear(ef, 0x01, "020a10325476981032547698ff");
+    // Record type: 02, Extension data: 99887766554433221100, Identifier: 03
+    asimcard_ef_update_linear(ef, 0x02, "020a9988776655443322110003");
+    // Record type: 02, Extension data: 11p12345, Identifier: FF
+    asimcard_ef_update_linear(ef, 0x03, "0204111c3254ffffffffffffff");
+    asimcard_ef_update_linear(ef, 0xff, "00ffffffffffffffffffffffff");
+    asimcard_ef_add(card, ef);
+
+    // Extension 3(6F4C):
+    //   Record size: 0x0d
+    //   Record count: 0xff
+    // @see 3GPP TS 51.011 section 10.5.12 EFext3 (Extension 3)
+    ef = asimcard_ef_new_linear(0x6f4c, SIM_FILE_NEED_PIN, 0x0d);
+    // Record type: 02, Extension data: 01234567890123456789, Identifier: FF
+    asimcard_ef_update_linear(ef, 0x01, "020a10325476981032547698ff");
+    // Record type: 02, Extension data: 99887766554433221100, Identifier: 03
+    asimcard_ef_update_linear(ef, 0x02, "020a9988776655443322110003");
+    // Record type: 02, Extension data: 11p12345, Identifier: FF
+    asimcard_ef_update_linear(ef, 0x03, "0204111c3254ffffffffffffff");
+    asimcard_ef_update_linear(ef, 0xff, "00ffffffffffffffffffffffff");
     asimcard_ef_add(card, ef);
 
     // Fixed Dialling Numbers(6F3B)
@@ -936,6 +982,10 @@ asimcard_ef_init( ASimCard card )
     asimcard_ef_update_linear(ef, 0x03, "8106e04669726520ebffffffffffffffffff07815155258102f3ffffffffffff");
     // Alpha Id(Encoded with UCS2 0x82): "Huang \u9ec3", Dialling Number: 15555218204
     asimcard_ef_update_linear(ef, 0x04, "82079e804875616e6720c3ffffffffffffff07815155258102f4ffffffffffff");
+    // Alpha Id(Encoded with GSM 8 bit): "Contact001", Dialling Number: 99887766554433221100, Ext2: 01
+    asimcard_ef_update_linear(ef, 0x05, "436f6e74616374303031ffffffffffffffff0b8199887766554433221100ff01");
+    // Alpha Id(Encoded with GSM 8 bit): "Contact002", Dialling Number: 01234567890123456789, Ext2: 02
+    asimcard_ef_update_linear(ef, 0x06, "436f6e74616374303032ffffffffffffffff0b8110325476981032547698ff02");
     asimcard_ef_update_linear(ef, 0xff, "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
     asimcard_ef_add(card, ef);
 
@@ -963,6 +1013,10 @@ asimcard_ef_init( ASimCard card )
     asimcard_ef_update_linear(ef, 0x03, "8106e04669726520ebffffffffffffffffff07815155258102f3ffffffffffff");
     // Alpha Id(Encoded with UCS2 0x82): "Huang \u9ec3", Dialling Number: 15555218204
     asimcard_ef_update_linear(ef, 0x04, "82079e804875616e6720c3ffffffffffffff07815155258102f4ffffffffffff");
+    // Alpha Id(Encoded with GSM 8 bit): "Contact001", Dialling Number: 99887766554433221100, Ext3: 01
+    asimcard_ef_update_linear(ef, 0x05, "436f6e74616374303031ffffffffffffffff0b8199887766554433221100ff01");
+    // Alpha Id(Encoded with GSM 8 bit): "Contact002", Dialling Number: 01234567890123456789, Ext3: 02
+    asimcard_ef_update_linear(ef, 0x06, "436f6e74616374303032ffffffffffffffff0b8110325476981032547698ff02");
     asimcard_ef_update_linear(ef, 0xff, "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
     asimcard_ef_add(card, ef);
 
