@@ -128,14 +128,18 @@ asimcard_set_status( ASimCard  sim, ASimStatus  status )
 }
 
 void
-asimcard_reset_status_after_radio_off( ASimCard  sim )
+asimcard_set_sim_power( ASimCard  sim, bool  enabled )
 {
-    if (sim->status != A_SIM_STATUS_READY) {
-        return;
-    }
+    if (enabled) {
+        if (sim->status != A_SIM_STATUS_ABSENT) {
+            // Do nothing if sim is already powered on.
+            return;
+        }
 
-    if (sim->pin_enabled) {
-        sim->status = A_SIM_STATUS_PIN;
+        sim->status = sim->pin_enabled ? A_SIM_STATUS_PIN
+                                       : A_SIM_STATUS_READY;
+    } else {
+        sim->status = A_SIM_STATUS_ABSENT;
     }
 }
 
