@@ -1141,6 +1141,11 @@ asimcard_io( ASimCard  sim, const char*  cmd )
 
     assert( memcmp( cmd, "+CRSM=", 6 ) == 0 );
 
+    if ( sim->status == A_SIM_STATUS_ABSENT) {
+        // SIM not inserted
+        return "+CME ERROR: 10";
+    }
+
     if ( sscanf(cmd, "+CRSM=%d,%d,%d,%d,%d,%s", &command, &id, &p1, &p2, &p3, data) >= 5 ) {
         switch (command) {
             case A_SIM_CMD_GET_RESPONSE:
