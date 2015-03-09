@@ -223,6 +223,7 @@ extern int    amodem_get_call_count( AModem  modem );
 extern ACall  amodem_get_call( AModem  modem,  int  index );
 extern ACall  amodem_find_call_by_number( AModem  modem, const char*  number );
 extern int    amodem_add_inbound_call( AModem  modem, const char*  number, const int  numPresentation, const char*  name, const int  namePresentation );
+extern int    amodem_add_outbound_call( AModem  modem, const char*  number );
 extern int    amodem_update_call( AModem  modem, const char*  number, ACallState  state );
 extern int    amodem_disconnect_call( AModem  modem, const char*  number );
 extern int    amodem_clear_call( AModem modem );
