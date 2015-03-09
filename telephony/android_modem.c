@@ -2820,15 +2820,30 @@ handleFacilityLockReq( const char* cmd, AModem modem )
 {
     char fac[64];
     char passwd[64];
+    passwd[0] = '\0';
     int mode;
     // According to TS 27.007, the default value is 7.
     int class = 7;
 
     // AT+CLCK=<fac>,<mode>[,<password>[,<class>]].
-    int argc = sscanf(cmd, "+CLCK=\"%[^\"]\",%d,\"%[^\"]\",%d", fac, &mode, passwd, &class);
-    if (argc < 2) {
-        // Incorrect parameters
+    char* cmd_ptr = strchr(cmd, '=') + 1;
+    if (!cmd_ptr || sscanf(cmd_ptr, "\"%[^\"]\"", fac) != 1) {
         return "+CME ERROR: 50";
+    }
+
+    cmd_ptr = strchr( cmd_ptr, ',') + 1;
+    if (!cmd_ptr || sscanf(cmd_ptr, "%d", &mode) != 1) {
+        return "+CME ERROR: 50";
+    }
+
+    cmd_ptr = strchr( cmd_ptr, ',') + 1;
+    if (cmd_ptr) {
+        sscanf(cmd_ptr, "\"%[^\"]\"", passwd);
+
+        cmd_ptr = strchr( cmd_ptr, ',') + 1;
+        if (cmd_ptr) {
+            sscanf(cmd_ptr, "%d", &class);
+        }
     }
 
     // Now we only support "pin" facility lock.
@@ -2846,7 +2861,7 @@ handleFacilityLockReq( const char* cmd, AModem modem )
     switch (mode) {
         case 0: // Unlock
         case 1: // Lock
-            if (argc < 3) {
+            if (passwd[0] == '\0') {
                 // Incorrect parameters
                 return "+CME ERROR: 50";
             }
