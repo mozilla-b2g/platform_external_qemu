@@ -1333,7 +1333,7 @@ gsm_check_number( char*  args )
 }
 
 static int
-do_send_stkCmd( ControlClient  client, char*  args  )
+do_stk_pdu( ControlClient  client, char*  args  )
 {
     if (!args) {
         control_write( client, "KO: missing argument, try 'stk pdu <hexstring>'\r\n" );
@@ -1346,6 +1346,24 @@ do_send_stkCmd( ControlClient  client, char*  args  )
     }
 
     amodem_send_stk_unsol_proactive_command( client->modem, args );
+    return 0;
+}
+
+static int
+do_stk_setupcall( ControlClient  client, char*  args )
+{
+    if (!args) {
+        control_write( client, "KO: missing argument, try 'stk setupcall <phonenumber>'\r\n" );
+        return -1;
+    }
+    if (!client->modem) {
+        control_write( client, "KO: modem emulation not running\r\n" );
+        return -1;
+    }
+    if ( amodem_add_outbound_call( client->modem, args ) < 0 ) {
+        control_write( client, "KO: there are too many calls\r\n" );
+        return -1;
+    }
     return 0;
 }
 
@@ -2045,7 +2063,12 @@ static const CommandDefRec stk_commands[] =
 {
     { "pdu", "issue stk proactive command",
     "'stk pdu <hexstring>' allows you to issue stk PDU to simulate an unsolicted proactive command \r\n", NULL,
-    do_send_stkCmd, NULL },
+    do_stk_pdu, NULL },
+
+    { "setupcall", "create an outbound phone call from stk directly",
+    "'stk setupcall <phonenumber>' allows you to simulate a new outbound call dialed out from stk directly\r\n"
+    "phonenumber is the outbound call number\r\n",
+    NULL, do_stk_setupcall, NULL },
 
     { NULL, NULL, NULL, NULL, NULL, NULL }
 };
