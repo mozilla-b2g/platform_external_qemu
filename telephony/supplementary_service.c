@@ -19,11 +19,16 @@
 #  define  D(...)   ((void)0)
 #endif
 
+typedef char AServicePasswdRec [SERVICE_PASSWD_MAX_PASSWD_LENGTH + 1];
+
 typedef struct ACallBarringRec_ {
     bool enabled;
 } ACallBarringRec, *ACallBarring;
 
 typedef struct ASupplementaryServiceRec_ {
+    /* passwords */
+    AServicePasswdRec  passwd[SERVICE_PASSWD_MAX_TYPE + 1];
+
     /* call forward conditions */
     ACallForwardRec*  call_forward[CALL_FORWARDING_MAX_REASON + 1]
                                   [CALL_FORWARDING_MAX_CLASSX_OFFSET + 1];
@@ -33,6 +38,17 @@ typedef struct ASupplementaryServiceRec_ {
 } ASupplementaryServiceRec;
 
 static ASupplementaryServiceRec  _s_supplementary[MAX_GSM_DEVICES];
+
+static void
+asupplementary_passwd_init(ASupplementaryService supplementary)
+{
+    int i = 0;
+    for (i = 0; i <= SERVICE_PASSWD_MAX_TYPE; i++) {
+        strncpy(supplementary->passwd[i],
+                SERVICE_PASSWD_DEFAULT_PASSWD,
+                SERVICE_PASSWD_MAX_PASSWD_LENGTH);
+    }
+}
 
 static void
 asupplementary_callforward_init(ASupplementaryService supplementary)
@@ -74,6 +90,7 @@ asupplementary_create(int base_port, int instance_id)
 {
     ASupplementaryService supplementary = &_s_supplementary[instance_id];
 
+    asupplementary_passwd_init(supplementary);
     asupplementary_callforward_init(supplementary);
     asupplementary_callbarring_init(supplementary);
 
@@ -84,6 +101,25 @@ void
 asupplementary_destroy(ASupplementaryService supplementary)
 {
     asupplementary_callforward_destroy(supplementary);
+}
+
+bool
+asupplementary_check_passwd(ASupplementaryService supplementary,
+                            AServiceType type, char *passwd)
+{
+    char *target_passwd = NULL;
+    switch (type) {
+        case A_SERVICE_TYPE_CALL_BARRING:
+            target_passwd = supplementary->passwd[A_SERVICE_TYPE_CALL_BARRING];
+            break;
+    }
+
+    if (!target_passwd || !passwd ||
+        strncmp(target_passwd, passwd, SERVICE_PASSWD_MAX_PASSWD_LENGTH)) {
+        return false;
+    }
+
+    return true;
 }
 
 int

@@ -49,6 +49,19 @@ typedef enum {
 
 typedef struct ASupplementaryServiceRec_*    ASupplementaryService;
 
+/* Supplementary service types */
+typedef enum {
+    A_SERVICE_TYPE_CALL_BARRING = 0
+} AServiceType;
+
+/* Passwords for supplementary services */
+#define SERVICE_PASSWD_DEFAULT_PASSWD       "0000"
+#define SERVICE_PASSWD_MAX_PASSWD_LENGTH    32
+#define SERVICE_PASSWD_MAX_TYPE             A_SERVICE_TYPE_CALL_BARRING
+
+extern bool  asupplementary_check_passwd( ASupplementaryService supplementary,
+                                          AServiceType type, char *passwd);
+
 typedef struct ACallForwardRec_ {
     bool  enabled;
     char  number[CALL_FORWARDING_MAX_NUMBERS + 1];
