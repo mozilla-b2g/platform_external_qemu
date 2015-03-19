@@ -3494,11 +3494,46 @@ do_modem_tech( ControlClient client, char* args )
     return 0;
 }
 
+static int
+do_modem_radio( ControlClient client, char *args )
+{
+    if (!client->modem) {
+        control_write(client, "KO: modem emulation not running\r\n");
+        return -1;
+    }
+
+    if (!args) {
+        ARadioState state = amodem_get_radio_state(client->modem);
+        control_write(client, "%s\r\n",
+                      state == A_RADIO_STATE_OFF ? "disabled" : "enabled");
+        return 0;
+    }
+
+    if (!strcmp(args, "enable")) {
+        amodem_set_radio_state(client->modem, A_RADIO_STATE_ON);
+        return 0;
+    }
+
+    if (!strcmp(args, "disable")) {
+        amodem_set_radio_state(client->modem, A_RADIO_STATE_OFF);
+        return 0;
+    }
+
+    control_write(client, "KO: invalid argument, try 'modem radio [enable|disable]'\r\n");
+    return -1;
+}
+
 static const CommandDefRec  modem_commands[] =
 {
     { "tech", "query/switch modem technology",
       NULL, help_modem_tech,
       do_modem_tech, NULL },
+
+    { "radio", "query/switch radio state",
+      "'modem radio': allows you to display the current radio state of emulator modem.\r\n"
+      "'modem radio enable': allows you to enable the radio of emulator modem.\r\n"
+      "'modem radio disable': allows you to disable the radio of emulator modem.\r\n",
+      NULL, do_modem_radio, NULL },
 
     { NULL, NULL, NULL, NULL, NULL, NULL }
 };

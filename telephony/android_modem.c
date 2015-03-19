@@ -876,6 +876,51 @@ amodem_get_radio_state( AModem modem )
     return modem->radio_state;
 }
 
+static int
+_amodem_set_radio_state( AModem modem, ARadioState radio_state )
+{
+    if (modem->radio_state == radio_state) {
+        // Indicate the radio state remains the same
+        return 0;
+    }
+
+    modem->radio_state = radio_state;
+    switch (radio_state) {
+        case A_RADIO_STATE_OFF:
+            amodem_set_voice_registration(modem, A_REGISTRATION_UNREGISTERED);
+            amodem_set_data_registration(modem, A_REGISTRATION_UNREGISTERED);
+            asimcard_reset_status_after_radio_off(modem->sim);
+            break;
+        case A_RADIO_STATE_ON:
+            amodem_set_voice_registration(modem, A_REGISTRATION_HOME);
+            amodem_set_data_registration(modem, A_REGISTRATION_HOME);
+            break;
+    }
+
+    // Indicate the radio state has being changed
+    return 1;
+}
+
+void
+amodem_set_radio_state( AModem modem, ARadioState radio_state )
+{
+    if (!_amodem_set_radio_state(modem, radio_state)) {
+        return;
+    }
+
+    /* The two unsolicited AT reponses are customized for testing purposes, and
+     * both of them are not defined in TS 27.007. They are made by extending the
+     * response of +CFUN? to become unsolicited. */
+    switch (radio_state) {
+        case A_RADIO_STATE_OFF:
+            amodem_unsol( modem, "+CFUN: 0");
+            break;
+        case A_RADIO_STATE_ON:
+            amodem_unsol( modem, "+CFUN: 1");
+            break;
+    }
+}
+
 ASimCard
 amodem_get_sim( AModem  modem )
 {
@@ -1912,24 +1957,8 @@ handleRadioPower( const char*  cmd, AModem  modem )
         return "+CME ERROR: 50";
     }
 
-    if (radio_state == modem->radio_state) {
-        return "OK";
-    }
-
-    modem->radio_state = radio_state;
     amodem_reply(modem, "OK");
-
-    switch (radio_state) {
-        case A_RADIO_STATE_OFF:
-            amodem_set_voice_registration(modem, A_REGISTRATION_UNREGISTERED);
-            amodem_set_data_registration(modem, A_REGISTRATION_UNREGISTERED);
-            asimcard_reset_status_after_radio_off(modem->sim);
-            break;
-        case A_RADIO_STATE_ON:
-            amodem_set_voice_registration(modem, A_REGISTRATION_HOME);
-            amodem_set_data_registration(modem, A_REGISTRATION_HOME);
-            break;
-    }
+    _amodem_set_radio_state(modem, radio_state);
 
     // Return NULL to show we have sent the reply and no further work to do.
     return NULL;
