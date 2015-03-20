@@ -2816,6 +2816,83 @@ handleCallForwardReq( const char* cmd, AModem modem )
 }
 
 static const char*
+handleCallBarringSetReq( AModem modem, ACallBarringProgram program, int classx, int mode )
+{
+    int i = 0;
+    for (i = 0; i <= CALL_BARRING_MAX_CLASSX_OFFSET; i++) {
+        if (classx & (0x01 << i)) {
+            asupplementary_set_call_barring(modem->supplementary,
+                                            program, i, mode);
+        }
+    }
+
+    return "OK";
+}
+
+static const char*
+handleCallBarringGetReq( AModem modem, ACallBarringProgram program, int classx )
+{
+    int i = 0;
+
+    int result_pos = 0;
+    int result_neg = 0;
+
+    for (i = 0; i <= CALL_BARRING_MAX_CLASSX_OFFSET; i++) {
+        // For some operators, classx is set to 0 for querying for all service
+        // classes, and this behavior is not stated in TS 22.007.
+        if (classx != 0 && !(classx & (0x01 << i))) {
+            continue;
+        }
+
+        if (!asupplementary_is_call_barring_enabled(modem->supplementary,
+                                                    program, i)) {
+            result_neg |= (0x01 << i);
+            continue;
+        }
+
+        result_pos |= (0x01 << i);
+    }
+
+    amodem_begin_line(modem);
+    if (result_pos) {
+        amodem_add_line(modem, "+CLCK: %d,%d\r\n", 1, result_pos);
+    }
+    if (result_neg) {
+        amodem_add_line(modem, "+CLCK: %d,%d\r\n", 0, result_neg);
+    }
+    return amodem_end_line(modem);
+}
+
+static const char*
+handleCallBarringReq( AModem modem, ACallBarringProgram program,
+                      int mode, const char* passwd, int classx )
+{
+    switch (mode) {
+        case 0:
+        case 1:
+            if (passwd == NULL) {
+                // Incorrect parameters
+                return "+CME ERROR: 50";
+            }
+            if (!asupplementary_check_passwd(modem->supplementary,
+                                             A_SERVICE_TYPE_CALL_BARRING,
+                                             passwd)) {
+                // Wrong password
+                return "+CME ERROR: 16";
+            }
+            return handleCallBarringSetReq(modem, program, classx, mode);
+
+        case 2:
+            return handleCallBarringGetReq(modem, program, classx);
+
+        default:
+            return "+CME ERROR: 50";
+    }
+
+    return "OK";
+}
+
+static const char*
 handleFacilityLockReq( const char* cmd, AModem modem )
 {
     char fac[64];
@@ -2846,39 +2923,50 @@ handleFacilityLockReq( const char* cmd, AModem modem )
         }
     }
 
-    // Now we only support "pin" facility lock.
-    if (strcmp(fac, "SC")) {
-        // Operation not supported
-        return "+CME ERROR: 4";
+    if (strcmp(fac, "SC") == 0) {
+
+        if (!(class & 1)) {
+            // Operation not supported
+            return "+CME ERROR: 4";
+        }
+
+        switch (mode) {
+            case 0: // Unlock
+            case 1: // Lock
+                if (passwd[0] == '\0') {
+                    // Incorrect parameters
+                    return "+CME ERROR: 50";
+                }
+
+                if (!asimcard_set_pin_enabled(modem->sim, (mode == 1), passwd)) {
+                    // Incorrect password
+                    return "+CME ERROR: 16";
+                }
+
+                return "OK";
+            case 2: //Query status.
+                return amodem_printf(modem, "+CLCK: %d,%d\r\n",
+                                     asimcard_get_pin_enabled(modem->sim) ? 1 : 0, 1);
+        }
+    } else if (strcmp(fac, "AO") == 0) {
+        return handleCallBarringReq(modem, A_CALL_BARRING_PROGRAM_AO,
+                                    mode, passwd[0] ? passwd : NULL, class);
+    } else if (strcmp(fac, "OI") == 0) {
+        return handleCallBarringReq(modem, A_CALL_BARRING_PROGRAM_OI,
+                                    mode, passwd[0] ? passwd : NULL, class);
+    } else if (strcmp(fac, "OX") == 0) {
+        return handleCallBarringReq(modem, A_CALL_BARRING_PROGRAM_OX,
+                                    mode, passwd[0] ? passwd : NULL, class);
+    } else if (strcmp(fac, "AI") == 0) {
+        return handleCallBarringReq(modem, A_CALL_BARRING_PROGRAM_AI,
+                                    mode, passwd[0] ? passwd : NULL, class);
+    } else if (strcmp(fac, "IR") == 0) {
+        return handleCallBarringReq(modem, A_CALL_BARRING_PROGRAM_IR,
+                                    mode, passwd[0] ? passwd : NULL, class);
     }
 
-    // Now we only support voice service class.
-    if (!(class & 1)) {
-        // Operation not supported
-        return "+CME ERROR: 4";
-    }
-
-    switch (mode) {
-        case 0: // Unlock
-        case 1: // Lock
-            if (passwd[0] == '\0') {
-                // Incorrect parameters
-                return "+CME ERROR: 50";
-            }
-
-            if (!asimcard_set_pin_enabled(modem->sim, (mode == 1), passwd)) {
-                // Incorrect password
-                return "+CME ERROR: 16";
-            }
-
-            return "OK";
-        case 2: //Query status.
-            return amodem_printf(modem, "+CLCK: %d,%d\r\n",
-                                 asimcard_get_pin_enabled(modem->sim) ? 1 : 0, 1);
-    }
-
-    // Incorrect parameters
-    return "+CME ERROR: 50";
+    // Operation not supported
+    return "+CME ERROR: 4";
 }
 
 /* Add a(n unsolicited) time response.
