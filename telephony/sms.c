@@ -229,9 +229,14 @@ int  sms_utf8_to_message_str( const unsigned char*  utf8, int  utf8len, char*  s
 void
 sms_timestamp_now( SmsTimeStamp  stamp )
 {
-    time_t     now_time = time(NULL);
-    struct tm  gm       = *(gmtime(&now_time));
-    struct tm  local    = *(localtime(&now_time));
+    sms_timestamp_when(stamp, time(NULL));
+}
+
+void
+sms_timestamp_when( SmsTimeStamp  stamp, time_t  when )
+{
+    struct tm  gm       = *(gmtime(&when));
+    struct tm  local    = *(localtime(&when));
     int        tzdiff   = 0;
 
     stamp->data[0] = gsm_int_to_bcdi( local.tm_year % 100 );
@@ -1433,6 +1438,66 @@ Exit:
 
 Fail:
     free(p->base);
+    free(p);
+    return NULL;
+}
+
+/* write a SMS-DELIVER-REPORT PDU into a rope */
+static void
+gsm_rope_add_sms_deliver_report_pdu( GsmRope                 rope,
+                                     int                     mr,
+                                     const SmsAddressRec*    da,
+                                     const SmsTimeStampRec*  scts,
+                                     const SmsTimeStampRec*  dt,
+                                     int                     status)
+{
+    gsm_rope_add_c( rope, 0 );            /* no SC Address */
+    gsm_rope_add_c( rope, 0x02 );         /* message type - SMS-DELIVER-REPORT */
+    gsm_rope_add_c( rope, mr );           /* message reference */
+    gsm_rope_add_address( rope, da );
+    gsm_rope_add_timestamp( rope, scts ); /* service center timestamp */
+    gsm_rope_add_timestamp( rope, dt );   /* discharge time */
+    gsm_rope_add_c( rope, status );       /* status */
+}
+
+SmsPDU
+smspdu_create_deliver_report( int                  mr,
+                              const SmsAddressRec* da,
+                              int                  status)
+{
+    SmsPDU           p;
+    GsmRopeRec       rope[1];
+    int              size;
+    SmsTimeStampRec  ts[2];
+
+    p = calloc( sizeof(*p), 1 );
+    if (!p) {
+        goto DRPT_EXIT;
+    }
+
+    sms_timestamp_now( &ts[0] );
+    sms_timestamp_when( &ts[1], 0 );
+
+    gsm_rope_init( rope );
+    gsm_rope_add_sms_deliver_report_pdu( rope, mr, da, &ts[0], &ts[1], status );
+    if (rope->error)
+        goto DRPT_FAIL;
+
+    gsm_rope_init_alloc( rope, rope->pos );
+
+    gsm_rope_add_sms_deliver_report_pdu( rope, mr, da, &ts[0], &ts[1], status );
+
+    p->base = gsm_rope_done_acquire( rope, &size );
+    if (p->base == NULL)
+        goto DRPT_FAIL;
+
+    p->end  = p->base + size;
+    p->tpdu = p->base + 1;
+
+DRPT_EXIT:
+    return p;
+
+DRPT_FAIL:
     free(p);
     return NULL;
 }

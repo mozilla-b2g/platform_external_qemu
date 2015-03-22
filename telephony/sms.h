@@ -35,6 +35,7 @@ typedef struct {
 } SmsTimeStampRec, *SmsTimeStamp;
 
 extern void  sms_timestamp_now( SmsTimeStamp  stamp );
+extern void  sms_timestamp_when( SmsTimeStamp  stamp, time_t  when );
 extern int   sms_timestamp_to_tm( SmsTimeStamp  stamp, struct tm*  tm );
 
 /** SMS ADDRESSES
@@ -69,6 +70,10 @@ extern SmsPDU*  smspdu_create_deliver_utf8( const unsigned char*   utf8,
 extern void     smspdu_free_list( SmsPDU*  pdus );
 
 extern SmsPDU   smspdu_create_from_hex( const char*  hex, int  hexlen );
+extern SmsPDU   smspdu_create_deliver_report( int                  message_ref,
+                                              const SmsAddressRec* recipient_address,
+                                              int                  status);
+
 extern SmsPDU   cbspdu_create_from_hex( const char*  hex, int  hexlen );
 
 extern int      smspdu_to_hex( SmsPDU  pdu, char*  hex, int  hexsize );

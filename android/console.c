@@ -1915,6 +1915,75 @@ static const CommandDefRec  gsm_commands[] =
 /********************************************************************************************/
 /********************************************************************************************/
 
+static void
+display_ints( ControlClient  client, int*  values )
+{
+    if (!values) {
+        control_write( client, "off\r\n" );
+        return;
+    }
+
+    int count = 0;
+    while (values[count] >= 0) {
+        ++count;
+    }
+
+    int count_1 = count - 1, index = 0;
+    while ((count_1 - index) >= 4) {
+        control_write( client, "%d,%d,%d,%d,",
+                       values[index], values[index + 1],
+                       values[index + 2], values[index + 3] );
+        index += 4;
+    }
+    switch (count_1 - index) {
+    case 3: control_write( client, "%d,", values[index++] );
+    case 2: control_write( client, "%d,", values[index++] );
+    case 1: control_write( client, "%d,", values[index++] );
+        break;
+    }
+
+    control_write( client, "%d\r\n", values[index++] );
+}
+
+static int*
+collect_ints( char*  p, int  defval )
+{
+    int temp[256];
+    unsigned count = 0;
+
+    while (1) {
+        p = strchr(p, ',');
+        if (!p) {
+            if (!count) {
+                temp[count++] = defval;
+            }
+            break;
+        }
+
+        if (count >= sizeof temp) {
+            return NULL;
+        }
+
+        ++p;
+        if (!*p) {
+            temp[count++] = defval;
+            break;
+        } else if (*p == ',') {
+            temp[count++] = defval;
+        } else if (sscanf(p, "%u", &temp[count++]) != 1) {
+            return NULL;
+        }
+    }
+
+    int* values;
+
+    values = malloc((count + 1) * sizeof(int));
+    memcpy(values, temp, count * sizeof(int));
+    values[count] = -1;
+
+    return values;
+}
+
 static int
 do_sms_send( ControlClient  client, char*  args )
 {
@@ -2037,6 +2106,84 @@ do_sms_smsc( ControlClient  client, char*  args )
     return 0;
 }
 
+static int
+do_sms_mref( ControlClient  client, char*  args )
+{
+    if (!client->modem) {
+        control_write( client, "KO: modem emulation not running\r\n" );
+        return -1;
+    }
+
+    control_write( client, "%d\r\n", amodem_sms_get_mref(client->modem) );
+    return 0;
+}
+
+static int
+do_sms_cmse( ControlClient  client, char*  args )
+{
+    if (!client->modem) {
+        control_write( client, "KO: modem emulation not running\r\n" );
+        return -1;
+    }
+
+    if (!args) {
+        display_ints(client, amodem_sms_get_cmse(client->modem));
+        return 0;
+    }
+
+    if (!strcmp(args, "off")) {
+        amodem_sms_set_cmse(client->modem, NULL);
+        return 0;
+    }
+
+    if (strncmp(args, "on", 2)) {
+        control_write( client, "KO: Usage: 'cmse on[,<err>[,...]]' or 'cmse off' or 'cmse'\r\n" );
+        return -1;
+    }
+
+    int* errs = collect_ints(args, 95);
+    if (!errs) {
+        control_write( client, "KO: Usage: cmse on[,<err>[,...]]\r\n" );
+        return -1;
+    }
+
+    amodem_sms_set_cmse(client->modem, errs);
+    return 0;
+}
+
+static int
+do_sms_drpt( ControlClient  client, char*  args )
+{
+    if (!client->modem) {
+        control_write( client, "KO: modem emulation not running\r\n" );
+        return -1;
+    }
+
+    if (!args) {
+        display_ints(client, amodem_sms_get_drpt(client->modem));
+        return 0;
+    }
+
+    if (!strcmp(args, "off")) {
+        amodem_sms_set_drpt(client->modem, NULL);
+        return 0;
+    }
+
+    if (strncmp(args, "on", 2)) {
+        control_write( client, "KO: Usage: 'drpt on[,<st>[,...]]' or 'drpt off' or 'drpt'\r\n" );
+        return -1;
+    }
+
+    int* statuses = collect_ints(args, 0);
+    if (!statuses) {
+        control_write( client, "KO: Usage: drpt on[,<st>[,...]]\r\n" );
+        return -1;
+    }
+
+    amodem_sms_set_drpt(client->modem, statuses);
+    return 0;
+}
+
 static const CommandDefRec  sms_commands[] =
 {
     { "send", "send inbound SMS text message",
@@ -2053,6 +2200,22 @@ static const CommandDefRec  sms_commands[] =
     "'sms smsc <smscaddress>' allows you to simulate set smsc address\r\n"
     "'sms smsc' allows you to simulate get smsc address\r\n", NULL,
     do_sms_smsc, NULL},
+
+    { "mref", "show TP-MR (message reference)",
+    "'sms mref' to get last issued TP-MR (message reference)\r\n", NULL,
+    do_sms_mref, NULL },
+
+    { "cmse", "config CMS ERROR policy",
+    "'sms cmse on[,<err>[,...]]' to reply CMS ERRORs with specified codes, '0' to permit one round\r\n"
+    "'sms cmse off' to disable this feature\r\n"
+    "'sms cmse' to display current config\r\n", NULL,
+    do_sms_cmse, NULL },
+
+    { "drpt", "config SMS-DELIVER-REPORT policy",
+    "'sms drpt on[,<st>[,...]]' to reply delivery reports with specified statuses\r\n"
+    "'sms drpt off' to disable delivery reports\r\n"
+    "'sms drpt' to display current config\r\n", NULL,
+    do_sms_drpt, NULL },
 
     { NULL, NULL, NULL, NULL, NULL, NULL }
 };

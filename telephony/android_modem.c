@@ -365,6 +365,15 @@ typedef struct AModemRec_
 
     /* SMS */
     int           wait_sms;
+    int           sms_mref;
+    struct {
+        int*      errs;
+        int       index;
+    } sms_cmse;
+    struct {
+        int*      statuses;
+        int       index;
+    } sms_drpt;
 
     /* SIM card */
     ASimCard      sim;
@@ -462,14 +471,19 @@ void
 amodem_receive_sms( AModem  modem, SmsPDU  sms )
 {
 #define  SMS_UNSOL_HEADER  "+CMT: 0\r\n"
+#define  SMSR_UNSOL_HEADER  "+CDS: 0\r\n"
 
     if (modem->unsol_func) {
-        int    len, max;
+        const char* hdr;
+        int    len, max, hdr_len;
         char*  p;
 
-        strcpy( modem->out_buff, SMS_UNSOL_HEADER );
-        p   = modem->out_buff + (sizeof(SMS_UNSOL_HEADER)-1);
-        max = sizeof(modem->out_buff) - 3 - (sizeof(SMS_UNSOL_HEADER)-1);
+        hdr = smspdu_get_type(sms) == SMS_PDU_DELIVER ? SMS_UNSOL_HEADER
+                                                      : SMSR_UNSOL_HEADER;
+        hdr_len = strlen(hdr);
+        strcpy( modem->out_buff, hdr );
+        p   = modem->out_buff + (hdr_len - 1);
+        max = sizeof(modem->out_buff) - 3 - (hdr_len - 1);
         len = smspdu_to_hex( sms, p, max );
         if (len > max) /* too long */
             return;
@@ -481,6 +495,78 @@ amodem_receive_sms( AModem  modem, SmsPDU  sms )
 
         modem->unsol_func( modem->unsol_opaque, modem->out_buff );
     }
+}
+
+int
+amodem_sms_get_mref( AModem  modem )
+{
+    return modem->sms_mref;
+}
+
+void
+amodem_sms_set_cmse( AModem  modem, int*  errs )
+{
+    if (modem->sms_cmse.errs) {
+        free(modem->sms_cmse.errs);
+    }
+
+    modem->sms_cmse.errs = errs;
+    modem->sms_cmse.index = 0;
+}
+
+int*
+amodem_sms_get_cmse( AModem  modem )
+{
+    return modem->sms_cmse.errs;
+}
+
+static int
+amodem_sms_get_next_cmse_err( AModem  modem )
+{
+    if (!modem->sms_cmse.errs) {
+        return -1;
+    }
+
+    int err = modem->sms_cmse.errs[modem->sms_cmse.index++];
+    if (err < 0) {
+        modem->sms_cmse.index = 1;
+        err = modem->sms_cmse.errs[0];
+    }
+
+    return err;
+}
+
+void
+amodem_sms_set_drpt( AModem  modem, int*  statuses )
+{
+    if (modem->sms_drpt.statuses) {
+        free(modem->sms_drpt.statuses);
+    }
+
+    modem->sms_drpt.statuses = statuses;
+    modem->sms_drpt.index = 0;
+}
+
+int*
+amodem_sms_get_drpt( AModem  modem )
+{
+    return modem->sms_drpt.statuses;
+}
+
+static int
+amodem_sms_get_next_drpt_status( AModem  modem )
+{
+    if (!modem->sms_drpt.statuses) {
+        return -1;
+    }
+
+    int status = modem->sms_drpt.statuses[modem->sms_drpt.index++];
+    if (status < 0) {
+        modem->sms_drpt.index = 1;
+        status = modem->sms_drpt.statuses[0];
+    }
+
+    return status;
 }
 
 void
@@ -641,7 +727,11 @@ amodem_reset( AModem  modem )
     int i;
     modem->nvram_config = amodem_load_nvram(modem);
     modem->radio_state = A_RADIO_STATE_OFF;
+
     modem->wait_sms    = 0;
+    modem->sms_mref    = -1;
+    amodem_sms_set_cmse(modem, NULL);
+    amodem_sms_set_drpt(modem, NULL);
 
     modem->rssi= 7;    // Two signal strength bars
     modem->ber = 99;   // Means 'unknown'
@@ -2421,15 +2511,34 @@ handleSendSMSText( const char*  cmd, AModem  modem )
     pdu = smspdu_create_from_hex( cmd, len );
     if (pdu == NULL) {
         D("%s: invalid SMS PDU ?: '%s'\n", __FUNCTION__, cmd);
-        return "+CMS ERROR: INVALID SMS PDU";
+        // "Invalid message, unspecified". See 3GPP TS 24.011 Annex E.
+        return "+CMS ERROR: 95";
     }
     if (smspdu_get_receiver_address(pdu, &address) < 0) {
         D("%s: could not get SMS receiver address from '%s'\n",
           __FUNCTION__, cmd);
-        return "+CMS ERROR: BAD SMS RECEIVER ADDRESS";
+        smspdu_free(pdu);
+        // "Invalid SME address". See 3GPP TS 23.040 clause 9.2.3.22.
+        return "+CMS ERROR: 195";
     }
 
-    amodem_reply( modem, "+CMGS: 0" );
+    int err = amodem_sms_get_next_cmse_err(modem);
+    if (err > 0) {
+        smspdu_free(pdu);
+        return amodem_printf(modem, "+CMS ERROR: %d", err);
+    }
+
+    modem->sms_mref = (modem->sms_mref + 1) & 0xFF;
+    amodem_reply(modem, amodem_printf(modem, "+CMGS: %d", modem->sms_mref));
+
+    int status = amodem_sms_get_next_drpt_status(modem);
+    if (status >= 0) {
+        SmsPDU drpt = smspdu_create_deliver_report(modem->sms_mref, &address, status);
+        if (drpt) {
+            amodem_receive_sms( modem, drpt );
+            smspdu_free(drpt);
+        }
+    }
 
     do {
         int  index;
