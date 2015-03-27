@@ -4547,6 +4547,29 @@ do_modem_radio( ControlClient client, char *args )
     return -1;
 }
 
+static int do_modem_dtmf( ControlClient client, char* args )
+{
+    if (!client->modem) {
+        control_write(client, "KO: modem emulation not running\r\n");
+        return -1;
+    }
+
+    if (!args) {
+      char tone = amodem_get_last_dialed_tone(client->modem);
+      control_write(client, "%c\r\n", tone);
+      return 0;
+    }
+
+    if (!strcmp(args, "reset")) {
+      amodem_reset_last_dialed_tone(client->modem);
+      return 0;
+    }
+
+    control_write(client,
+                  "KO: invalid argument, try 'modem dtmf [reset]'\r\n");
+    return -1;
+}
+
 static const CommandDefRec  modem_commands[] =
 {
     { "tech", "query/switch modem technology",
@@ -4558,6 +4581,9 @@ static const CommandDefRec  modem_commands[] =
       "'modem radio enable': allows you to enable the radio of emulator modem.\r\n"
       "'modem radio disable': allows you to disable the radio of emulator modem.\r\n",
       NULL, do_modem_radio, NULL },
+
+    { "dtmf", "get or reset the last dialed tone",
+      NULL, NULL, do_modem_dtmf, NULL},
 
     { NULL, NULL, NULL, NULL, NULL, NULL }
 };

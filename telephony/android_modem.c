@@ -436,6 +436,8 @@ typedef struct AModemRec_
 
     // Modem Features
     uint32_t features;
+
+    char last_dialed_tone;
 } AModemRec;
 
 
@@ -826,6 +828,8 @@ amodem_create( int  base_port, int instance_id, AModemUnsolFunc  unsol_func, voi
     modem->sim = asimcard_create(base_port, instance_id);
     modem->supplementary = asupplementary_create(base_port, instance_id);
 
+    modem->last_dialed_tone = NULL;
+
     sys_main_init();
     // We don't know the exact number of instances to create here, it's
     // controlled by modem_driver_init(). Putting -1 here and register_savevm()
@@ -852,6 +856,18 @@ int
 amodem_get_instance_id( AModem  modem )
 {
     return modem->instance_id;
+}
+
+char
+amodem_get_last_dialed_tone( AModem modem)
+{
+    return modem->last_dialed_tone;
+}
+
+void
+amodem_reset_last_dialed_tone( AModem modem )
+{
+  modem->last_dialed_tone = NULL;
 }
 
 int
@@ -2177,8 +2193,26 @@ handleNetworkRegistration( const char*  cmd, AModem  modem )
 static const char*
 handleSetDialTone( const char*  cmd, AModem  modem )
 {
-    /* XXX: TODO */
-    return "OK";
+    assert ( !memcmp( "+EVTS=", cmd, 6 ) );
+    cmd += 6;
+
+    char tone = cmd[0];
+
+    // Stop DTMF
+    if (cmd[2] == '0') {
+      return "OK";
+    }
+
+    // Start DTMF
+    int  nn;
+    for (nn = 0; nn < modem->call_count; nn++) {
+        AVoiceCall call = modem->calls + nn;
+        if (call->call.state == A_CALL_ACTIVE) {
+            modem->last_dialed_tone = tone;
+            return "OK";
+        }
+    }
+    return "ERROR: No active call";
 }
 
 static const char*
@@ -3711,7 +3745,7 @@ static const struct {
     { "+CHLD=3", NULL, handleHangup },
     { "A", NULL, handleAnswer },  /* answer the call */
     { "H", NULL, handleAnswer },  /* user is busy */
-    { "!+VTS=", NULL, handleSetDialTone },
+    { "!+EVTS=", NULL, handleSetDialTone },
     { "+CIMI", OPERATOR_HOME_MCCMNC "000000000", NULL },   /* request internation subscriber identification number */
     { "+CGSN", "000000000000000", NULL },   /* request model version */
     { "+CUSD=2",NULL, NULL }, /* Cancel USSD */
