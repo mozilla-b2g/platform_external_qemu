@@ -130,7 +130,7 @@ int amodem_num_devices = 0;
 static int _amodem_switch_technology(AModem modem, AModemTech newtech, int32_t newpreferred);
 static int _amodem_set_cdma_subscription_source( AModem modem, ACdmaSubscriptionSource ss);
 static int _amodem_set_cdma_prl_version( AModem modem, int prlVersion);
-static const char* handleSignalStrength( const char*  cmd, AModem  modem);
+static void amodem_addSignalStrength( AModem  modem );
 static void voice_call_event( void*  _vcall );
 
 #if DEBUG
@@ -512,17 +512,6 @@ amodem_receive_cbs( AModem  modem, SmsPDU  cbs )
     modem->unsol_func( modem->unsol_opaque, modem->out_buff );
 }
 
-static const char*
-amodem_printf( AModem  modem, const char*  format, ... )
-{
-    va_list  args;
-    va_start(args, format);
-    vsnprintf( modem->out_buff, sizeof(modem->out_buff), format, args );
-    va_end(args);
-
-    return modem->out_buff;
-}
-
 static void
 amodem_begin_line( AModem  modem )
 {
@@ -530,13 +519,19 @@ amodem_begin_line( AModem  modem )
 }
 
 static void
+amodem_add_vline( AModem  modem, const char*  format, va_list args )
+{
+    modem->out_size += vsnprintf( modem->out_buff + modem->out_size,
+                                  sizeof(modem->out_buff) - modem->out_size,
+                                  format, args );
+}
+
+static void
 amodem_add_line( AModem  modem, const char*  format, ... )
 {
     va_list  args;
     va_start(args, format);
-    modem->out_size += vsnprintf( modem->out_buff + modem->out_size,
-                                  sizeof(modem->out_buff) - modem->out_size,
-                                  format, args );
+    amodem_add_vline( modem, format, args );
     va_end(args);
 }
 
@@ -545,6 +540,27 @@ amodem_end_line( AModem  modem )
 {
     modem->out_buff[ modem->out_size ] = 0;
     return modem->out_buff;
+}
+
+static void
+amodem_end_line_reply( AModem  modem )
+{
+    modem->out_buff[ modem->out_size ] = 0;
+
+    if ( !memcmp( modem->out_buff, "> ", 2 ) ||
+         !memcmp( modem->out_buff, "OK", 2 ) ||
+         !memcmp( modem->out_buff, "ERROR", 5 ) ||
+         !memcmp( modem->out_buff, "+CME ERROR", 6 ) ) {
+        // Don't append "OK".
+    } else {
+        strcat( modem->out_buff, "\rOK" );
+    }
+
+    R(">> %s\n", quote(modem->out_buff));
+    if (modem->unsol_func) {
+        modem->unsol_func( modem->unsol_opaque, modem->out_buff );
+        modem->unsol_func( modem->unsol_opaque, "\r" );
+    }
 }
 
 #define NV_OPER_NAME_INDEX                     "oper_name_index"
@@ -1470,7 +1486,9 @@ amodem_set_signal_strength( AModem modem, int rssi, int ber )
     modem->rsrp  = 65535;
     modem->rssnr = 65535;
 
-    amodem_unsol_buffered( modem, handleSignalStrength(NULL, modem) );
+    amodem_begin_line( modem );
+    amodem_addSignalStrength( modem );
+    amodem_unsol_buffered( modem, amodem_end_line( modem ) );
 }
 
 void
@@ -1492,7 +1510,9 @@ amodem_set_lte_signal_strength( AModem modem, int rxlev, int rsrp, int rssnr )
     modem->rsrp = rsrp;
     modem->rssnr = rssnr;
 
-    amodem_unsol_buffered( modem, handleSignalStrength(NULL, modem) );
+    amodem_begin_line( modem );
+    amodem_addSignalStrength( modem );
+    amodem_unsol_buffered( modem, amodem_end_line( modem ) );
 }
 
 static void
@@ -1701,32 +1721,14 @@ amodem_activate_data_call( AModem  modem, int cid, int enable)
  **/
 
 static void
-amodem_reply(AModem  modem, const char*  answer)
+amodem_reply( AModem  modem, const char*  format, ... )
 {
-    if ( !memcmp( answer, "> ", 2 ) ||
-         !memcmp( answer, "OK", 2 ) ||
-         !memcmp( answer, "ERROR", 5 ) ||
-         !memcmp( answer, "+CME ERROR", 6 ) ) {
-        // Don't append "OK".
-    } else if (answer != modem->out_buff) {
-        amodem_printf( modem, "%s\rOK", answer );
-        answer = modem->out_buff;
-    } else
-        strcat( modem->out_buff, "\rOK" );
-
-    R(">> %s\n", quote(answer));
-    if (modem->unsol_func) {
-        modem->unsol_func( modem->unsol_opaque, answer );
-        modem->unsol_func( modem->unsol_opaque, "\r" );
-    }
-}
-
-static const char*
-unknownCommand( const char*  cmd, AModem  modem )
-{
-    modem=modem;
-    fprintf(stderr, ">>> unknown command '%s'\n", cmd );
-    return "ERROR: unknown command\r";
+    va_list  args;
+    va_start(args, format);
+    amodem_begin_line( modem );
+    amodem_add_vline( modem, format, args );
+    amodem_end_line_reply( modem );
+    va_end(args);
 }
 
 /*
@@ -1904,7 +1906,7 @@ _amodem_set_cdma_subscription_source( AModem modem, ACdmaSubscriptionSource ss)
     return -1;
 }
 
-static const char*
+static void
 handleSubscriptionSource( const char*  cmd, AModem  modem )
 {
     int newsource;
@@ -1914,21 +1916,22 @@ handleSubscriptionSource( const char*  cmd, AModem  modem )
     assert( !memcmp( "+CCSS", cmd, 5 ) );
     cmd += 5;
     if (cmd[0] == '?') {
-        return amodem_printf( modem, "+CCSS: %d", modem->subscription_source );
+        amodem_reply( modem, "+CCSS: %d", modem->subscription_source );
+        return;
     } else if (cmd[0] == '=') {
         switch (cmd[1]) {
             case '0':
             case '1':
                 newsource = (ACdmaSubscriptionSource)cmd[1] - '0';
                 _amodem_set_cdma_subscription_source( modem, newsource );
-                return amodem_printf( modem, "+CCSS: %d", modem->subscription_source );
-                break;
+                amodem_reply( modem, "+CCSS: %d", modem->subscription_source );
+                return;
         }
     }
-    return amodem_printf( modem, "ERROR: Invalid subscription source");
+    amodem_reply( modem, "ERROR: Invalid subscription source");
 }
 
-static const char*
+static void
 handleRoamPref( const char * cmd, AModem modem )
 {
     int roaming_pref = -1;
@@ -1937,26 +1940,30 @@ handleRoamPref( const char * cmd, AModem modem )
     assert( !memcmp( "+WRMP", cmd, 5 ) );
     cmd += 5;
     if (cmd[0] == '?') {
-        return amodem_printf( modem, "+WRMP: %d", modem->roaming_pref );
+        amodem_reply( modem, "+WRMP: %d", modem->roaming_pref );
+        return;
     }
 
     if (!strcmp( cmd, "=?")) {
-        return amodem_printf( modem, "+WRMP: 0,1,2" );
+        amodem_reply( modem, "+WRMP: 0,1,2" );
+        return;
     } else if (cmd[0] == '=') {
         cmd ++;
         roaming_pref = strtol( cmd, &endptr, 10 );
          // Make sure the rest of the command is the number
          // (if *endptr is null, it means strtol processed the whole string as a number)
-        if(endptr && !*endptr) {
+        if (endptr && !*endptr) {
             modem->roaming_pref = roaming_pref;
             aconfig_set( modem->nvram_config, NV_CDMA_ROAMING_PREF, cmd );
             aconfig_save_file( modem->nvram_config, modem->nvram_config_filename );
-            return "OK";
+            amodem_reply( modem, "OK" );
+            return;
         }
     }
-    return amodem_printf( modem, "ERROR");
+    amodem_reply( modem, "ERROR" );
 }
-static const char*
+
+static void
 handleTech( const char*  cmd, AModem  modem )
 {
     AModemTech newtech = modem->technology;
@@ -1966,11 +1973,12 @@ handleTech( const char*  cmd, AModem  modem )
     assert( !memcmp( "+CTEC", cmd, 5 ) );
     cmd += 5;
     if (cmd[0] == '?') {
-        return amodem_printf( modem, "+CTEC: %d,%x",modem->technology, modem->preferred_mask );
+        amodem_reply( modem, "+CTEC: %d,%x",modem->technology, modem->preferred_mask );
+        return;
     }
-    amodem_begin_line( modem );
     if (!strcmp( cmd, "=?")) {
-        return amodem_printf( modem, "+CTEC: 0,1,2,3" );
+        amodem_reply( modem, "+CTEC: 0,1,2,3" );
+        return;
     }
     else if (cmd[0] == '=') {
         switch (cmd[1]) {
@@ -1990,25 +1998,31 @@ handleTech( const char*  cmd, AModem  modem )
         int ret;
 
         D( "cmd: %s\n", cmd );
-        if (cmd[0] == ',' && ! parsePreferred( ++cmd, &pt ))
-            return amodem_printf( modem, "ERROR: invalid preferred mode" );
+        if (cmd[0] == ',' && ! parsePreferred( ++cmd, &pt )) {
+            amodem_reply( modem, "ERROR: invalid preferred mode" );
+            return;
+        }
 
         ret = _amodem_switch_technology( modem, newtech, pt );
 
         if (ret < 0) {
-            return amodem_printf( modem, "ERROR: unable to set preferred mode" );
+            amodem_reply( modem, "ERROR: unable to set preferred mode" );
+            return;
         }
 
         if (ret != current) {
-            return amodem_printf( modem, "+CTEC: %d", ret );
+            amodem_reply( modem, "+CTEC: %d", ret );
+            return;
         }
 
-        return amodem_printf( modem, "+CTEC: DONE" );
+        amodem_reply( modem, "+CTEC: DONE" );
+        return;
     }
-    return amodem_printf( modem, "ERROR: %s: Unknown Technology", cmd + 1 );
+
+    amodem_reply( modem, "ERROR: %s: Unknown Technology", cmd + 1 );
 }
 
-static const char*
+static void
 handleEmergencyMode( const char* cmd, AModem modem )
 {
     long arg;
@@ -2016,45 +2030,51 @@ handleEmergencyMode( const char* cmd, AModem modem )
     assert ( !memcmp( "+WSOS", cmd, 5 ) );
     cmd += 5;
     if (cmd[0] == '?') {
-        return amodem_printf( modem, "+WSOS: %d", modem->in_emergency_mode);
+        amodem_reply( modem, "+WSOS: %d", modem->in_emergency_mode);
+        return;
     }
 
     if (cmd[0] == '=') {
         if (cmd[1] == '?') {
-            return amodem_printf(modem, "+WSOS: (0)");
+            amodem_reply(modem, "+WSOS: (0)");
+            return;
         }
         if (cmd[1] == 0) {
-            return amodem_printf(modem, "ERROR");
+            amodem_reply(modem, "ERROR");
+            return;
         }
         arg = strtol(cmd+1, &endptr, 10);
 
         if (!endptr || endptr[0] != 0) {
-            return amodem_printf(modem, "ERROR");
+            amodem_reply(modem, "ERROR");
+            return;
         }
 
         arg = arg? 1 : 0;
 
         if ((!arg) != (!modem->in_emergency_mode)) {
             modem->in_emergency_mode = arg;
-            return amodem_printf(modem, "+WSOS: %d", arg);
+            amodem_reply(modem, "+WSOS: %d", arg);
+            return;
         }
     }
-    return amodem_printf(modem, "ERROR");
+    amodem_reply(modem, "ERROR");
 }
 
-static const char*
+static void
 handlePrlVersion( const char* cmd, AModem modem )
 {
     assert ( !memcmp( "+WPRL", cmd, 5 ) );
     cmd += 5;
     if (cmd[0] == '?') {
-        return amodem_printf( modem, "+WPRL: %d", modem->prl_version);
+        amodem_reply( modem, "+WPRL: %d", modem->prl_version);
+        return;
     }
 
-    return amodem_printf(modem, "ERROR");
+    amodem_reply(modem, "ERROR");
 }
 
-static const char*
+static void
 handleRadioPower( const char*  cmd, AModem  modem )
 {
     ARadioState radio_state;
@@ -2066,26 +2086,24 @@ handleRadioPower( const char*  cmd, AModem  modem )
     else {
         // 3GPP TS 27.007 subclause 9.2.1 "General errors":
         // 50 Incorrect parameters
-        return "+CME ERROR: 50";
+        amodem_reply( modem, "+CME ERROR: 50" );
+        return;
     }
 
     amodem_reply(modem, "OK");
     _amodem_set_radio_state(modem, radio_state);
-
-    // Return NULL to show we have sent the reply and no further work to do.
-    return NULL;
 }
 
-static const char*
+static void
 handleRadioPowerReq( const char*  cmd, AModem  modem )
 {
     if (modem->radio_state != A_RADIO_STATE_OFF)
-        return "+CFUN: 1";
+        amodem_reply(modem, "+CFUN: 1");
     else
-        return "+CFUN: 0";
+        amodem_reply(modem, "+CFUN: 0");
 }
 
-static const char*
+static void
 handleSIMStatusReq( const char*  cmd, AModem  modem )
 {
     const char*  answer = NULL;
@@ -2100,7 +2118,8 @@ handleSIMStatusReq( const char*  cmd, AModem  modem )
         default:
             answer = "ERROR: internal error";
     }
-    return answer;
+
+    amodem_reply( modem, "%s", answer);
 }
 
 /* TODO: Will we need this?
@@ -2115,19 +2134,23 @@ handleSRegister( const char * cmd, AModem modem )
     int l = strtol(cmd, &end, 10);
 } */
 
-static const char*
+static void
 handleNetworkRegistration( const char*  cmd, AModem  modem )
 {
     if ( !memcmp( cmd, "+CREG", 5 ) ) {
         cmd += 5;
         if (cmd[0] == '?') {
-            if (modem->voice_mode == A_REGISTRATION_UNSOL_ENABLED_FULL)
-                return amodem_printf( modem, "+CREG: %d,%d, \"%04x\", \"%07x\"",
-                                       modem->voice_mode, modem->voice_state,
-                                       modem->area_code & 0xffff, modem->cell_id & 0xfffffff );
-            else
-                return amodem_printf( modem, "+CREG: %d,%d",
-                                       modem->voice_mode, modem->voice_state );
+            if (modem->voice_mode == A_REGISTRATION_UNSOL_ENABLED_FULL) {
+                amodem_reply( modem, "+CREG: %d,%d, \"%04x\", \"%07x\"",
+                              modem->voice_mode, modem->voice_state,
+                              modem->area_code & 0xffff, modem->cell_id & 0xfffffff );
+                return;
+            }
+            else {
+                amodem_reply( modem, "+CREG: %d,%d",
+                              modem->voice_mode, modem->voice_state );
+                return;
+            }
         } else if (cmd[0] == '=') {
             switch (cmd[1]) {
                 case '0':
@@ -2143,10 +2166,12 @@ handleNetworkRegistration( const char*  cmd, AModem  modem )
                     break;
 
                 case '?':
-                    return "+CREG: (0-2)";
+                    amodem_reply( modem, "+CREG: (0-2)" );
+                    return;
 
                 default:
-                    return "ERROR: BAD COMMAND";
+                    amodem_reply( modem, "ERROR: BAD COMMAND" );
+                    return;
             }
         } else {
             assert( 0 && "unreachable" );
@@ -2154,15 +2179,19 @@ handleNetworkRegistration( const char*  cmd, AModem  modem )
     } else if ( !memcmp( cmd, "+CGREG", 6 ) ) {
         cmd += 6;
         if (cmd[0] == '?') {
-            if (modem->supportsNetworkDataType)
-                return amodem_printf( modem, "+CGREG: %d,%d,\"%04x\",\"%07x\",\"%04x\"",
-                                    modem->data_mode, modem->data_state,
-                                    modem->area_code & 0xffff, modem->cell_id & 0xfffffff,
-                                    modem->data_network );
-            else
-                return amodem_printf( modem, "+CGREG: %d,%d,\"%04x\",\"%07x\"",
-                                    modem->data_mode, modem->data_state,
-                                    modem->area_code & 0xffff, modem->cell_id & 0xfffffff );
+            if (modem->supportsNetworkDataType) {
+                amodem_reply( modem, "+CGREG: %d,%d,\"%04x\",\"%07x\",\"%04x\"",
+                              modem->data_mode, modem->data_state,
+                              modem->area_code & 0xffff, modem->cell_id & 0xfffffff,
+                              modem->data_network );
+                return;
+            }
+            else {
+                amodem_reply( modem, "+CGREG: %d,%d,\"%04x\",\"%07x\"",
+                              modem->data_mode, modem->data_state,
+                              modem->area_code & 0xffff, modem->cell_id & 0xfffffff );
+                return;
+            }
         } else if (cmd[0] == '=') {
             switch (cmd[1]) {
                 case '0':
@@ -2178,19 +2207,21 @@ handleNetworkRegistration( const char*  cmd, AModem  modem )
                     break;
 
                 case '?':
-                    return "+CGREG: (0-2)";
+                    amodem_reply( modem, "+CGREG: (0-2)" );
+                    return;
 
                 default:
-                    return "ERROR: BAD COMMAND";
+                    amodem_reply( modem, "ERROR: BAD COMMAND" );
+                    return;
             }
         } else {
             assert( 0 && "unreachable" );
         }
     }
-    return "OK";
+    amodem_reply( modem, "OK" );
 }
 
-static const char*
+static void
 handleSetDialTone( const char*  cmd, AModem  modem )
 {
     assert ( !memcmp( "+EVTS=", cmd, 6 ) );
@@ -2200,7 +2231,8 @@ handleSetDialTone( const char*  cmd, AModem  modem )
 
     // Stop DTMF
     if (cmd[2] == '0') {
-      return "OK";
+      amodem_reply( modem, "OK" );
+      return;
     }
 
     // Start DTMF
@@ -2209,27 +2241,28 @@ handleSetDialTone( const char*  cmd, AModem  modem )
         AVoiceCall call = modem->calls + nn;
         if (call->call.state == A_CALL_ACTIVE) {
             modem->last_dialed_tone = tone;
-            return "OK";
+            amodem_reply( modem, "OK" );
+            return;
         }
     }
-    return "ERROR: No active call";
+    amodem_reply( modem, "ERROR: No active call" );
 }
 
-static const char*
+static void
 handleDeleteSMSonSIM( const char*  cmd, AModem  modem )
 {
     /* XXX: TODO */
-    return "OK";
+    amodem_reply( modem, "OK" );
 }
 
-static const char*
+static void
 handleSIM_IO( const char*  cmd, AModem  modem )
 {
-    return asimcard_io( modem->sim, cmd );
+    amodem_reply( modem, "%s", asimcard_io( modem->sim, cmd ) );
 }
 
 
-static const char*
+static void
 handleOperatorSelection( const char*  cmd, AModem  modem )
 {
     assert( !memcmp( "+COPS", cmd, 5 ) );
@@ -2240,20 +2273,24 @@ handleOperatorSelection( const char*  cmd, AModem  modem )
         if ( !amodem_has_network( modem ) )
         {
             /* this error code means "no network" */
-            return amodem_printf( modem, "+CME ERROR: 30" );
+            amodem_reply( modem, "+CME ERROR: 30" );
+            return;
         }
 
         oper = &modem->operators[ modem->oper_index ];
 
-        if ( modem->oper_name_index == 2 )
-            return amodem_printf( modem, "+COPS: %d,2,%s",
-                                  modem->oper_selection_mode,
-                                  oper->name[2] );
+        if ( modem->oper_name_index == 2 ) {
+            amodem_reply( modem, "+COPS: %d,2,%s",
+                          modem->oper_selection_mode,
+                          oper->name[2] );
+            return;
+        }
 
-        return amodem_printf( modem, "+COPS: %d,%d,\"%s\"",
-                              modem->oper_selection_mode,
-                              modem->oper_name_index,
-                              oper->name[ modem->oper_name_index ] );
+        amodem_reply( modem, "+COPS: %d,%d,\"%s\"",
+                      modem->oper_selection_mode,
+                      modem->oper_name_index,
+                      oper->name[ modem->oper_name_index ] );
+        return;
     }
     else if (cmd[0] == '=' && cmd[1] == '?') {  /* ask for all available operators */
         const char*  comma = "+COPS: ";
@@ -2265,14 +2302,16 @@ handleOperatorSelection( const char*  cmd, AModem  modem )
                              oper->status, oper->name[0], oper->name[1], oper->name[2] );
             comma = ", ";
         }
-        return amodem_end_line( modem );
+        amodem_end_line_reply( modem );
+        return;
     }
     else if (cmd[0] == '=') {
         switch (cmd[1]) {
             case '0':
                 modem->oper_selection_mode = A_SELECTION_AUTOMATIC;
                 amodem_set_voice_registration(modem, A_REGISTRATION_HOME);
-                return "OK";
+                amodem_reply( modem, "OK" );
+                return;
 
             case '1':
                 {
@@ -2306,10 +2345,12 @@ handleOperatorSelection( const char*  cmd, AModem  modem )
 
                     if (found < 0) {
                         /* Selection failed */
-                        return "+CME ERROR: 529";
+                        amodem_reply( modem, "+CME ERROR: 529" );
+                        return;
                     } else if (modem->operators[found].status == A_STATUS_DENIED) {
                         /* network not allowed */
-                        return "+CME ERROR: 32";
+                        amodem_reply( modem, "+CME ERROR: 32" );
+                        return;
                     }
                     modem->oper_selection_mode = A_SELECTION_MANUAL;
                     modem->oper_index = found;
@@ -2324,12 +2365,14 @@ handleOperatorSelection( const char*  cmd, AModem  modem )
                         modem->data_state = A_REGISTRATION_ROAMING;
                         amodem_set_voice_registration(modem, A_REGISTRATION_ROAMING);
                     }
-                    return "OK";
+                    amodem_reply( modem, "OK" );
+                    return;
                 }
 
             case '2':
                 modem->oper_selection_mode = A_SELECTION_DEREGISTRATION;
-                return "OK";
+                amodem_reply( modem, "OK" );
+                return;
 
             case '3':
                 {
@@ -2343,45 +2386,49 @@ handleOperatorSelection( const char*  cmd, AModem  modem )
                         goto BadCommand;
 
                     modem->oper_name_index = format;
-                    return "OK";
+                    amodem_reply( modem, "OK" );
+                    return;
                 }
             default:
                 ;
         }
     }
 BadCommand:
-    return unknownCommand(cmd,modem);
+    fprintf(stderr, ">>> unknown command '%s'\n", cmd );
+    amodem_reply( modem, "ERROR: unknown command\r" );
 }
 
-static const char*
+static void
 handleRequestOperator( const char*  cmd, AModem  modem )
 {
     AOperator  oper;
     cmd=cmd;
 
-    if ( !amodem_has_network(modem) )
-        return "+CME ERROR: 30";
+    if ( !amodem_has_network(modem) ) {
+        amodem_reply( modem, "+CME ERROR: 30" );
+        return;
+    }
 
     oper = modem->operators + modem->oper_index;
     modem->oper_name_index = 2;
-    return amodem_printf( modem, "+COPS: 0,0,\"%s\"\r"
-                          "+COPS: 0,1,\"%s\"\r"
-                          "+COPS: 0,2,\"%s\"",
-                          oper->name[0], oper->name[1], oper->name[2] );
+    amodem_reply( modem, "+COPS: 0,0,\"%s\"\r"
+                  "+COPS: 0,1,\"%s\"\r"
+                  "+COPS: 0,2,\"%s\"",
+                  oper->name[0], oper->name[1], oper->name[2] );
 }
 
-static const char*
+static void
 handleSendSMStoSIM( const char*  cmd, AModem  modem )
 {
     /* XXX: TODO */
-    return "ERROR: unimplemented";
+    amodem_reply( modem, "ERROR: unimplemented" );
 }
 
-static const char*
+static void
 handleSendSMS( const char*  cmd, AModem  modem )
 {
     modem->wait_sms = 1;
-    return "> ";
+    amodem_reply( modem, "> " );
 }
 
 #if 0
@@ -2443,7 +2490,7 @@ smspdu_dump( SmsPDU  pdu, FILE*  out )
 }
 #endif
 
-static const char*
+static void
 handleSendSMSText( const char*  cmd, AModem  modem )
 {
     SmsAddressRec  address;
@@ -2460,12 +2507,14 @@ handleSendSMSText( const char*  cmd, AModem  modem )
     pdu = smspdu_create_from_hex( cmd, len );
     if (pdu == NULL) {
         D("%s: invalid SMS PDU ?: '%s'\n", __FUNCTION__, cmd);
-        return "+CMS ERROR: INVALID SMS PDU";
+        amodem_reply( modem, "+CMS ERROR: INVALID SMS PDU" );
+        return;
     }
     if (smspdu_get_receiver_address(pdu, &address) < 0) {
         D("%s: could not get SMS receiver address from '%s'\n",
           __FUNCTION__, cmd);
-        return "+CMS ERROR: BAD SMS RECEIVER ADDRESS";
+        amodem_reply( modem, "+CMS ERROR: BAD SMS RECEIVER ADDRESS" );
+        return;
     }
 
     amodem_reply( modem, "+CMGS: 0" );
@@ -2554,11 +2603,9 @@ handleSendSMSText( const char*  cmd, AModem  modem )
 
     if (pdu != NULL)
         smspdu_free(pdu);
-
-    return NULL;
 }
 
-static const char*
+static void
 handleChangeOrEnterPIN( const char*  cmd, AModem  modem )
 {
     assert( !memcmp( cmd, "+CPIN=", 6 ) );
@@ -2566,10 +2613,12 @@ handleChangeOrEnterPIN( const char*  cmd, AModem  modem )
 
     switch (asimcard_get_status(modem->sim)) {
         case A_SIM_STATUS_ABSENT:
-            return "+CME ERROR: SIM ABSENT";
+            amodem_reply( modem, "+CME ERROR: SIM ABSENT" );
+            return;
 
         case A_SIM_STATUS_NOT_READY:
-            return "+CME ERROR: SIM NOT READY";
+            amodem_reply( modem, "+CME ERROR: SIM NOT READY" );
+            return;
 
         case A_SIM_STATUS_READY:
             /* this may be a request to change the PIN */
@@ -2578,21 +2627,26 @@ handleChangeOrEnterPIN( const char*  cmd, AModem  modem )
                     char  pin[5];
                     memcpy( pin, cmd, 4 ); pin[4] = 0;
 
-                    if ( !asimcard_check_pin( modem->sim, pin ) )
-                        return "+CME ERROR: BAD PIN";
+                    if ( !asimcard_check_pin( modem->sim, pin ) ) {
+                        amodem_reply( modem, "+CME ERROR: BAD PIN" );
+                        return;
+                    }
 
                     memcpy( pin, cmd+5, 4 );
                     asimcard_set_pin( modem->sim, pin );
-                    return "+CPIN: READY";
+                    amodem_reply( modem, "+CPIN: READY" );
+                    return;
                 }
             }
             break;
 
         case A_SIM_STATUS_PIN:   /* waiting for PIN */
             if ( asimcard_check_pin( modem->sim, cmd ) )
-                return "+CPIN: READY";
+                amodem_reply( modem, "+CPIN: READY" );
             else
-                return "+CME ERROR: BAD PIN";
+                amodem_reply( modem, "+CME ERROR: BAD PIN" );
+
+            return;
 
         case A_SIM_STATUS_PUK:  /* waiting for PUK */
             if (strlen(cmd) == 13 && cmd[8] == ',') {
@@ -2600,20 +2654,24 @@ handleChangeOrEnterPIN( const char*  cmd, AModem  modem )
                 memcpy( puk, cmd, 8 );
                 puk[8] = 0;
                 if ( asimcard_check_puk( modem->sim, puk, cmd+9 ) )
-                    return "+CPIN: READY";
+                    amodem_reply( modem, "+CPIN: READY" );
                 else
-                    return "+CME ERROR: BAD PUK";
+                    amodem_reply( modem, "+CME ERROR: BAD PUK" );
+
+                return;
             }
-            return "+CME ERROR: BAD PUK";
+            amodem_reply( modem, "+CME ERROR: BAD PUK" );
+            return;
 
         default:
-            return "+CPIN: PH-NET PIN";
+            amodem_reply( modem, "+CPIN: PH-NET PIN" );
+            return;
     }
 
-    return "+CME ERROR: BAD FORMAT";
+    amodem_reply( modem, "+CME ERROR: BAD FORMAT" );
 }
 
-static const char*
+static void
 handleGetRemainingRetries( const char* cmd, AModem modem )
 {
     assert(!memcmp(cmd, "+CPINR=", 7));
@@ -2634,10 +2692,10 @@ handleGetRemainingRetries( const char* cmd, AModem modem )
       amodem_add_line( modem, "+CME ERROR: 50\r\n");
     }
 
-    return amodem_end_line(modem);
+    amodem_end_line_reply(modem);
 }
 
-static const char*
+static void
 handleListCurrentCalls( const char*  cmd, AModem  modem )
 {
     int  nn;
@@ -2654,17 +2712,16 @@ handleListCurrentCalls( const char*  cmd, AModem  modem )
                              call->multi, number, 129 , call->numberPresentation);
         }
     }
-    return amodem_end_line( modem );
+    amodem_end_line_reply( modem );
 }
 
-static const char*
+static void
 handleLastCallFailCause( const char* cmd, AModem modem )
 {
-    amodem_add_line( modem, "+CEER: %d\n", modem->last_call_fail_cause );
-    return amodem_end_line( modem );
+    amodem_reply( modem, "+CEER: %d\n", modem->last_call_fail_cause );
 }
 
-static const char*
+static void
 handleCallForwardGetReq( const char* cmd, AModem modem )
 {
     int i, j;
@@ -2676,12 +2733,14 @@ handleCallForwardGetReq( const char* cmd, AModem modem )
 
     if (sscanf(cmd, "+CCFC=%d,%*[^,],,,%d", &reason, &classx) < 1) {
         // Incorrect parameters
-        return "+CME ERROR: 50";
+        amodem_reply( modem, "+CME ERROR: 50" );
+        return;
     }
 
     if ((classx >> (CALL_FORWARDING_MAX_CLASSX_OFFSET + 1))) {
         // Invalid classx
-        return "+CME ERROR: 50";
+        amodem_reply( modem, "+CME ERROR: 50" );
+        return;
     }
 
     // Iterative all service.
@@ -2734,10 +2793,10 @@ handleCallForwardGetReq( const char* cmd, AModem modem )
             amodem_add_line(modem, "+CCFC: 0,%d\r\n", classx);
         }
     }
-    return amodem_end_line(modem);
+    amodem_end_line_reply(modem);
 }
 
-static const char*
+static void
 handleCallForwardSetReq( const char* cmd, AModem modem )
 {
     int i = 0;
@@ -2753,12 +2812,14 @@ handleCallForwardSetReq( const char* cmd, AModem modem )
     if (sscanf(cmd, "+CCFC=%d,%d,\"%[^\"]\",%d,%d,,,%d",
                &reason, &mode, number, &toa, &classx, &time) < 4) {
         // Incorrect parameters
-        return "+CME ERROR: 50";
+        amodem_reply( modem, "+CME ERROR: 50" );
+        return;
     }
 
     if ((classx >> (CALL_FORWARDING_MAX_CLASSX_OFFSET + 1))) {
         // Invalid classx
-        return "+CME ERROR: 50";
+        amodem_reply( modem, "+CME ERROR: 50" );
+        return;
     }
 
     // Iterative all service.
@@ -2782,14 +2843,15 @@ handleCallForwardSetReq( const char* cmd, AModem modem )
                 break;
             default:
                 // Incorrect parameters
-                return "+CME ERROR: 50";
+                amodem_reply( modem, "+CME ERROR: 50" );
+                return;
         }
     }
 
-    return "OK";
+    amodem_reply( modem, "OK" );
 }
 
-static const char*
+static void
 handleCallForwardReq( const char* cmd, AModem modem )
 {
     int reason = 0;
@@ -2797,7 +2859,8 @@ handleCallForwardReq( const char* cmd, AModem modem )
 
     if (sscanf(cmd, "+CCFC=%d,%d%*s", &reason, &mode) < 2) {
         // Incorrect parameters
-        return "+CME ERROR: 50";
+        amodem_reply( modem, "+CME ERROR: 50" );
+        return;
     }
 
     if (reason == A_CALL_FORWARDING_REASON_ALL ||
@@ -2805,17 +2868,18 @@ handleCallForwardReq( const char* cmd, AModem modem )
         // We don't support A_CALL_FORWARDING_REASON_ALL and
         // A_CALL_FORWARDING_REASON_ALL_CONDITIONAL for now, because there is no
         // detailed information about how to handle these two types in TS 22.082.
-        return "+CME ERROR: 50";
+        amodem_reply( modem, "+CME ERROR: 50" );
+        return;
     }
 
     if (mode == A_CALL_FORWARDING_MODE_QUERY) {
-        return handleCallForwardGetReq(cmd, modem);
+        handleCallForwardGetReq(cmd, modem);
     } else {
-        return handleCallForwardSetReq(cmd, modem);
+        handleCallForwardSetReq(cmd, modem);
     }
 }
 
-static const char*
+static void
 handleCallBarringSetReq( AModem modem, ACallBarringProgram program, int classx, int mode )
 {
     int i = 0;
@@ -2826,10 +2890,10 @@ handleCallBarringSetReq( AModem modem, ACallBarringProgram program, int classx, 
         }
     }
 
-    return "OK";
+    amodem_reply( modem, "OK" );
 }
 
-static const char*
+static void
 handleCallBarringGetReq( AModem modem, ACallBarringProgram program, int classx )
 {
     int i = 0;
@@ -2860,10 +2924,10 @@ handleCallBarringGetReq( AModem modem, ACallBarringProgram program, int classx )
     if (result_neg) {
         amodem_add_line(modem, "+CLCK: %d,%d\r\n", 0, result_neg);
     }
-    return amodem_end_line(modem);
+    amodem_end_line_reply(modem);
 }
 
-static const char*
+static void
 handleCallBarringReq( AModem modem, ACallBarringProgram program,
                       int mode, const char* passwd, int classx )
 {
@@ -2872,27 +2936,32 @@ handleCallBarringReq( AModem modem, ACallBarringProgram program,
         case 1:
             if (passwd == NULL) {
                 // Incorrect parameters
-                return "+CME ERROR: 50";
+                amodem_reply( modem, "+CME ERROR: 50" );
+                return;
             }
             if (!asupplementary_check_passwd(modem->supplementary,
                                              A_SERVICE_TYPE_CALL_BARRING,
                                              passwd)) {
                 // Wrong password
-                return "+CME ERROR: 16";
+                amodem_reply( modem, "+CME ERROR: 16" );
+                return;
             }
-            return handleCallBarringSetReq(modem, program, classx, mode);
+            handleCallBarringSetReq(modem, program, classx, mode);
+            return;
 
         case 2:
-            return handleCallBarringGetReq(modem, program, classx);
+            handleCallBarringGetReq(modem, program, classx);
+            return;
 
         default:
-            return "+CME ERROR: 50";
+            amodem_reply( modem, "+CME ERROR: 50" );
+            return;
     }
 
-    return "OK";
+    amodem_reply( modem, "OK" );
 }
 
-static const char*
+static void
 handleFacilityLockReq( const char* cmd, AModem modem )
 {
     char fac[64];
@@ -2905,12 +2974,14 @@ handleFacilityLockReq( const char* cmd, AModem modem )
     // AT+CLCK=<fac>,<mode>[,<password>[,<class>]].
     char* cmd_ptr = strchr(cmd, '=') + 1;
     if (!cmd_ptr || sscanf(cmd_ptr, "\"%[^\"]\"", fac) != 1) {
-        return "+CME ERROR: 50";
+        amodem_reply( modem, "+CME ERROR: 50" );
+        return;
     }
 
     cmd_ptr = strchr( cmd_ptr, ',') + 1;
     if (!cmd_ptr || sscanf(cmd_ptr, "%d", &mode) != 1) {
-        return "+CME ERROR: 50";
+        amodem_reply( modem, "+CME ERROR: 50" );
+        return;
     }
 
     cmd_ptr = strchr( cmd_ptr, ',') + 1;
@@ -2927,7 +2998,8 @@ handleFacilityLockReq( const char* cmd, AModem modem )
 
         if (!(class & 1)) {
             // Operation not supported
-            return "+CME ERROR: 4";
+            amodem_reply( modem, "+CME ERROR: 4" );
+            return;
         }
 
         switch (mode) {
@@ -2935,38 +3007,47 @@ handleFacilityLockReq( const char* cmd, AModem modem )
             case 1: // Lock
                 if (passwd[0] == '\0') {
                     // Incorrect parameters
-                    return "+CME ERROR: 50";
+                    amodem_reply( modem, "+CME ERROR: 50" );
+                    return;
                 }
 
                 if (!asimcard_set_pin_enabled(modem->sim, (mode == 1), passwd)) {
                     // Incorrect password
-                    return "+CME ERROR: 16";
+                    amodem_reply( modem, "+CME ERROR: 16" );
+                    return;
                 }
 
-                return "OK";
+                amodem_reply( modem, "OK" );
+                return;
             case 2: //Query status.
-                return amodem_printf(modem, "+CLCK: %d,%d\r\n",
-                                     asimcard_get_pin_enabled(modem->sim) ? 1 : 0, 1);
+                amodem_reply(modem, "+CLCK: %d,%d\r\n",
+                             asimcard_get_pin_enabled(modem->sim) ? 1 : 0, 1);
+                return;
         }
     } else if (strcmp(fac, "AO") == 0) {
-        return handleCallBarringReq(modem, A_CALL_BARRING_PROGRAM_AO,
-                                    mode, passwd[0] ? passwd : NULL, class);
+        handleCallBarringReq(modem, A_CALL_BARRING_PROGRAM_AO,
+                             mode, passwd[0] ? passwd : NULL, class);
+        return;
     } else if (strcmp(fac, "OI") == 0) {
-        return handleCallBarringReq(modem, A_CALL_BARRING_PROGRAM_OI,
-                                    mode, passwd[0] ? passwd : NULL, class);
+        handleCallBarringReq(modem, A_CALL_BARRING_PROGRAM_OI,
+                             mode, passwd[0] ? passwd : NULL, class);
+        return;
     } else if (strcmp(fac, "OX") == 0) {
-        return handleCallBarringReq(modem, A_CALL_BARRING_PROGRAM_OX,
-                                    mode, passwd[0] ? passwd : NULL, class);
+        handleCallBarringReq(modem, A_CALL_BARRING_PROGRAM_OX,
+                             mode, passwd[0] ? passwd : NULL, class);
+        return;
     } else if (strcmp(fac, "AI") == 0) {
-        return handleCallBarringReq(modem, A_CALL_BARRING_PROGRAM_AI,
-                                    mode, passwd[0] ? passwd : NULL, class);
+        handleCallBarringReq(modem, A_CALL_BARRING_PROGRAM_AI,
+                             mode, passwd[0] ? passwd : NULL, class);
+        return;
     } else if (strcmp(fac, "IR") == 0) {
-        return handleCallBarringReq(modem, A_CALL_BARRING_PROGRAM_IR,
-                                    mode, passwd[0] ? passwd : NULL, class);
+        handleCallBarringReq(modem, A_CALL_BARRING_PROGRAM_IR,
+                             mode, passwd[0] ? passwd : NULL, class);
+        return;
     }
 
     // Operation not supported
-    return "+CME ERROR: 4";
+    amodem_reply( modem, "+CME ERROR: 4" );
 }
 
 /* Add a(n unsolicited) time response.
@@ -3040,16 +3121,16 @@ amodem_addTimeUpdate( AModem  modem )
              tzname );
 }
 
-static const char*
+static void
 handleEndOfInit( const char*  cmd, AModem  modem )
 {
     amodem_begin_line( modem );
     amodem_addTimeUpdate( modem );
-    return amodem_end_line( modem );
+    amodem_end_line_reply( modem );
 }
 
 
-static const char*
+static void
 handleListPDPContexts( const char*  cmd, AModem  modem )
 {
     int  nn;
@@ -3063,10 +3144,10 @@ handleListPDPContexts( const char*  cmd, AModem  modem )
             continue;
         amodem_add_line( modem, "+CGACT: %d,%d\r\n", data->id, data->active );
     }
-    return amodem_end_line( modem );
+    amodem_end_line_reply( modem );
 }
 
-static const char*
+static void
 handleDefinePDPContext( const char*  cmd, AModem  modem )
 {
     assert( !memcmp( cmd, "+CGDCONT=", 9 ) );
@@ -3079,7 +3160,8 @@ handleDefinePDPContext( const char*  cmd, AModem  modem )
         amodem_begin_line( modem );
         amodem_add_line( modem, "+CGDCONT: (1-%d),\"IP\",,,(0-2),(0-4)",
                          MAX_DATA_CONTEXTS );
-        return amodem_end_line( modem );
+        amodem_end_line_reply( modem );
+        return;
     }
 
     /* Template is +CGDCONT=[<cid>[,<PDP_type>[,<APN>[,<PDP_addr>[...]]]]] */
@@ -3105,14 +3187,16 @@ handleDefinePDPContext( const char*  cmd, AModem  modem )
     data = modem->data_contexts + cid - 1;
     if (data->active) {
         /* Data connection in use. Operation not allowed. */
-        return "+CME ERROR: 3";
+        amodem_reply( modem, "+CME ERROR: 3" );
+        return;
     }
 
     cmd += 1;
     if ( !*cmd ) {
         /* No additional parameters. Undefine the specified PDP context. */
         data->id = -1;
-        return "OK";
+        amodem_reply( modem, "OK" );
+        return;
     }
 
     /* <PDP_type> */
@@ -3167,12 +3251,14 @@ handleDefinePDPContext( const char*  cmd, AModem  modem )
         data->addr.in.s_addr = 0;
     }
 
-    return "OK";
+    amodem_reply( modem, "OK" );
+    return;
+
 BadCommand:
-    return "ERROR: BAD COMMAND";
+    amodem_reply( modem, "ERROR: BAD COMMAND" );
 }
 
-static const char*
+static void
 handleQueryPDPContext( const char* cmd, AModem modem )
 {
     int  nn;
@@ -3196,10 +3282,10 @@ handleQueryPDPContext( const char* cmd, AModem modem )
                          data->apn,
                          addr );
     }
-    return amodem_end_line(modem);
+    amodem_end_line_reply(modem);
 }
 
-static const char*
+static void
 handleQueryPDPDynamicProp( const char* cmd, AModem modem )
 {
     int i, entries;
@@ -3223,11 +3309,10 @@ handleQueryPDPDynamicProp( const char* cmd, AModem modem )
     }
 
     amodem_add_line(modem, ")");
-
-    return amodem_end_line( modem );
+    amodem_end_line_reply( modem );
 }
 
-static const char*
+static void
 handleListPDPDynamicProp( const char* cmd, AModem modem )
 {
     int cid = -1;
@@ -3240,7 +3325,8 @@ handleListPDPDynamicProp( const char* cmd, AModem modem )
         // List all.
     } else if ( sscanf( cmd, "=%d", &cid ) != 1 ||
                 cid <= 0 ) {
-        return "+CME ERROR: 50"; // Incorrect parameters.
+        amodem_reply( modem, "+CME ERROR: 50" ); // Incorrect parameters.
+        return;
     }
 
     entries = 0;
@@ -3283,7 +3369,8 @@ handleListPDPDynamicProp( const char* cmd, AModem modem )
     }
 
     if ( cid > 0 && !entries ) {
-        return "+CME ERROR: 50"; // Incorrect parameters.
+        amodem_reply( modem, "+CME ERROR: 50" ); // Incorrect parameters.
+        return;
     }
 
     if ( entries ) {
@@ -3291,10 +3378,10 @@ handleListPDPDynamicProp( const char* cmd, AModem modem )
         modem->out_size -= 2;
     }
 
-    return amodem_end_line( modem );
+    amodem_end_line_reply( modem );
 }
 
-static const char*
+static void
 handleActivatePDPContext( const char*  cmd, AModem  modem )
 {
     int enable, cid, items;
@@ -3304,26 +3391,30 @@ handleActivatePDPContext( const char*  cmd, AModem  modem )
     cmd += 7;
     if (cmd[0] == '?') {
         // +CGACT=? is used to query the list of supported <state>s.
-        return "+CGACT: (0-1)\r\n";
+        amodem_reply( modem, "+CGACT: (0-1)\r\n" );
+        return;
     }
 
     items = sscanf(cmd, "%d,%d", &enable, &cid);
     if (items != 2) {
         // activation rejected, unspecified
-        return "+CME ERROR: 131";
+        amodem_reply( modem, "+CME ERROR: 131" );
+        return;
     }
 
-    return amodem_activate_data_call(modem, cid, enable);
+    amodem_reply( modem, "%s", amodem_activate_data_call(modem, cid, enable) );
+    return;
 }
 
-static const char*
+static void
 handleStartPDPContext( const char*  cmd, AModem  modem )
 {
     /* D*99***<n>#
      * <n> is the <cid> in the +CGDCONT command
      */
     cmd += 7;
-    return amodem_activate_data_call(modem, cmd[0] - '0', 1);
+    amodem_reply( modem, "%s", amodem_activate_data_call(modem, cmd[0] - '0', 1) );
+    return;
 }
 
 
@@ -3408,25 +3499,27 @@ static int amodem_is_emergency( AModem modem, const char *number )
     return 0;
 }
 
-static const char*
+static void
 handleDial( const char*  cmd, AModem  modem )
 {
     assert( cmd[0] == 'D' );
 
     ACall call = _amodem_add_outbound_call(modem, cmd+1);
-    if (call == NULL)
-        return "ERROR: TOO MANY CALLS";
+    if (call == NULL) {
+        amodem_reply( modem, "ERROR: TOO MANY CALLS" );
+        return;
+    }
 
     amodem_begin_line( modem );
     if (amodem_is_emergency(modem, call->number)) {
         modem->in_emergency_mode = 1;
         amodem_add_line( modem, "+WSOS: 1" );
     }
-    return amodem_end_line( modem );
+    amodem_end_line_reply( modem );
 }
 
 
-static const char*
+static void
 handleAnswer( const char*  cmd, AModem  modem )
 {
     int  nn;
@@ -3449,17 +3542,15 @@ handleAnswer( const char*  cmd, AModem  modem )
             }
         }
     }
-    return "OK";
+    amodem_reply( modem, "OK" );
 }
 
 int android_snapshot_update_time = 1;
 int android_snapshot_update_time_request = 0;
 
-static const char*
-handleSignalStrength( const char*  cmd, AModem  modem )
+static void
+amodem_addSignalStrength( AModem  modem )
 {
-    amodem_begin_line( modem );
-
     /* Sneak time updates into the SignalStrength request, because it's periodic.
      * Ideally, we'd be able to prod the guest into asking immediately on restore
      * from snapshot, but that'd require a driver.
@@ -3486,7 +3577,14 @@ handleSignalStrength( const char*  cmd, AModem  modem )
     rssnr = (-200 > rssnr || rssnr > 300) ? 0x7FFFFFFF : rssnr;
 
     amodem_add_line( modem, "+CSQ: %i,%i,85,130,90,6,4,%i,%i,2147483647,%i,2147483647\r\n", rssi, ber, rxlev, rsrp, rssnr );
-    return amodem_end_line( modem );
+}
+
+static void
+handleSignalStrength( const char*  cmd, AModem  modem )
+{
+    amodem_begin_line( modem );
+    amodem_addSignalStrength( modem);
+    amodem_end_line_reply( modem );
 }
 
 static int
@@ -3503,7 +3601,7 @@ hasWaitingCall( AModem  modem )
   return 0;
 }
 
-static const char*
+static void
 handleHangup( const char*  cmd, AModem  modem )
 {
     if ( !memcmp(cmd, "+CHLD=", 6) ) {
@@ -3551,8 +3649,10 @@ handleHangup( const char*  cmd, AModem  modem )
                 break;
 
             case '2':
-                if (!amodem_has_feature(modem, A_MODEM_FEATURE_HOLD))
-                    return "ERROR: UNSUPPORTED";
+                if (!amodem_has_feature(modem, A_MODEM_FEATURE_HOLD)) {
+                    amodem_reply( modem, "ERROR: UNSUPPORTED" );
+                    return;
+                }
 
                 if (cmd[1] == 0) {  /* place all active on hold, accept held or waiting one */
                     int waitingCallOnly = hasWaitingCall(modem);
@@ -3577,10 +3677,14 @@ handleHangup( const char*  cmd, AModem  modem )
                         if (call->mode != A_CALL_VOICE)
                             continue;
                         if (call->id == id) {
-                            if (call->state != A_CALL_ACTIVE)
-                                return "+CME ERROR: 3";
-                        } else if (call->state == A_CALL_HELD)
-                            return "+CME ERROR: 3";
+                            if (call->state != A_CALL_ACTIVE) {
+                                amodem_reply( modem, "+CME ERROR: 3" );
+                                return;
+                            }
+                        } else if (call->state == A_CALL_HELD) {
+                            amodem_reply( modem, "+CME ERROR: 3" );
+                            return;
+                        }
                     }
 
                     // Checked, now proceed to set states.
@@ -3602,13 +3706,16 @@ handleHangup( const char*  cmd, AModem  modem )
                          * join a single active call and a held MPTY together.
                          * See 3GPP TS 22.084, clause 1.3.8.1 and 1.3.8.4.
                          */
-                if (modem->call_count < 2)
-                    return "+CME ERROR: 3";
+                if (modem->call_count < 2) {
+                    amodem_reply( modem, "+CME ERROR: 3" );
+                    return;
+                }
 
                 if (modem->multi_count >= 5) {
                     // In gsm, the maximum number of multiparty calls is 5.
                     // See 3GPP TS 22.084, clause 1.2.1.
-                    return "+CME ERROR: 3";
+                    amodem_reply( modem, "+CME ERROR: 3" );
+                    return;
                 }
 
                 bool  hasHeld = false;
@@ -3627,8 +3734,10 @@ handleHangup( const char*  cmd, AModem  modem )
                     }
                 }
 
-                if (!hasHeld || id == -1)
-                    return "+CME ERROR: 3";
+                if (!hasHeld || id == -1) {
+                    amodem_reply( modem, "+CME ERROR: 3" );
+                    return;
+                }
 
                 // Checked, now proceed to set states.
                 for (nn = 0; nn < modem->call_count; nn++) {
@@ -3663,10 +3772,12 @@ handleHangup( const char*  cmd, AModem  modem )
         }
         amodem_send_calls_update( modem );
     }
-    else
-        return "ERROR: BAD COMMAND";
+    else {
+        amodem_reply( modem, "ERROR: BAD COMMAND" );
+        return;
+    }
 
-    return "OK";
+    amodem_reply( modem, "OK" );
 }
 
 /*
@@ -3695,7 +3806,7 @@ amodem_set_smsc_address( AModem  modem, const char *smsc, unsigned char toa )
     return -1;
 }
 
-static const char*
+static void
 handleSmscAddress( const char*  cmd, AModem  modem )
 {
     char address[32] = {0};
@@ -3704,8 +3815,9 @@ handleSmscAddress( const char*  cmd, AModem  modem )
         // Return format
         //   +CSCA: "<sca>",<tosca>
         sms_address_to_str( &modem->smsc_address, address, sizeof(address) - 1 );
-        return amodem_printf( modem, "+CSCA: \"%s\",%d", address,
-                                                  modem->smsc_address.toa );
+        amodem_reply( modem, "+CSCA: \"%s\",%d", address,
+                      modem->smsc_address.toa );
+        return;
     } else if ( !memcmp(cmd, "+CSCA=", 6) ) {
         // Set SMSC address
         // Expect format
@@ -3742,14 +3854,15 @@ handleSmscAddress( const char*  cmd, AModem  modem )
             goto EndCommand;
         }
 
-        return "OK";
+        amodem_reply( modem, "OK" );
+        return;
     }
 EndCommand:
-    return "+CMS ERROR: 304";
+    amodem_reply( modem, "+CMS ERROR: 304" );
 }
 
 /* a function used to deal with a non-trivial request */
-typedef const char*  (*ResponseHandler)(const char*  cmd, AModem  modem);
+typedef void  (*ResponseHandler)(const char*  cmd, AModem  modem);
 
 static const struct {
     const char*      cmd;     /* command coming from libreference-ril.so, if first
@@ -3890,7 +4003,7 @@ static const struct {
 };
 
 
-#define  REPLY(str)  do { amodem_reply(modem, str); return modem->wait_sms; } while (0)
+#define  REPLY(str)  do { amodem_reply(modem, "%s", str); return modem->wait_sms; } while (0)
 
 int  amodem_send( AModem  modem, const char*  cmd )
 {
@@ -3899,10 +4012,7 @@ int  amodem_send( AModem  modem, const char*  cmd )
     if ( modem->wait_sms != 0 ) {
         modem->wait_sms = 0;
         R( "SMS<< %s\n", quote(cmd) );
-        answer = handleSendSMSText( cmd, modem );
-        if (answer) {
-            amodem_reply(modem, answer);
-        }
+        handleSendSMSText( cmd, modem );
         return modem->wait_sms;
     }
 
@@ -3958,13 +4068,8 @@ int  amodem_send( AModem  modem, const char*  cmd )
                 REPLY( "OK" );
             }
 
-            answer = handler( cmd, modem );
-            if (answer == NULL) {
-                // handler has sent reply out.
-                return modem->wait_sms;
-            }
-
-            REPLY( answer );
+            handler( cmd, modem );
+            return modem->wait_sms;
         }
     }
 }
