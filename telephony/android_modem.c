@@ -21,6 +21,7 @@
 #include "android/utils/path.h"
 #include "hw/hw.h"
 #include "qemu-common.h"
+#include "qemu/thread.h"
 #include "sim_card.h"
 #include "supplementary_service.h"
 #include "sysdeps.h"
@@ -411,6 +412,7 @@ typedef struct AModemRec_
 
     int                 out_size;
     char                out_buff[1024];
+    QemuMutex           out_buff_mutex;
 
     /*
      * Hold non-volatile ram configuration for modem
@@ -462,6 +464,8 @@ amodem_receive_sms( AModem  modem, SmsPDU  sms )
 #define  SMS_UNSOL_HEADER  "+CMT: 0\r\n"
 
     if (modem->unsol_func) {
+        qemu_mutex_lock(&modem->out_buff_mutex);
+
         int    len, max;
         char*  p;
 
@@ -478,6 +482,8 @@ amodem_receive_sms( AModem  modem, SmsPDU  sms )
         R( "SMS>> %s\n", p );
 
         modem->unsol_func( modem->unsol_opaque, modem->out_buff );
+
+        qemu_mutex_unlock(&modem->out_buff_mutex);
     }
 }
 
@@ -489,6 +495,8 @@ amodem_receive_cbs( AModem  modem, SmsPDU  cbs )
     if (!modem->unsol_func) {
         return;
     }
+
+    qemu_mutex_lock(&modem->out_buff_mutex);
 
     int    len, max;
     char*  p;
@@ -506,11 +514,14 @@ amodem_receive_cbs( AModem  modem, SmsPDU  cbs )
     R( "CBS>> %s\n", p );
 
     modem->unsol_func( modem->unsol_opaque, modem->out_buff );
+
+    qemu_mutex_unlock(&modem->out_buff_mutex);
 }
 
 static void
 amodem_begin_line( AModem  modem )
 {
+    qemu_mutex_lock(&modem->out_buff_mutex);
     modem->out_size = 0;
 }
 
@@ -541,6 +552,7 @@ amodem_end_line_unsol( AModem  modem )
         modem->unsol_func( modem->unsol_opaque, modem->out_buff );
         modem->unsol_func( modem->unsol_opaque, "\r" );
     }
+    qemu_mutex_unlock(&modem->out_buff_mutex);
 }
 
 static void
@@ -562,6 +574,7 @@ amodem_end_line_reply( AModem  modem )
         modem->unsol_func( modem->unsol_opaque, modem->out_buff );
         modem->unsol_func( modem->unsol_opaque, "\r" );
     }
+    qemu_mutex_unlock(&modem->out_buff_mutex);
 }
 
 #define NV_OPER_NAME_INDEX                     "oper_name_index"
@@ -719,6 +732,8 @@ amodem_reset( AModem  modem )
     sms_address_from_str( &modem->smsc_address, tmp, strlen(tmp));
 
     modem->features = A_MODEM_FEATURE_HOLD;
+
+    qemu_mutex_init(&modem->out_buff_mutex);
 }
 
 static AVoiceCall amodem_alloc_call( AModem   modem );
@@ -3370,7 +3385,9 @@ handleListPDPDynamicProp( const char* cmd, AModem modem )
     }
 
     if ( cid > 0 && !entries ) {
-        amodem_reply( modem, "+CME ERROR: 50" ); // Incorrect parameters.
+        // Incorrect parameters.
+        amodem_add_line( modem, "+CME ERROR: 50" );
+        amodem_end_line_reply( modem );
         return;
     }
 
