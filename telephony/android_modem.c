@@ -2116,13 +2116,25 @@ handleNetworkRegistration( const char*  cmd, AModem  modem )
     if ( !memcmp( cmd, "+CREG", 5 ) ) {
         cmd += 5;
         if (cmd[0] == '?') {
-            if (modem->voice_mode == A_REGISTRATION_UNSOL_ENABLED_FULL)
-                return amodem_printf( modem, "+CREG: %d,%d, \"%04x\", \"%07x\"",
+            if (modem->voice_mode == A_REGISTRATION_UNSOL_ENABLED_FULL) {
+                // qemu/reference-ril does not follow standard format of network
+                // type in CGREG command, it uses the RIL_RadioTechnology in
+                // ril.h directly. To make it consistent, we use the same way in
+                // CREG, and also reuse the A_DATA_NETWORK_*.
+                int act = 0;
+                if (modem->technology == A_TECH_GSM) {
+                    act = A_DATA_NETWORK_EDGE;    // RADIO_TECH_EDGE
+                } else if (modem->technology == A_TECH_WCDMA) {
+                    act = A_DATA_NETWORK_UMTS;    // RADIO_TECH_UMTS
+                }
+                return amodem_printf( modem, "+CREG: %d,%d, \"%04x\", \"%07x\", \"%04x\"",
                                        modem->voice_mode, modem->voice_state,
-                                       modem->area_code & 0xffff, modem->cell_id & 0xfffffff );
-            else
+                                       modem->area_code & 0xffff, modem->cell_id & 0xfffffff,
+                                       act );
+            } else {
                 return amodem_printf( modem, "+CREG: %d,%d",
                                        modem->voice_mode, modem->voice_state );
+            }
         } else if (cmd[0] == '=') {
             switch (cmd[1]) {
                 case '0':
