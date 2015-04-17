@@ -133,6 +133,10 @@ static int _amodem_set_cdma_prl_version( AModem modem, int prlVersion);
 static void amodem_addSignalStrength( AModem  modem );
 static void voice_call_event( void*  _vcall );
 
+static void amodem_begin_line( AModem  modem );
+static void amodem_add_vline( AModem  modem, const char*  format, va_list args );
+static void amodem_end_line_unsol( AModem  modem );
+
 #if DEBUG
 static const char*  quote( const char*  line )
 {
@@ -442,22 +446,14 @@ typedef struct AModemRec_
 
 
 static void
-amodem_unsol_buffered( AModem  modem, const char* message )
-{
-    if (modem->unsol_func) {
-        modem->unsol_func( modem->unsol_opaque, message );
-    }
-}
-
-static void
 amodem_unsol( AModem  modem, const char* format, ... )
 {
     va_list  args;
     va_start(args, format);
-    vsnprintf( modem->out_buff, sizeof(modem->out_buff), format, args );
+    amodem_begin_line( modem );
+    amodem_add_vline( modem, format, args );
+    amodem_end_line_unsol( modem );
     va_end(args);
-
-    amodem_unsol_buffered( modem, modem->out_buff );
 }
 
 void
@@ -535,11 +531,16 @@ amodem_add_line( AModem  modem, const char*  format, ... )
     va_end(args);
 }
 
-static const char*
-amodem_end_line( AModem  modem )
+static void
+amodem_end_line_unsol( AModem  modem )
 {
     modem->out_buff[ modem->out_size ] = 0;
-    return modem->out_buff;
+
+    R(">> %s\n", quote(modem->out_buff));
+    if (modem->unsol_func) {
+        modem->unsol_func( modem->unsol_opaque, modem->out_buff );
+        modem->unsol_func( modem->unsol_opaque, "\r" );
+    }
 }
 
 static void
@@ -1488,7 +1489,7 @@ amodem_set_signal_strength( AModem modem, int rssi, int ber )
 
     amodem_begin_line( modem );
     amodem_addSignalStrength( modem );
-    amodem_unsol_buffered( modem, amodem_end_line( modem ) );
+    amodem_end_line_unsol( modem );
 }
 
 void
@@ -1512,7 +1513,7 @@ amodem_set_lte_signal_strength( AModem modem, int rxlev, int rsrp, int rssnr )
 
     amodem_begin_line( modem );
     amodem_addSignalStrength( modem );
-    amodem_unsol_buffered( modem, amodem_end_line( modem ) );
+    amodem_end_line_unsol( modem );
 }
 
 static void
