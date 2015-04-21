@@ -61,6 +61,8 @@ typedef enum {
 
 extern bool  asupplementary_check_passwd( ASupplementaryService supplementary,
                                           AServiceType type, char *passwd);
+extern bool  asupplementary_set_passwd( ASupplementaryService supplementary,
+                                        AServiceType type, char *passwd);
 
 typedef struct ACallForwardRec_ {
     bool  enabled;

@@ -122,6 +122,34 @@ asupplementary_check_passwd(ASupplementaryService supplementary,
     return true;
 }
 
+bool
+asupplementary_set_passwd(ASupplementaryService supplementary,
+                          AServiceType type, char *passwd)
+{
+    // According to TS 22.004 clause 5.2, the password of a supplementary
+    // service should consist 4 digits in the range 0000 to 9999.
+    if (!passwd || strlen(passwd) != 4) {
+        return false;
+    }
+
+    int passwdValue = atoi(passwd);
+    if (passwdValue < 0 || passwdValue > 9999) {
+        return false;
+    }
+
+    char *target_passwd = NULL;
+    switch (type) {
+        case A_SERVICE_TYPE_CALL_BARRING:
+            target_passwd = supplementary->passwd[A_SERVICE_TYPE_CALL_BARRING];
+            break;
+        default:
+            return false;
+    }
+
+    strncpy(target_passwd, passwd, SERVICE_PASSWD_MAX_PASSWD_LENGTH);
+    return true;
+}
+
 int
 asupplementary_set_call_forward(ASupplementaryService supplementary,
                                 int reason, int classx_offset, bool enabled,

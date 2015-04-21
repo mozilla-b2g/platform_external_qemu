@@ -3066,6 +3066,53 @@ handleFacilityLockReq( const char* cmd, AModem modem )
     amodem_reply( modem, "+CME ERROR: 4" );
 }
 
+static void
+handleChangePassword( const char* cmd, AModem  modem )
+{
+    char fac[64];
+    char oldPwd[64];
+    char newPwd[64];
+
+    // AT+CPWD=<fac>,<pwd>,<newpwd>
+    int argc = sscanf(cmd, "+CPWD=\"%[^\"]\",\"%[^\"]\",\"%[^\"]\"", fac, oldPwd, newPwd);
+    if (argc != 3) {
+        // Incorrect parameters
+        amodem_reply( modem, "+CME ERROR: 50" );
+        return;
+    }
+
+    // Call barring programs
+    if (strcmp(fac, "AB") == 0 ||
+        strcmp(fac, "AO") == 0 ||
+        strcmp(fac, "OI") == 0 ||
+        strcmp(fac, "OX") == 0 ||
+        strcmp(fac, "AI") == 0 ||
+        strcmp(fac, "IR") == 0 ) {
+
+        if (!asupplementary_check_passwd(modem->supplementary,
+                                         A_SERVICE_TYPE_CALL_BARRING,
+                                         oldPwd)) {
+            // Wrong password
+            amodem_reply( modem, "+CME ERROR: 16" );
+            return;
+        }
+
+        if (!asupplementary_set_passwd(modem->supplementary,
+                                       A_SERVICE_TYPE_CALL_BARRING,
+                                       newPwd)) {
+            // Incorrect parameters
+            amodem_reply( modem, "+CME ERROR: 50" );
+            return;
+        }
+
+        amodem_reply( modem, "OK" );
+        return;
+    }
+
+    // Incorrect parameters
+    amodem_reply( modem, "+CME ERROR: 50" );
+}
+
 /* Add a(n unsolicited) time response.
  *
  * retrieve the current time and zone in a format suitable
@@ -3990,6 +4037,7 @@ static const struct {
     { "+CEER", NULL, handleLastCallFailCause },
     { "!+CCFC", NULL, handleCallForwardReq }, /* call forward request */
     { "!+CLCK", NULL, handleFacilityLockReq }, /* facility lock request */
+    { "!+CPWD", NULL, handleChangePassword }, /* change facility passwords */
 
     /* see getSIMStatus() */
     { "+CPIN?", NULL, handleSIMStatusReq },
