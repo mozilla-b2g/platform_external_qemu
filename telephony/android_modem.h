@@ -250,6 +250,8 @@ typedef enum {
 
 extern int amodem_set_feature( AModem  modem, AModemFeature  feature, bool  enable );
 
-/**/
+/** Fetch last requested APDU from MT.
+ **/
+extern const char * amodem_get_last_apdu( AModem modem );
 
 #endif /* _android_modem_h_ */

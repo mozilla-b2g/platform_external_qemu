@@ -1365,6 +1365,25 @@ do_stk_setupcall( ControlClient  client, char*  args )
 }
 
 static int
+do_stk_lastapdu( ControlClient  client, char*  args  )
+{
+    if (args) {
+        control_write( client, "KO: unexpected argument(s) after 'lastapdu'\r\n" );
+        return -1;
+    }
+
+    const char* last_apdu = amodem_get_last_apdu( client->modem );
+
+    if (!last_apdu || !strlen( last_apdu )) {
+        control_write( client, "KO: Last APDU is unavailable\r\n" );
+        return -1;
+    }
+
+    control_write( client, "%s\r\n", last_apdu );
+    return 0;
+}
+
+static int
 do_gsm_call( ControlClient  client, char*  args )
 {
     enum { NUMBER = 0, NUMBER_PRESENTATION, NAME, NAME_PRESENTATION, NUM_CALL_PARAMS };
@@ -2078,6 +2097,10 @@ static const CommandDefRec stk_commands[] =
     "'stk setupcall <phonenumber>' allows you to simulate a new outbound call dialed out from stk directly\r\n"
     "phonenumber is the outbound call number\r\n",
     NULL, do_stk_setupcall, NULL },
+
+    { "lastapdu", "peek the last requested APDU from MT",
+    "'stk lastapdu' the last requested APDU will be dumpped in hex string \r\n", NULL,
+    do_stk_lastapdu, NULL },
 
     { NULL, NULL, NULL, NULL, NULL, NULL }
 };

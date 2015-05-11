@@ -3874,6 +3874,41 @@ EndCommand:
     amodem_reply( modem, "+CMS ERROR: 304" );
 }
 
+// Cached last request APDU for verification of TERMINAL RESPONSE/ENVELOPE commands
+// in unit tests.
+static char last_apdu[1024];
+
+const char *
+amodem_get_last_apdu( AModem modem )
+{
+    return last_apdu;
+}
+
+static void
+handleGenericSimIO( const char*  cmd, AModem  modem )
+{
+    // Expected Format: +CSIM=<length>,<command>
+    const char *apdu_begin = strchr(cmd, ',');
+    if (!apdu_begin) {
+        amodem_reply( modem, "+CMS ERROR: 50" );
+        return;
+    }
+    apdu_begin++;
+
+    const apdu_length = strlen(cmd) - 6;
+    if (apdu_length >= sizeof(last_apdu)) {
+        amodem_reply( modem, "+CMS ERROR: 50" );
+        return;
+    }
+
+    memset(last_apdu, 0, sizeof(last_apdu));
+    strncpy(last_apdu, apdu_begin, apdu_length);
+
+    // TODO: Fill response PDU.
+    // We always reply Normal Success: 90 00 for now.
+    amodem_reply( modem, "+CSIM:4,9000" );
+}
+
 /* a function used to deal with a non-trivial request */
 typedef void  (*ResponseHandler)(const char*  cmd, AModem  modem);
 
@@ -4010,6 +4045,9 @@ static const struct {
     { "%CSTAT=1", NULL, NULL },
 
     { "!+CSCA", NULL, handleSmscAddress },
+
+    /* see requestGenericSimIO() */
+    { "!+CSIM=", NULL, handleGenericSimIO },
 
     /* end of list */
     {NULL, NULL, NULL}
