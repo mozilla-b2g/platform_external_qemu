@@ -1752,6 +1752,38 @@ do_gsm_report( ControlClient  client, char*  args )
     return 0;
 }
 
+static int
+do_gsm_enable_disable( ControlClient  client, char  *args, bool enable )
+{
+    if (strcmp( args, "hold" ) == 0)
+        return amodem_set_feature(client->modem, A_MODEM_FEATURE_HOLD, enable);
+
+    control_write( client, "KO: '%s' cannot be enabled or disabled.\r\n", args );
+    return -1;
+}
+
+static int
+do_gsm_enable( ControlClient  client, char  *args )
+{
+    if (!args) {
+        control_write( client, "KO: missing argument, try 'gsm enable <feature>'\r\n" );
+        return -1;
+    }
+
+    return do_gsm_enable_disable(client, args, true);
+}
+
+static int
+do_gsm_disable( ControlClient  client, char  *args )
+{
+    if (!args) {
+        control_write( client, "KO: missing argument, try 'gsm disable <feature>'\r\n" );
+        return -1;
+    }
+
+    return do_gsm_enable_disable(client, args, false);
+}
+
 #if 0
 static const CommandDefRec  gsm_in_commands[] =
 {
@@ -1856,6 +1888,14 @@ static const CommandDefRec  gsm_commands[] =
     "'gsm report'      report all known fields\r\n"
     "'gsm report creg' report CREG field\r\n",
     NULL, do_gsm_report, NULL},
+
+    { "enable", "enable selected modem feature",
+    "'gsm enable hold' enable the hold feature\r\n",
+    NULL, do_gsm_enable, NULL},
+
+    { "disable", "disable selected modem feature",
+    "'gsm disable hold' disable the hold feature\r\n",
+    NULL, do_gsm_disable, NULL},
 
     { NULL, NULL, NULL, NULL, NULL, NULL }
 };
