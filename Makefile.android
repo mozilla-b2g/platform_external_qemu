@@ -1,3 +1,5 @@
+ifneq ($(filter true% %true,$(BUILD_EMULATOR)$(BUILD_STANDALONE_EMULATOR)),)
+
 ifneq (,$(filter $(TARGET_ARCH),arm x86 mips))
 LOCAL_PATH:= $(call my-dir)
 
@@ -33,12 +35,7 @@ MY_CC  := $(HOST_CC)
 MY_CXX := $(HOST_CXX)
 MY_AR  := $(HOST_AR)
 
-MY_OPTIM := -O2 -g -fno-PIC -falign-functions=0 -fomit-frame-pointer
-ifeq ($(BUILD_DEBUG_EMULATOR),true)
-    MY_OPTIM := -O0 -g
-endif
-
-MY_CFLAGS := $(CONFIG_INCLUDES) $(MY_OPTIM)
+MY_CFLAGS := $(CONFIG_INCLUDES) -O2 -g -fno-PIC -falign-functions=0 -fomit-frame-pointer
 
 # Overwrite configuration for debug builds.
 #
@@ -75,22 +72,23 @@ endif
 
 ifeq ($(HOST_OS),darwin)
     MY_CFLAGS += -mdynamic-no-pic -D_DARWIN_C_SOURCE=1
-
-    # When building on Leopard or above, we need to use the 10.4 SDK
-    # or the generated binary will not run on Tiger.
-    DARWIN_VERSION := $(strip $(shell sw_vers -productVersion))
-    ifneq ($(filter 10.1 10.2 10.3 10.1.% 10.2.% 10.3.% 10.4 10.4.%,$(DARWIN_VERSION)),)
-        $(error Building the Android emulator requires OS X 10.5 or above)
+    ifneq ($(host_toolchain_header),)
+        MY_CFLAGS += -isystem $(host_toolchain_header)
     endif
-    ifneq ($(filter 10.6 10.6.%,$(DARWIN_VERSION)),)
-        # We are on Snow Leopard
-        LEOPARD_SDK := /Developer/SDKs/MacOSX10.5.sdk
-        ifeq ($(strip $(wildcard $(LEOPARD_SDK))),)
-            $(info  Please install the 10.5 SDK on this machine at $(LEOPARD_SDK))
-            $(error Aborting the build.)
-        endif
-        MY_CFLAGS += -isysroot $(LEOPARD_SDK) -mmacosx-version-min=10.5 -DMACOSX_DEPLOYMENT_TARGET=10.5
-        MY_LDLIBS += -isysroot $(LEOPARD_SDK) -Wl,-syslibroot,$(LEOPARD_SDK) -mmacosx-version-min=10.5
+    MY_CFLAGS += -isysroot $(mac_sdk_root) -mmacosx-version-min=$(mac_sdk_version) -DMACOSX_DEPLOYMENT_TARGET=$(mac_sdk_version)
+    MY_LDLIBS += -isysroot $(mac_sdk_root) -Wl,-syslibroot,$(mac_sdk_root) -mmacosx-version-min=$(mac_sdk_version)
+
+endif
+
+# Some CFLAGS below use -Wno-missing-field-initializers but this is not
+# supported on GCC 3.x which is still present under Cygwin.
+# Find out by probing GCC for support of this flag. Note that the test
+# itself only works on GCC 4.x anyway.
+GCC_W_NO_MISSING_FIELD_INITIALIZERS := -Wno-missing-field-initializers
+ifeq ($(HOST_OS),windows)
+    ifeq (,$(shell gcc -Q --help=warnings 2>/dev/null | grep missing-field-initializers))
+        $(info emulator: Ignoring unsupported GCC flag $(GCC_W_NO_MISSING_FIELD_INITIALIZERS))
+        GCC_W_NO_MISSING_FIELD_INITIALIZERS :=
     endif
 endif
 
@@ -146,7 +144,7 @@ endif
 # Enable warning, except those related to missing field initializers
 # (the QEMU coding style loves using these).
 #
-MY_CFLAGS += -Wall -Wno-missing-field-initializers
+MY_CFLAGS += -Wall $(GCC_W_NO_MISSING_FIELD_INITIALIZERS)
 
 # Needed to build fpu/softfloat-native.h properly
 MY_CFLAGS += -D_GNU_SOURCE=1
@@ -169,7 +167,6 @@ start-emulator-library = \
     $(eval LOCAL_CFLAGS := $(MY_CFLAGS)) \
     $(eval LOCAL_AR := $(MY_AR)) \
     $(eval LOCAL_LDLIBS := $(MY_LDLIBS)) \
-    $(eval LOCAL_MODULE_TAGS := debug) \
     $(eval LOCAL_MODULE := $1) \
     $(eval LOCAL_MODULE_CLASS := STATIC_LIBRARIES)
 
@@ -214,10 +211,12 @@ endif
 
 ifeq ($(HOST_OS),darwin)
   QEMU_SYSTEM_LDLIBS += -Wl,-framework,Cocoa,-framework,QTKit,-framework,CoreVideo
-  ifneq ($(filter 10.7 10.7.% 10.8 10.8.%,$(DARWIN_VERSION)),)
-    # 10.7+ with XCode4 needs to be explicitly told the dynamic library
-    # lookup symbols in the precompiled libSDL are resolved at
-    # runtime
+
+  # SDK 10.6+ doesn't have __dyld_func_lookup anymore. Dynamic library lookup symbols
+  # are instead resolved at runtime
+  OSX_VERSION_MAJOR := $(shell echo $(mac_sdk_version) | cut -d . -f 2)
+  OSX_VERSION_MAJOR_GREATER_THAN_OR_EQUAL_TO_6 := $(shell [ $(OSX_VERSION_MAJOR) -ge 6 ] && echo true)
+  ifeq ($(OSX_VERSION_MAJOR_GREATER_THAN_OR_EQUAL_TO_6),true)
     QEMU_SYSTEM_LDLIBS += -undefined dynamic_lookup
   endif
 endif
@@ -324,3 +323,4 @@ $(call end-emulator-program)
 ## VOILA!!
 
 endif  # TARGET_ARCH == arm || TARGET_ARCH == x86 || TARGET_ARCH == mips
+endif  # BUILD_EMULATOR == true || BUILD_STANDALONE_EMULATOR == true
