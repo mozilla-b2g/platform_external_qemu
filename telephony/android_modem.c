@@ -3926,6 +3926,30 @@ EndCommand:
     amodem_reply( modem, "+CMS ERROR: 304" );
 }
 
+const char *
+amodem_get_last_stk_response( AModem modem )
+{
+    return asimcard_get_last_stk_response( modem->sim );
+}
+
+const char *
+amodem_get_last_stk_envelope( AModem modem )
+{
+    return asimcard_get_last_stk_envelope( modem->sim );
+}
+
+static void
+handleStkTerminalResponse( const char*  cmd, AModem  modem )
+{
+    amodem_reply( modem, "%s", asimcard_stk_terminal_response( modem->sim, cmd ) );
+}
+
+static void
+handleStkEnvelopeCommand( const char*  cmd, AModem  modem )
+{
+    amodem_reply( modem, "%s", asimcard_stk_envelope_command( modem->sim, cmd ) );
+}
+
 /* a function used to deal with a non-trivial request */
 typedef void  (*ResponseHandler)(const char*  cmd, AModem  modem);
 
@@ -4063,6 +4087,12 @@ static const struct {
     { "%CSTAT=1", NULL, NULL },
 
     { "!+CSCA", NULL, handleSmscAddress },
+
+    /* see requestStkSendTerminalResponse() */
+    { "!+CUSATT=", NULL, handleStkTerminalResponse },
+
+    /* see requestStkSendEnvelopeCommand() */
+    { "!+CUSATE=", NULL, handleStkEnvelopeCommand },
 
     /* end of list */
     {NULL, NULL, NULL}

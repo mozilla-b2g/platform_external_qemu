@@ -1368,6 +1368,44 @@ do_stk_setupcall( ControlClient  client, char*  args )
 }
 
 static int
+do_stk_last_response( ControlClient  client, char*  args  )
+{
+    if (args) {
+        control_write( client, "KO: unexpected argument(s) after 'lastapdu'\r\n" );
+        return -1;
+    }
+
+    const char* pdu = amodem_get_last_stk_response( client->modem );
+
+    if (!pdu || !strlen( pdu )) {
+        control_write( client, "KO: Last STK response is unavailable\r\n" );
+        return -1;
+    }
+
+    control_write( client, "%s\r\n", pdu );
+    return 0;
+}
+
+static int
+do_stk_last_envelope( ControlClient  client, char*  args  )
+{
+    if (args) {
+        control_write( client, "KO: unexpected argument(s) after 'lastapdu'\r\n" );
+        return -1;
+    }
+
+    const char* pdu = amodem_get_last_stk_envelope( client->modem );
+
+    if (!pdu || !strlen( pdu )) {
+        control_write( client, "KO: Last STK envelope is unavailable\r\n" );
+        return -1;
+    }
+
+    control_write( client, "%s\r\n", pdu );
+    return 0;
+}
+
+static int
 do_gsm_call( ControlClient  client, char*  args )
 {
     enum { NUMBER = 0, NUMBER_PRESENTATION, NAME, NAME_PRESENTATION, NUM_CALL_PARAMS };
@@ -2080,6 +2118,14 @@ static const CommandDefRec stk_commands[] =
     "'stk setupcall <phonenumber>' allows you to simulate a new outbound call dialed out from stk directly\r\n"
     "phonenumber is the outbound call number\r\n",
     NULL, do_stk_setupcall, NULL },
+
+    { "lastresponse", "peek the last terminal response PDU from MT",
+    "'stk lastresponse' the last terminal response PDU will be dumpped in hex string \r\n", NULL,
+    do_stk_last_response, NULL },
+
+    { "lastenvelope", "peek the last envelope PDU from MT",
+    "'stk lastenvelope' the last envelope PDU will be dumpped in hex string \r\n", NULL,
+    do_stk_last_envelope, NULL },
 
     { NULL, NULL, NULL, NULL, NULL, NULL }
 };

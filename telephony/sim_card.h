@@ -62,4 +62,12 @@ typedef enum {
 
 extern const char*  asimcard_io( ASimCard  sim, const char*  cmd );
 
+extern const char*  asimcard_stk_terminal_response( ASimCard  sim, const char*  cmd );
+
+extern const char*  asimcard_stk_envelope_command( ASimCard  sim, const char*  cmd );
+
+extern const char*  asimcard_get_last_stk_response( ASimCard  sim );
+
+extern const char*  asimcard_get_last_stk_envelope( ASimCard  sim );
+
 #endif /* _android_sim_card_h */

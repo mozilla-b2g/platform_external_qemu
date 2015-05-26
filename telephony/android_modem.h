@@ -256,6 +256,11 @@ typedef enum {
 
 extern int amodem_set_feature( AModem  modem, AModemFeature  feature, bool  enable );
 
+/** Fetch last requested STK response & envelope from MT.
+ **/
+extern const char * amodem_get_last_stk_response( AModem modem );
+extern const char * amodem_get_last_stk_envelope( AModem modem );
+
 /**/
 
 #endif /* _android_modem_h_ */

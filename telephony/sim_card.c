@@ -72,6 +72,9 @@ typedef struct ASimCardRec_ {
     char        out_buff[ 256 ];
     int         out_size;
 
+    char        last_stk_response[ 1024 ];
+    char        last_stk_envelope[ 1024 ];
+
     SimFile     efs;
 
 } ASimCardRec;
@@ -1168,3 +1171,57 @@ asimcard_io( ASimCard  sim, const char*  cmd )
     return SIM_RESPONSE_INCORRECT_PARAMETERS;
 }
 
+const char*
+asimcard_stk_terminal_response( ASimCard  sim, const char*  cmd )
+{
+    // Expected Format: +CUSATT=<terminal_response>
+    assert( memcmp( cmd, "+CUSATT=", 8 ) == 0 );
+
+    if ( sim->status == A_SIM_STATUS_ABSENT) {
+        // SIM not inserted
+        return "+CME ERROR: 10";
+    }
+
+    memset(sim->last_stk_response, 0, sizeof(sim->last_stk_response));
+
+    if (sscanf(cmd, "+CUSATT=%s", sim->last_stk_response) != 1) {
+        // Incorrect parameters
+        return "+CME ERROR: 50";
+    }
+
+    return NULL;
+}
+
+const char*
+asimcard_stk_envelope_command( ASimCard  sim, const char*  cmd )
+{
+    // Expected Format: +CUSATE=<envelope_command>
+    assert( memcmp( cmd, "+CUSATE=", 8 ) == 0 );
+
+    if ( sim->status == A_SIM_STATUS_ABSENT) {
+        // SIM not inserted
+        return "+CME ERROR: 10";
+    }
+
+    memset(sim->last_stk_envelope, 0, sizeof(sim->last_stk_envelope));
+
+    if (sscanf(cmd, "+CUSATE=%s", sim->last_stk_envelope) != 1) {
+        // Incorrect parameters
+        return "+CME ERROR: 50";
+    }
+
+    // TODO fill in envelope response PDU accordingly.
+    return NULL;
+}
+
+const char*
+asimcard_get_last_stk_response( ASimCard  sim)
+{
+    return sim->last_stk_response;
+}
+
+const char*
+asimcard_get_last_stk_envelope( ASimCard  sim)
+{
+    return sim->last_stk_envelope;
+}
