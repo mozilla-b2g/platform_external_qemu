@@ -448,6 +448,41 @@ typedef struct AModemRec_
     char last_dialed_tone;
 } AModemRec;
 
+static int
+amodem_get_voice_call_count( AModem  modem )
+{
+    int nn;
+    int voice_call_count = 0;
+
+    for (nn = 0; nn < modem->call_count; nn++) {
+        AVoiceCall  vcall = modem->calls + nn;
+        ACall       call  = &vcall->call;
+        if (call->mode == A_CALL_VOICE) {
+            voice_call_count++;
+        }
+    }
+
+    return voice_call_count;
+}
+
+static bool
+amodem_is_cdma( AModem  modem )
+{
+    return modem->technology == A_TECH_CDMA ||
+           modem->technology == A_TECH_EVDO;
+}
+
+static bool
+amodem_is_gsm( AModem  modem )
+{
+    // Though LTE is a date call technology instead of a voice call technology,
+    // we put it in gsm family, a more widely used protocol, since the emulated
+    // modem currently has no place to record the data technology and we still
+    // need decide the modem behavior for telephony related tests.
+    return modem->technology == A_TECH_LTE ||
+           modem->technology == A_TECH_GSM ||
+           modem->technology == A_TECH_WCDMA;
+}
 
 static void
 amodem_unsol( AModem  modem, const char* format, ... )
@@ -1378,33 +1413,25 @@ amodem_send_calls_update( AModem  modem )
 }
 
 
-int
-amodem_add_inbound_call( AModem  modem, const char*  number, const int  numPresentation, const char*  name, const int  namePresentation )
+static AVoiceCall
+amodem_alloc_inbound_voice_call( AModem  modem,
+                                 const char*  number,
+                                 const int  numPresentation )
 {
     AVoiceCall  vcall = amodem_alloc_call( modem );
     ACall       call  = &vcall->call;
     int         len;
-    char        cnapName[ A_CALL_NAME_MAX_SIZE+1 ];
-    int         voice_call_count;
     int         nn;
 
     if (call == NULL)
-        return -1;
+        return NULL;
 
     call->dir   = A_CALL_INBOUND;
     call->mode  = A_CALL_VOICE;
     call->multi = 0;
 
-    voice_call_count = 0;
-    for (nn = 0; nn < modem->call_count; nn++) {
-      AVoiceCall  vcall = modem->calls + nn;
-      ACall       call  = &vcall->call;
-      if (call->mode == A_CALL_VOICE) {
-        voice_call_count++;
-      }
-    }
-
-    call->state = (voice_call_count == 1) ? A_CALL_INCOMING : A_CALL_WAITING;
+    call->state = (amodem_get_voice_call_count(modem) == 1) ? A_CALL_INCOMING
+                                                            : A_CALL_WAITING;
 
     vcall->is_remote = (remote_number_string_to_port(number, modem, NULL, NULL) > 0);
 
@@ -1419,7 +1446,22 @@ amodem_add_inbound_call( AModem  modem, const char*  number, const int  numPrese
 
     call->numberPresentation = numPresentation;
 
-    len = 0;
+    return vcall;
+}
+
+int // For GSM only
+amodem_add_inbound_call( AModem  modem,
+                         const char*  number, const int  numPresentation,
+                         const char*  name, const int  namePresentation )
+{
+    AVoiceCall vcall = amodem_alloc_inbound_voice_call(modem,
+                                                       number,
+                                                       numPresentation);
+    if (vcall == NULL)
+        return -1;
+
+    int     len = 0;
+    char    cnapName[ A_CALL_NAME_MAX_SIZE+1 ];
     if (namePresentation == 0) {
       len = strlen(name);
       if (len >= sizeof(cnapName))
