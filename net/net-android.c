@@ -410,11 +410,11 @@ int qemu_can_send_packet(VLANClientState *sender)
         }
 
         /* no can_receive() handler, they can always receive */
-        if (!vc->can_receive || vc->can_receive(vc)) {
-            return 1;
+        if (vc->can_receive && !vc->can_receive(vc)) {
+            return 0;
         }
     }
-    return 0;
+    return 1;
 }
 
 static int
@@ -2225,6 +2225,42 @@ int net_client_init(Monitor *mon, const char *device, const char *p)
         vlan->nb_guest_devs++;
         ret = idx;
     } else
+    if (!strcmp(device, "rmnet")) {
+        static unsigned int rmnet_index = 0;
+
+        if (name) {
+            config_error(mon, "rmnet iface should not have customized name.\n");
+            ret = -1;
+            goto out;
+        }
+
+        ret = net_client_init(mon, "nic", p);
+        if (ret < 0) {
+            return ret;
+        }
+
+        NICInfo *nd = &nd_table[ret];
+        snprintf(buf, sizeof(buf), "rmnet.%u", rmnet_index++);
+        nd->name = g_strdup(buf);
+    } else
+    if (!strcmp(device, "wlan")) {
+        static unsigned int wlan_index = 0;
+
+        if (name) {
+            config_error(mon, "wlan iface should not have customized name.\n");
+            ret = -1;
+            goto out;
+        }
+
+        ret = net_client_init(mon, "nic", p);
+        if (ret < 0) {
+            return ret;
+        }
+
+        NICInfo *nd = &nd_table[ret];
+        snprintf(buf, sizeof(buf), "wlan.%u", wlan_index++);
+        nd->name = g_strdup(buf);
+    } else
     if (!strcmp(device, "none")) {
         if (*p != '\0') {
             config_error(mon, "'none' takes no parameters\n");
@@ -2646,9 +2682,14 @@ android_parse_network_speed(const char*  speed)
         }
     }
 
-    if (android_modem)
-        amodem_set_data_network_type( android_modem,
-                                      android_parse_network_type(speed) );
+    ADataNetworkType type = android_parse_network_type(speed);
+    AModem modem;
+    for (n = 0; n < amodem_num_devices; n++) {
+        if ((modem = amodem_get_instance(n)) != NULL) {
+            amodem_set_data_network_type(modem, type);
+        }
+    }
+
     return 0;
 }
 

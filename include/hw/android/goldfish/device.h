@@ -50,6 +50,8 @@ void goldfish_battery_init(int has_battery);
 void goldfish_battery_set_prop(int ac, int property, int value);
 void goldfish_battery_display(void (* callback)(void *data, const char* string), void *data);
 void goldfish_mmc_init(uint32_t base, int id, BlockDriverState* bs);
+void goldfish_rfkill_init();
+void goldfish_nfc_init();
 int goldfish_guest_is_64bit();
 
 // these do not add a device
