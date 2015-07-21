@@ -80,6 +80,7 @@ HW_SOURCES := \
     android/goldfish/trace.c \
     android/goldfish/profile.c \
     pci/pci.c \
+    scsi/scsi-disk.c \
     watchdog/watchdog.c
 
 
