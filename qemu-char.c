@@ -30,6 +30,8 @@
 #include "qemu/timer.h"
 #include "sysemu/char.h"
 #include "block/block.h"
+#include "hw/usb.h"
+#include "hw/baum.h"
 #include "hw/msmouse.h"
 #include "qapi/qmp/types.h"
 
