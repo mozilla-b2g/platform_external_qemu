@@ -3393,6 +3393,9 @@ int main(int argc, char **argv, char **envp)
     /* We always force qemu=1 when running inside QEMU */
     stralloc_add_str(kernel_params, " qemu=1");
 
+    /* Use permissive for selinux */
+    stralloc_add_str(kernel_params, " androidboot.selinux=permissive");
+
     /* We always initialize the first serial port for the android-kmsg
      * character device (used to send kernel messages) */
     serial_hds_add_at(0, "android-kmsg");

@@ -177,6 +177,14 @@ void emuglConfig_setupEnv(const EmuglConfig* config) {
     const char kPathSeparator = ':';
 #endif
 
+    // B2G ususally put EXEC_FILE under <bin> and put LIBRARY under <lib>.
+    // Prepend $EXEC_DIR/../<lib>/ to LD_LIBRARY_PATH to ensure that
+    // the EmuGL libraries are found on B2G.
+    newDirs += kPathSeparator;
+    newDirs += StringFormat("%s/../%s",
+                            System::get()->getProgramDirectory().c_str(),
+                            libSubDir);
+
     if (strcmp(config->backend, "host") != 0) {
         // If the backend is not 'host', we also need to add the
         // backend directory.
@@ -189,6 +197,8 @@ void emuglConfig_setupEnv(const EmuglConfig* config) {
 
 #ifdef _WIN32
     static const char kEnvPathVar[] = "PATH";
+#elif defined(__APPLE__)
+    static const char kEnvPathVar[] = "DYLD_LIBRARY_PATH";
 #else  // !_WIN32
     static const char kEnvPathVar[] = "LD_LIBRARY_PATH";
 #endif  // !_WIN32
