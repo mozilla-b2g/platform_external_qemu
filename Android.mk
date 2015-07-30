@@ -23,11 +23,12 @@ $(LOCAL_INSTALLED_MODULE): $(LOCAL_BUILT_MODULE)
 	@echo Install dir: $(HOST_OUT); \
 	tar -xvz -f $(abspath $<) -C $(HOST_OUT)
 
+EMULATOR_MULTI_SIM ?= 1
 EMULATOR_STANDALONE_ARCHIVE := $(EMULATOR_OUT)/emulator-standalone.tar.gz
 
 .PHONY: $(LOCAL_BUILT_MODULE)
 $(LOCAL_BUILT_MODULE):
-	$(EMULATOR_PATH)/android-configure.sh --out-dir=$(EMULATOR_OUT) --verbose --no-tests && \
+	$(EMULATOR_PATH)/android-configure.sh --multisim=$(EMULATOR_MULTI_SIM) --out-dir=$(EMULATOR_OUT) --verbose --no-tests && \
 	$(MAKE) -C $(EMULATOR_PATH) && \
 	rm -f $(EMULATOR_STANDALONE_ARCHIVE) && \
 	tar -cvzP -f $(EMULATOR_STANDALONE_ARCHIVE) -C $(EMULATOR_OUT) --transform='s,^$(EMULATOR_OUT)/emulator,bin/emulator,' --show-transformed-names $(EMULATOR_OUT)/emulator* lib lib64 && \

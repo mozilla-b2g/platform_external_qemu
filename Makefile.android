@@ -58,7 +58,7 @@ MY_LD  := $(HOST_LD)
 MY_AR  := $(HOST_AR)
 MY_WINDRES := $(HOST_WINDRES)
 
-MY_CFLAGS := -g -falign-functions=0
+MY_CFLAGS := -g -falign-functions=0 $(QEMU_CONFIG_INCLUDES)
 ifeq ($(BUILD_DEBUG_EMULATOR),true)
     MY_CFLAGS += -O0
 else
