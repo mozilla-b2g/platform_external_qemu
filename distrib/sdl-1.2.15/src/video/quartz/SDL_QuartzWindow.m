@@ -84,7 +84,13 @@ static void QZ_SetPortAlphaOpaque () {
         is required, and the deminiaturize works perfectly.
     */
      SDL_VideoDevice *this = (SDL_VideoDevice*)current_video;
-    
+   
+    // originated from QZ_SetVideoMode. see comment below in setFrame:display:
+    if (this && SDL_VideoSurface == NULL) {
+      [ super display ];
+      return;
+    }
+
     /* make sure pixels are fully opaque */
     if (! ( SDL_VideoSurface->flags & SDL_OPENGL ) )
         QZ_SetPortAlphaOpaque ();

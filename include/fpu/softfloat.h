@@ -55,12 +55,36 @@ these four paragraphs for those parts of this code that are retained.
 | to the same as `int'.
 *----------------------------------------------------------------------------*/
 typedef uint8_t flag;
+
+#ifndef _UINT8
 typedef uint8_t uint8;
+#define _UINT8
+#endif // _UINT8
+
+#ifndef _INT8
 typedef int8_t int8;
+#define _INT8
+#endif // _INT8
+
+#ifndef _UINT32
 typedef unsigned int uint32;
+#define _UINT32
+#endif // _UINT32
+
+#ifndef _INT32
 typedef signed int int32;
+#define _INT32
+#endif // _INT32
+
+#ifndef _UINT64
 typedef uint64_t uint64;
+#define _UINT64
+#endif // _UINT64
+
+#ifndef _INT64
 typedef int64_t int64;
+#define _INT64
+#endif // _INT64
 
 #define LIT64( a ) a##LL
 #define INLINE static inline

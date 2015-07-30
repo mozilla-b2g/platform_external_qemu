@@ -18,19 +18,24 @@
 /** MODEM OBJECT
  **/
 typedef struct AModemRec_*    AModem;
+extern int         amodem_num_devices;
 
 /* a function used by the modem to send unsolicited messages to the channel controller */
 typedef void (*AModemUnsolFunc)( void*  opaque, const char*  message );
 
-extern AModem      amodem_create( int  base_port, AModemUnsolFunc  unsol_func, void*  unsol_opaque );
+extern AModem      amodem_create( int  base_port, int  instance_id, AModemUnsolFunc  unsol_func, void*  unsol_opaque );
 extern void        amodem_set_legacy( AModem  modem );
 extern void        amodem_destroy( AModem  modem );
+extern AModem      amodem_get_instance( int  instance_id );
 
-/* send a command to the modem */
-extern const char*  amodem_send( AModem  modem, const char*  cmd );
+/* send a command to the modem, returns non-zero if in sms mode */
+extern int          amodem_send( AModem  modem, const char*  cmd );
 
 /* simulate the receipt on an incoming SMS message */
 extern void         amodem_receive_sms( AModem  modem, SmsPDU  pdu );
+
+/* simulate the receipt on an incoming Cell Broadcast message */
+extern void         amodem_receive_cbs( AModem  modem, SmsPDU  pdu );
 
 /** RADIO STATE
  **/
@@ -40,10 +45,16 @@ typedef enum {
 } ARadioState;
 
 extern ARadioState  amodem_get_radio_state( AModem modem );
-extern void         amodem_set_radio_state( AModem modem, ARadioState  state );
+extern void         amodem_set_radio_state( AModem modem, ARadioState state );
 
+/* Get the received signal strength indicator and bit error rate */
+extern void         amodem_get_signal_strength( AModem modem, int* rssi, int* ber );
 /* Set the received signal strength indicator and bit error rate */
 extern void         amodem_set_signal_strength( AModem modem, int rssi, int ber );
+/* Get the received LTE rxlev, rsrp and rssnr */
+extern void         amodem_get_lte_signal_strength( AModem modem, int* rxlev, int* rsrp, int* rssnr );
+/* Set the received LTE rxlev, rsrp and rssnr */
+extern void         amodem_set_lte_signal_strength( AModem modem, int rxlev, int rsrp, int rssnr );
 
 /** SIM CARD STATUS
  **/
@@ -51,6 +62,13 @@ extern ASimCard    amodem_get_sim( AModem  modem );
 
 /** VOICE AND DATA NETWORK REGISTRATION
  **/
+
+/* 'mode' for +CREG/+CGREG commands */
+typedef enum {
+    A_REGISTRATION_UNSOL_DISABLED     = 0,
+    A_REGISTRATION_UNSOL_ENABLED      = 1,
+    A_REGISTRATION_UNSOL_ENABLED_FULL = 2
+} ARegistrationUnsolMode;
 
 /* 'stat' for +CREG/+CGREG commands */
 typedef enum {
@@ -78,8 +96,22 @@ typedef enum {
     A_TECH_CDMA,
     A_TECH_EVDO,
     A_TECH_LTE,
-    A_TECH_UNKNOWN // This must always be the last value in the enum
+    A_TECH_UNKNOWN,
+    A_TECH_PREFERRED = 8 // Be used in A_PREFERRED_MASK* as the preferred bit.
 } AModemTech;
+
+typedef enum {
+    A_PREFERRED_MASK_GSM_WCDMA_PREF = 0,
+    A_PREFERRED_MASK_GSM,
+    A_PREFERRED_MASK_WCDMA,
+    A_PREFERRED_MASK_GSM_WCDMA,
+    A_PREFERRED_MASK_CDMA_EVDO,
+    A_PREFERRED_MASK_CDMA,
+    A_PREFERRED_MASK_EVDO,
+    A_PREFERRED_MASK_GSM_WCDMA_CDMA_EVDO,
+    // TODO: Add Lte related preferred mask
+    A_PREFERRED_MASK_UNKNOWN // This must always be the last value in the enum
+} AModemPreferredMask;
 
 typedef enum {
     A_SUBSCRIPTION_NVRAM = 0,
@@ -94,6 +126,8 @@ typedef enum {
     A_ROAMING_PREF_UNKNOWN // This must always be the last value in the enum
 } ACdmaRoamingPref;
 
+extern ARegistrationUnsolMode  amodem_get_voice_unsol_mode( AModem  modem );
+
 extern ARegistrationState  amodem_get_voice_registration( AModem  modem );
 extern void                amodem_set_voice_registration( AModem  modem, ARegistrationState    state );
 
@@ -103,9 +137,26 @@ extern void                amodem_set_data_network_type( AModem  modem, ADataNet
 
 extern ADataNetworkType    android_parse_network_type( const char*  speed );
 extern AModemTech          android_parse_modem_tech( const char*  tech );
+extern const char*         android_get_modem_tech_name( AModemTech tech );
+extern AModemPreferredMask android_parse_modem_preferred_mask( const char* mask );
+extern const char*         android_get_modem_preferred_mask_name( AModemPreferredMask mask );
 extern void                amodem_set_cdma_subscription_source( AModem modem, ACdmaSubscriptionSource ssource );
 extern void                amodem_set_cdma_prl_version( AModem modem, int prlVersion);
 
+extern SmsAddress          amodem_get_smsc_address( AModem  modem );
+extern int                 amodem_set_smsc_address( AModem  modem, const char *smsc, unsigned char toa );
+
+extern AModemTech          amodem_get_technology( AModem modem );
+extern AModemPreferredMask amodem_get_preferred_mask( AModem modem );
+extern int                 amodem_set_technology( AModem modem, AModemTech technology, AModemPreferredMask preferredMask );
+
+/** OPERATOR TYPES
+ **/
+typedef enum {
+    A_OPERATOR_HOME = 0,
+    A_OPERATOR_ROAMING,
+    A_OPERATOR_MAX  /* don't remove */
+} AOperatorIndex;
 
 /** OPERATOR NAMES
  **/
@@ -116,11 +167,15 @@ typedef enum {
     A_NAME_MAX  /* don't remove */
 } ANameIndex;
 
-/* retrieve operator name into user-provided buffer. returns number of writes written, including terminating zero */
+/* retrieve current operator name into user-provided buffer. returns number of writes written, including terminating zero */
 extern int   amodem_get_operator_name ( AModem  modem, ANameIndex  index, char*  buffer, int  buffer_size );
+/* retrieve specified operator name into user-provided buffer. returns number of writes written, including terminating zero */
+extern int   amodem_get_operator_name_ex ( AModem  modem, AOperatorIndex, ANameIndex  index, char*  buffer, int  buffer_size );
 
-/* reset one operator name from a user-provided buffer, set buffer_size to -1 for zero-terminated strings */
+/* reset one current operator name from a user-provided buffer, set buffer_size to -1 for zero-terminated strings */
 extern void  amodem_set_operator_name( AModem  modem, ANameIndex  index, const char*  buffer, int  buffer_size );
+/* reset one specified operator name from a user-provided buffer, set buffer_size to -1 for zero-terminated strings */
+extern void  amodem_set_operator_name_ex( AModem  modem, AOperatorIndex, ANameIndex  index, const char*  buffer, int  buffer_size );
 
 /** CALL STATES
  **/
@@ -147,6 +202,12 @@ typedef enum {
 } ACallMode;
 
 #define  A_CALL_NUMBER_MAX_SIZE  16
+/* TS 24.096 clause 4.1 */
+#define  A_CALL_NAME_MAX_SIZE  80
+
+#define CALL_FAIL_UNOBTAINABLE_NUMBER 1
+#define CALL_FAIL_NORMAL 16
+#define CALL_FAIL_BUSY 17
 
 typedef struct {
     int         id;
@@ -155,14 +216,50 @@ typedef struct {
     ACallMode   mode;
     int         multi;
     char        number[ A_CALL_NUMBER_MAX_SIZE+1 ];
+    int         numberPresentation;
 } ACallRec, *ACall;
 
 extern int    amodem_get_call_count( AModem  modem );
 extern ACall  amodem_get_call( AModem  modem,  int  index );
 extern ACall  amodem_find_call_by_number( AModem  modem, const char*  number );
-extern int    amodem_add_inbound_call( AModem  modem, const char*  number );
+extern int    amodem_add_inbound_call( AModem  modem, const char*  number, const int  numPresentation, const char*  name, const int  namePresentation );
+extern int    amodem_add_outbound_call( AModem  modem, const char*  number );
 extern int    amodem_update_call( AModem  modem, const char*  number, ACallState  state );
 extern int    amodem_disconnect_call( AModem  modem, const char*  number );
+extern int    amodem_clear_call( AModem modem );
+extern int    amodem_remote_call_busy( AModem  modem, const char*  number );
+extern void   amodem_send_stk_unsol_proactive_command( AModem  modem, const char*  stkCmdPdu );
+
+/** Cell Location
+ **/
+
+extern void amodem_get_gsm_location( AModem modem, int* lac, int* ci );
+extern void amodem_set_gsm_location( AModem modem, int lac, int ci );
+
+/** Base Port & Instance ID & Phone Prefix
+ **/
+
+extern int amodem_get_base_port( AModem  modem );
+extern int amodem_get_instance_id( AModem  modem );
+
+/** DFMT
+ **/
+extern void amodem_reset_last_dialed_tone( AModem modem );
+extern char amodem_get_last_dialed_tone( AModem modem );
+
+/** Enable/Disable the selected modem feature
+ **/
+
+typedef enum {
+    A_MODEM_FEATURE_HOLD = (0x01 << 0)
+} AModemFeature;
+
+extern int amodem_set_feature( AModem  modem, AModemFeature  feature, bool  enable );
+
+/** Fetch last requested STK response & envelope from MT.
+ **/
+extern const char * amodem_get_last_stk_response( AModem modem );
+extern const char * amodem_get_last_stk_envelope( AModem modem );
 
 /**/
 

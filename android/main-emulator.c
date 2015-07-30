@@ -34,7 +34,7 @@
 #include <android/avd/util.h>
 
 /* Required by android/utils/debug.h */
-int android_verbose;
+unsigned long long android_verbose;
 
 
 #define DEBUG 1

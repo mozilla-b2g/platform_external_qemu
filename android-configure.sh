@@ -26,6 +26,7 @@ OPTION_HELP=no
 OPTION_STATIC=no
 OPTION_STRIP=no
 OPTION_MINGW=no
+OPTION_MULTISIM=1
 
 GLES_DIR=
 GLES_SUPPORT=no
@@ -99,6 +100,8 @@ for opt do
   --no-tests)
   # Ignore this option, only used by android-rebuild.sh
   ;;
+  --multisim=*) OPTION_MULTISIM=$optarg
+  ;;
   *)
     echo "unknown option '$opt', use --help"
     exit 1
@@ -136,6 +139,7 @@ EOF
     if [ "$IN_ANDROID_REBUILD_SH" ]; then
         echo "  --build-qemu-android        Also build qemu-android binaries"
     fi
+    echo "  --multisim               the number of modem devices, default 1, max 9."
     echo ""
     exit 1
 fi
@@ -827,6 +831,8 @@ case "$TARGET_OS" in
 esac
 
 echo "#define CONFIG_ANDROID       1" >> $config_h
+
+echo "#define MAX_GSM_DEVICES  $OPTION_MULTISIM" >> $config_h
 
 log "Generate   : $config_h"
 
