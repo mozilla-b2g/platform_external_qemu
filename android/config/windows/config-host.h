@@ -8,4 +8,3 @@
 #define QEMU_PKGVERSION "Android"
 #define CONFIG_WIN32   1
 #define CONFIG_ANDROID       1
-#define MAX_GSM_DEVICES  9
