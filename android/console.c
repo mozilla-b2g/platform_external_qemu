@@ -1968,6 +1968,99 @@ static const CommandDefRec  gsm_commands[] =
 /********************************************************************************************/
 /********************************************************************************************/
 /*****                                                                                 ******/
+/*****                               T e l e p h o n y                                 ******/
+/*****                                                                                 ******/
+/********************************************************************************************/
+/********************************************************************************************/
+
+static int
+do_telephony_list(ControlClient client, char* args)
+{
+    // Invoke the original AOSP command handler here.
+    return do_gsm_list(client, args);
+}
+
+static int
+do_telephony_clear(ControlClient client, char* args)
+{
+    // Invoke the original AOSP command handler here.
+    return do_gsm_clear(client, args);
+}
+
+static int
+do_telephony_call(ControlClient client, char* args)
+{
+    // Invoke the original AOSP command handler here. The difference between GSM
+    // and CDMA is implemented in android_modem.c.
+    return do_gsm_call(client, args);;
+}
+
+static int
+do_telephony_accept( ControlClient  client, char*  args )
+{
+    // Invoke the original AOSP command handler here. The difference between GSM
+    // and CDMA is implemented in android_modem.c.
+    return do_gsm_accept(client, args);
+}
+
+static int
+do_telephony_cancel(ControlClient  client, char*  args)
+{
+    // TODO: We should redial the waiting call under a cdma call waiting
+    // situation after the calling parties disconnected. Please refer to
+    // Bug 1181009.
+
+    // Invoke the original AOSP command handler here.
+    return do_gsm_cancel(client, args);
+}
+
+static int
+do_telephony_busy( ControlClient  client, char  *args )
+{
+    // Invoke the original AOSP command handler here. The difference between GSM
+    // and CDMA is implemented in android_modem.c.
+    return do_gsm_busy(client, args);
+}
+
+static const CommandDefRec  telephony_commands[] =
+{
+    { "list", "list current phone calls",
+    "'telephony list' lists all inbound and outbound calls and their state\r\n",
+    NULL, do_telephony_list, NULL },
+
+    { "clear", "clear current phone calls",
+    "'telephony clear' cleans up all inbound and outbound calls\r\n",
+    NULL, do_telephony_clear, NULL },
+
+    { "call", "create inbound phone call",
+    "'telephony call <phonenumber>[,<numPresentation>[,<name>[,<namePresentation]]]'"
+    " allows you to simulate a new inbound call\r\n"
+    "phonenumber is the inbound call number\r\n"
+    "numPresentation range is 0..4\r\n"
+    "name is the inbound call name\r\n"
+    "namePresentation range is 0..2\r\n",
+    NULL, do_telephony_call, NULL },
+
+    { "cancel", "disconnect an inbound or outbound phone call",
+    "'telephony cancel <phonenumber>' allows you to simulate the end of an inbound or outbound call\r\n",
+    NULL, do_telephony_cancel, NULL },
+
+    { "accept", "change the state of an outbound call to 'active'",
+    "'telephony accept <remoteNumber>' change the state of a call to 'active'. this is only possible\r\n"
+    "if the call is in the 'alerting'(for GSM), 'active'(for CDMA), or 'waiting' state\r\n",
+    NULL, do_telephony_accept, NULL },
+
+    { "busy", "close waiting outbound call as busy",
+    "'telephony busy <remoteNumber>' closes an outbound call, reporting\r\n"
+    "the remote phone as busy. only possible if the call is 'waiting'.\r\n",
+    NULL, do_telephony_busy, NULL },
+
+    { NULL, NULL, NULL, NULL, NULL, NULL }
+};
+
+/********************************************************************************************/
+/********************************************************************************************/
+/*****                                                                                 ******/
 /*****                           S M S   C O M M A N D                                 ******/
 /*****                                                                                 ******/
 /********************************************************************************************/
@@ -5229,6 +5322,10 @@ static const CommandDefRec   main_commands[] =
     { "cdma", "CDMA related commands",
       "allows you to change CDMA-related settings\r\n", NULL,
       NULL, cdma_commands },
+
+    { "telephony", "telephony related commands",
+      "allows you to do call controls and relevant modem settings\r\n", NULL,
+      NULL, telephony_commands },
 
     { "kill", "kill the emulator instance", NULL, NULL,
       do_kill, NULL },
