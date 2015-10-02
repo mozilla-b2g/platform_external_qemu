@@ -810,7 +810,7 @@ format_inet_addr(ADataType type, AInetAddr addr, int with_mask, char *out, size_
             break;
 
         case A_DATA_IPV6:
-            if (addr->in6.s6_addr32[0]) {
+            if (addr->in6.s6_addr[0]) {
                 if (inet_ntop( AF_INET6, &addr->in6, buf, sizeof buf)) {
                     snprintf(out, len, (with_mask ? "%s/64" : "%s"), buf);
                 }
@@ -848,21 +848,25 @@ amodem_init_rmnets()
         ADataNet net = &_amodem_rmnets[j];
 
         net->nd = nd;
-        int ip = special_addr_ip + 100 + (net - _amodem_rmnets);
+        uint32_t ip = special_addr_ip + 100 + (net - _amodem_rmnets);
         net->addr.in.s_addr = htonl(ip);
-        net->addr.in6.s6_addr32[0] = htonl(0x20010200);
-        net->addr.in6.s6_addr32[1] = htonl(j);
-        net->addr.in6.s6_addr32[3] = net->addr.in.s_addr;
+
+        // 2001:0200:0:j::inet4_addr
+        uint32_t prefix_apnic = htonl(0x20010200);
+        uint32_t prefix_index = htonl(j);
+        memcpy(net->addr.in6.s6_addr, &prefix_apnic, sizeof prefix_apnic);
+        memcpy(&net->addr.in6.s6_addr[4], &prefix_index, sizeof prefix_index);
+        memcpy(&net->addr.in6.s6_addr[12], &net->addr.in.s_addr, sizeof net->addr.in.s_addr);
 
         net->gw.in.s_addr = htonl(alias_addr_ip);
         memcpy(&net->gw.in6, &net->addr.in6, sizeof net->addr.in6);
-        net->gw.in6.s6_addr32[3] = net->gw.in.s_addr;
+        memcpy(&net->gw.in6.s6_addr[12], &net->gw.in.s_addr, sizeof net->gw.in.s_addr);
 
         for ( k = 0; k < NUM_DNS_PER_RMNET && k < dns_addr_count; k++ ) {
             ip = dns_addr[k];
             net->dns[k].in.s_addr = htonl(ip);
             memcpy(&net->dns[k].in6, &net->addr.in6, sizeof net->addr.in6);
-            net->dns[k].in6.s6_addr32[3] = net->dns[k].in.s_addr;
+            memcpy(&net->gw.in6.s6_addr[12], &net->dns[k].in.s_addr, sizeof net->dns[k].in.s_addr);
         }
 
         /* Data connections are down by default. */
