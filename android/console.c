@@ -1808,38 +1808,6 @@ do_gsm_report( ControlClient  client, char*  args )
     return 0;
 }
 
-static int
-do_gsm_enable_disable( ControlClient  client, char  *args, bool enable )
-{
-    if (strcmp( args, "hold" ) == 0)
-        return amodem_set_feature(client->modem, A_MODEM_FEATURE_HOLD, enable);
-
-    control_write( client, "KO: '%s' cannot be enabled or disabled.\r\n", args );
-    return -1;
-}
-
-static int
-do_gsm_enable( ControlClient  client, char  *args )
-{
-    if (!args) {
-        control_write( client, "KO: missing argument, try 'gsm enable <feature>'\r\n" );
-        return -1;
-    }
-
-    return do_gsm_enable_disable(client, args, true);
-}
-
-static int
-do_gsm_disable( ControlClient  client, char  *args )
-{
-    if (!args) {
-        control_write( client, "KO: missing argument, try 'gsm disable <feature>'\r\n" );
-        return -1;
-    }
-
-    return do_gsm_enable_disable(client, args, false);
-}
-
 #if 0
 static const CommandDefRec  gsm_in_commands[] =
 {
@@ -1945,13 +1913,138 @@ static const CommandDefRec  gsm_commands[] =
     "'gsm report creg' report CREG field\r\n",
     NULL, do_gsm_report, NULL},
 
+    { NULL, NULL, NULL, NULL, NULL, NULL }
+};
+
+/********************************************************************************************/
+/********************************************************************************************/
+/*****                                                                                 ******/
+/*****                               T e l e p h o n y                                 ******/
+/*****                                                                                 ******/
+/********************************************************************************************/
+/********************************************************************************************/
+
+static int
+do_telephony_list(ControlClient client, char* args)
+{
+    // Invoke the original AOSP command handler here.
+    return do_gsm_list(client, args);
+}
+
+static int
+do_telephony_clear(ControlClient client, char* args)
+{
+    // Invoke the original AOSP command handler here.
+    return do_gsm_clear(client, args);
+}
+
+static int
+do_telephony_call(ControlClient client, char* args)
+{
+    // Invoke the original AOSP command handler here. The difference between GSM
+    // and CDMA is implemented in android_modem.c.
+    return do_gsm_call(client, args);;
+}
+
+static int
+do_telephony_accept( ControlClient  client, char*  args )
+{
+    // Invoke the original AOSP command handler here. The difference between GSM
+    // and CDMA is implemented in android_modem.c.
+    return do_gsm_accept(client, args);
+}
+
+static int
+do_telephony_cancel(ControlClient  client, char*  args)
+{
+    // TODO: We should redial the waiting call under a cdma call waiting
+    // situation after the calling parties disconnected. Please refer to
+    // Bug 1181009.
+
+    // Invoke the original AOSP command handler here.
+    return do_gsm_cancel(client, args);
+}
+
+static int
+do_telephony_busy( ControlClient  client, char  *args )
+{
+    // Invoke the original AOSP command handler here. The difference between GSM
+    // and CDMA is implemented in android_modem.c.
+    return do_gsm_busy(client, args);
+}
+
+static int
+do_telephony_enable_disable( ControlClient  client, char  *args, bool enable )
+{
+    if (strcmp( args, "hold" ) == 0)
+        return amodem_set_feature(client->modem, A_MODEM_FEATURE_HOLD, enable);
+
+    control_write( client, "KO: '%s' is not found or cannot be enabled or disabled.\r\n", args );
+    return -1;
+}
+
+static int
+do_telephony_enable( ControlClient  client, char  *args )
+{
+    if (!args) {
+        control_write( client, "KO: missing argument, try 'telephony enable <feature>'\r\n" );
+        return -1;
+    }
+
+    return do_telephony_enable_disable(client, args, true);
+}
+
+static int
+do_telephony_disable( ControlClient  client, char  *args )
+{
+    if (!args) {
+        control_write( client, "KO: missing argument, try 'telephony disable <feature>'\r\n" );
+        return -1;
+    }
+
+    return do_telephony_enable_disable(client, args, false);
+}
+
+static const CommandDefRec  telephony_commands[] =
+{
+    { "list", "list current phone calls",
+    "'telephony list' lists all inbound and outbound calls and their state\r\n",
+    NULL, do_telephony_list, NULL },
+
+    { "clear", "clear current phone calls",
+    "'telephony clear' cleans up all inbound and outbound calls\r\n",
+    NULL, do_telephony_clear, NULL },
+
+    { "call", "create inbound phone call",
+    "'telephony call <phonenumber>[,<numPresentation>[,<name>[,<namePresentation]]]'"
+    " allows you to simulate a new inbound call\r\n"
+    "phonenumber is the inbound call number\r\n"
+    "numPresentation range is 0..4\r\n"
+    "name is the inbound call name\r\n"
+    "namePresentation range is 0..2\r\n",
+    NULL, do_telephony_call, NULL },
+
+    { "cancel", "disconnect an inbound or outbound phone call",
+    "'telephony cancel <phonenumber>' allows you to simulate the end of an inbound or outbound call\r\n",
+    NULL, do_telephony_cancel, NULL },
+
+    { "accept", "change the state of an outbound call to 'active'",
+    "'telephony accept <remoteNumber>' change the state of a call to 'active'. this is only possible\r\n"
+    "if the call is in the 'alerting'(for GSM), 'active'(for CDMA), or 'waiting' state\r\n",
+    NULL, do_telephony_accept, NULL },
+
     { "enable", "enable selected modem feature",
-    "'gsm enable hold' enable the hold feature\r\n",
-    NULL, do_gsm_enable, NULL},
+    "'telephony enable hold' enable the hold feature\r\n",
+    NULL, do_telephony_enable, NULL},
 
     { "disable", "disable selected modem feature",
-    "'gsm disable hold' disable the hold feature\r\n",
-    NULL, do_gsm_disable, NULL},
+    "'telephony disable hold' disable the hold feature\r\n",
+    NULL, do_telephony_disable, NULL},
+
+    { "busy", "close waiting outbound call as busy",
+    "'telephony busy <remoteNumber>' closes an outbound call, reporting\r\n"
+    "the remote phone as busy. only possible if the call is 'waiting'.\r\n",
+    NULL, do_telephony_busy, NULL },
 
     { NULL, NULL, NULL, NULL, NULL, NULL }
 };
@@ -4302,6 +4395,10 @@ static const CommandDefRec   main_commands[] =
     { "cdma", "CDMA related commands",
       "allows you to change CDMA-related settings\r\n", NULL,
       NULL, cdma_commands },
+
+    { "telephony", "telephony related commands",
+      "allows you to do call controls and relevant modem settings\r\n", NULL,
+      NULL, telephony_commands },
 
     { "kill", "kill the emulator instance", NULL, NULL,
       do_kill, NULL },
