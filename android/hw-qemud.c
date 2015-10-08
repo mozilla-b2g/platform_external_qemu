@@ -680,6 +680,7 @@ struct QemudClient {
         struct {
             QemudPipe*          qemud_pipe;
             QemudPipeMessage*   messages;
+            int                 wakeOnFlags;
         } Pipe;
     } ProtocolSelector;
 };
@@ -1630,9 +1631,14 @@ _qemud_pipe_cache_buffer(QemudClient* client, const uint8_t*  msg, int  msglen)
             ins_at = &(*ins_at)->next;
         }
         *ins_at = buf;
+
         /* Notify the pipe that there is data to read. */
-        goldfish_pipe_wake(client->ProtocolSelector.Pipe.qemud_pipe->hwpipe,
-                           PIPE_WAKE_READ);
+        if (client->ProtocolSelector.Pipe.wakeOnFlags & PIPE_WAKE_READ) {
+            client->ProtocolSelector.Pipe.wakeOnFlags &= ~PIPE_WAKE_READ;
+            goldfish_pipe_wake(client->ProtocolSelector.Pipe.qemud_pipe->hwpipe,
+                               PIPE_WAKE_READ);
+
+        }
     }
 }
 
@@ -2092,7 +2098,17 @@ _qemudPipe_poll(void* opaque)
 static void
 _qemudPipe_wakeOn(void* opaque, int flags)
 {
+    QemudPipe* pipe = opaque;
+    QemudClient* client = pipe->client;
     D("%s: -> %X", __FUNCTION__, flags);
+    if ((flags & PIPE_WAKE_READ)) {
+        if (client->ProtocolSelector.Pipe.messages != NULL) {
+            goldfish_pipe_wake(client->ProtocolSelector.Pipe.qemud_pipe->hwpipe,
+                               PIPE_WAKE_READ);
+        } else {
+            client->ProtocolSelector.Pipe.wakeOnFlags |= PIPE_WAKE_READ;
+        }
+    }
 }
 
 static void
