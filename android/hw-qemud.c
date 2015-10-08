@@ -2092,7 +2092,15 @@ _qemudPipe_poll(void* opaque)
 static void
 _qemudPipe_wakeOn(void* opaque, int flags)
 {
+    QemudPipe* pipe = opaque;
+    QemudClient* client = pipe->client;
     D("%s: -> %X", __FUNCTION__, flags);
+    if (flags & PIPE_WAKE_READ) {
+      if (client->ProtocolSelector.Pipe.messages != NULL) {
+        goldfish_pipe_wake(client->ProtocolSelector.Pipe.qemud_pipe->hwpipe,
+                           PIPE_WAKE_READ);
+      }
+    }
 }
 
 static void
