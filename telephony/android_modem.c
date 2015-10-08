@@ -2893,8 +2893,88 @@ handleGetRemainingRetries( const char* cmd, AModem modem )
 }
 
 static void
+handleListCurrentCalls_cdma( const char*  cmd, AModem  modem )
+{
+    // A CDMA modem responses RIL_REQUEST_GET_CURRENT_CALLS with at most one
+    // call, and the call returned might not still exist on the network, so
+    // callRec, a static data cell, is ceated to save the call to response. The
+    // id defined in ACallRec is used to indicate the existance of callRec here,
+    // where -1 and others stand for NO and YES respectively.
+    static ACallRec callRec = {
+        -1,                 // id (initialized to -1)
+        A_CALL_OUTBOUND,    // direction
+        A_CALL_ACTIVE,      // state
+        A_CALL_VOICE,       // mode
+        0,                  // multi
+        "",                 // number
+        0                   // numberPresentation
+    };
+
+    // Search for voice calls
+    int call_idx = -1;
+    int call_cnt = 0;
+
+    int nn;
+    for (nn = 0; nn < modem->call_count; nn++) {
+        AVoiceCall  vcall = modem->calls + nn;
+        ACall       call  = &vcall->call;
+        if (call->mode != A_CALL_VOICE){
+            continue;
+        }
+
+        call_idx = nn;
+        call_cnt += 1;
+    }
+
+    // Update callRec
+    switch (call_cnt) {
+        // When there is no calls on the network, we should clear callRec.
+        case 0:
+            callRec.id = -1;
+            break;
+
+        // If there is exactly one call, we should save the only call to callRec
+        // or update the data in callRec. However, when the state of callRec
+        // becomes A_CALL_ACTIVE, the state won't be changed untill there is no
+        // existing call.
+        case 1:
+            if (callRec.id == -1 ||
+                (callRec.id != -1 && callRec.state != A_CALL_ACTIVE &&
+                 !strcmp(modem->calls[call_idx].call.number, callRec.number))) {
+
+                // Save the call to callRec.
+                callRec = modem->calls[call_idx].call;
+
+                // The possible values of the state of a CDMA call are
+                // A_CALL_DIALING, A_CALL_INCOMING and A_CALL_ACTIVE, so a
+                // translatorhere is needed here.
+                if (callRec.state != A_CALL_DIALING &&
+                    callRec.state != A_CALL_INCOMING) {
+                    callRec.state = A_CALL_ACTIVE;
+                }
+            }
+            break;
+    }
+
+    // Response to RIL Daemon.
+    amodem_begin_line(modem);
+    if (callRec.id != -1) {
+        const char* number = (callRec.numberPresentation == 0) ? callRec.number : "";
+        amodem_add_line(modem, "+CLCC: %d,%d,%d,%d,%d,\"%s\",%d,\"\",2,%d\r\n",
+                        callRec.id, callRec.dir, callRec.state, callRec.mode,
+                        callRec.multi, number, 129 , callRec.numberPresentation);
+    }
+    amodem_end_line_reply(modem);
+}
+
+static void
 handleListCurrentCalls( const char*  cmd, AModem  modem )
 {
+    if (amodem_is_cdma(modem)) {
+        handleListCurrentCalls_cdma(cmd, modem);
+        return;
+    }
+
     int  nn;
     amodem_begin_line( modem );
     for (nn = 0; nn < modem->call_count; nn++) {
