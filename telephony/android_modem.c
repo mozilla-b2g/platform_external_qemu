@@ -1491,15 +1491,18 @@ amodem_add_inbound_call_cdma( AModem modem, const char*  number )
     }
 
     switch (vcall_count) {
-        case 0: // With the newly created call, the call count is now 1.
+        case 0: // With the newly created call, the call count now is 1.
             amodem_unsol(modem, "CALL STATE CHANGED\r");
             amodem_unsol(modem, "RING\r");
             // TODO: UNSOLICITED_CDMA_INFO_REC
             return 0;
 
-        case 1: // With the newly created call, the call count is now 2.
-            // TODO: CDMA call waiting, please refer to Bug 975778
-            return -1;
+        case 1: // With the newly created call, the call count now is 2.
+            // CDMA_CCWA is a customized AT command to notify a CDMA waiting
+            // call. Now, its format is |+CDMA_CCWA: <NUMBER>|, where <NUMBER>
+            // is the number of the incoming call.
+            amodem_unsol(modem, "+CDMA_CCWA: %s\r", number);
+            return 0;
     }
 
     // Too many calls
