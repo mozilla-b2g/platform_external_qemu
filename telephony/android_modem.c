@@ -4458,19 +4458,19 @@ handleCdmaFlash( const char*  cmd, AModem  modem )
     }
 
     // Get CDMA calls
-    int nn, voice_call_count = 0;
+    int nn, vcall_cnt = 0;
     ACall calls[2] = {NULL, NULL};
 
-    for (nn = 0; nn < modem->call_count && voice_call_count < 2; nn++) {
+    for (nn = 0; nn < modem->call_count && vcall_cnt < 2; nn++) {
         AVoiceCall  vcall = modem->calls + nn;
         ACall       call  = &vcall->call;
         if (call->mode == A_CALL_VOICE) {
-            calls[voice_call_count++] = call;
+            calls[vcall_cnt++] = call;
         }
     }
 
     // holding/resuming a single call
-    if (voice_call_count == 1) {
+    if (vcall_cnt == 1) {
         switch (calls[0]->state) {
             case A_CALL_ACTIVE:
                 calls[0]->state = A_CALL_HELD;
@@ -4488,7 +4488,20 @@ handleCdmaFlash( const char*  cmd, AModem  modem )
         return;
     }
 
-    // TODO: handle cdma call waiting and 3-way call
+    // CDMA Call Waiting (CW)
+    if (vcall_cnt == 2 &&
+        calls[1]->dir == A_CALL_INBOUND) {
+        calls[0]->state = calls[0]->state != A_CALL_ACTIVE ? A_CALL_ACTIVE
+                                                           : A_CALL_HELD;
+        calls[1]->state = calls[1]->state != A_CALL_ACTIVE ? A_CALL_ACTIVE
+                                                           : A_CALL_HELD;
+
+        // NOTE: A CDMA modem doesn't send CALL_STATE_CHANGED here.
+        amodem_reply( modem, "OK" );
+        return;
+    }
+
+    // TODO: handle cdma 3-way call
 
     // Unknown CDMA status
     amodem_reply( modem, "+CME ERROR: 3" ); // operation not allowed
