@@ -3940,7 +3940,8 @@ handleHangup_cdma( const char*  cmd, AModem  modem )
     int nn;
     cmd += 6;
     switch (cmd[0]) {
-        case '0':  // Release an incoming call or a held call.
+        // Release an incoming call or a held call.
+        case '0':
             for (nn = 0; nn < modem->call_count; nn++) {
                 AVoiceCall  vcall = modem->calls + nn;
                 ACall       call  = &vcall->call;
@@ -3962,17 +3963,57 @@ handleHangup_cdma( const char*  cmd, AModem  modem )
             amodem_reply( modem, "OK" );
             return;
 
-        case '1': // Release a specific call.
-            if (cmd[1] != 0) {
-                AVoiceCall  vcall = amodem_find_call( modem, cmd[1] - '0');
-                if (vcall != NULL) {
-                    amodem_free_call( modem, vcall, CALL_FAIL_NORMAL );
+        // Release a specific call.
+        case '1': {
+            int vcall_cnt = 0;
+            int vcall_idx[2] = {-1, -1};
+
+            int nn;
+            for (nn = 0; nn < modem->call_count && vcall_cnt <= 2; nn++) {
+                AVoiceCall  vcall = modem->calls + nn;
+                ACall       call  = &vcall->call;
+                if (call->mode != A_CALL_VOICE){
+                    continue;
                 }
+
+                vcall_idx[vcall_cnt++] = nn;
             }
-            // Send response
-            amodem_send_calls_update( modem );
-            amodem_reply( modem, "OK" );
-            return;
+
+            // Target is the only call.
+            if (vcall_cnt == 1) {
+                // We don't care about the number here.
+                amodem_free_call( modem,
+                                  &modem->calls[vcall_idx[0]],
+                                  CALL_FAIL_NORMAL );
+
+                // Send response
+                amodem_send_calls_update( modem );
+                amodem_reply( modem, "OK" );
+                return;
+            }
+
+            // CDMA call waiting.
+            // There are two calls, and the second call is an incoming call.
+            if (vcall_cnt == 2 &&
+                modem->calls[vcall_idx[1]].call.dir == A_CALL_INBOUND) {
+                // Both of the two calls will be hung up, and then the waiting
+                // or held call will be re-dialed as a normal incoming call.
+                // This behavior is not supported. Please refer to Bug 1181009.
+                amodem_free_call(modem, &modem->calls[vcall_idx[1]], CALL_FAIL_NORMAL);
+                amodem_free_call(modem, &modem->calls[vcall_idx[0]], CALL_FAIL_NORMAL);
+
+                // Send response
+                amodem_send_calls_update( modem );
+                amodem_reply( modem, "OK" );
+                return;
+            }
+
+            // TODO: CDMA 3-way call
+            // There are two calls, and the second call is an outgoing call.
+
+            // Unknown modem state
+            break;
+        }
     }
 
     // Unknown CDMA status
