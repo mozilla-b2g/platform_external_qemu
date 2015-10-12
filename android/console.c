@@ -2006,7 +2006,8 @@ do_telephony_cancel(ControlClient  client, char*  args)
     // situation after the calling parties disconnected. Please refer to
     // Bug 1181009.
 
-    // Invoke the original AOSP command handler here.
+    // Invoke the original AOSP command handler here. The difference between GSM
+    // and CDMA is implemented in android_modem.c.
     return do_gsm_cancel(client, args);
 }
 

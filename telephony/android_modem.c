@@ -1734,6 +1734,83 @@ int amodem_remote_call_busy( AModem  modem, const char*  number )
     return 0;
 }
 
+int
+amodem_disconnect_call_cdma( AModem  modem, const char*  number )
+{
+    int target_idx = -1;
+    int other_idx = -1;
+
+    int nn;
+    for (nn = 0; nn < modem->call_count; nn++) {
+        AVoiceCall  vcall = modem->calls + nn;
+        ACall       call  = &vcall->call;
+        if (call->mode != A_CALL_VOICE){
+            continue;
+        }
+
+        // Not the target
+        if (strcmp(vcall->call.number, number)) {
+            other_idx = nn;
+            continue;
+        }
+
+        // Target found
+        target_idx = nn;
+    }
+
+    // Is target call found?
+    AVoiceCall target_call = target_idx != -1 ? &modem->calls[target_idx] : NULL;
+    if (!target_call) {
+        return -1;
+    }
+
+    // Is target call the only call?
+    AVoiceCall other_call = other_idx != -1 ? &modem->calls[other_idx] : NULL;
+    if (!other_call) {
+        amodem_free_call(modem, target_call, CALL_FAIL_NORMAL);
+        amodem_send_calls_update(modem);
+        return 0;
+    }
+
+    // Is CDMA call waiting?
+    // NOTE: Not every condition will notify the upper layers.
+    int second_idx = target_idx > other_idx ? target_idx : other_idx;
+    AVoiceCall second_call = &modem->calls[second_idx];
+    if (second_call->call.dir == A_CALL_INBOUND) {
+        switch (target_call->call.state) {
+            case A_CALL_ACTIVE:
+                if (other_call->call.state == A_CALL_HELD) {
+                    other_call->call.state = A_CALL_ACTIVE;
+                    amodem_free_call(modem, target_call, CALL_FAIL_NORMAL);
+                    return 0;
+                }
+
+                // hangUp waiting
+                // TODO: Should automatically re-dial the waiting call after the
+                // active parties disconnected. Please refer to Bug 1181009.
+                else if (other_call->call.state == A_CALL_WAITING) {
+                    amodem_free_call(modem, target_call, CALL_FAIL_NORMAL);
+                    // The removal of the target call might change the index of
+                    // the other call
+                    other_idx -= (other_idx > target_idx ? 1 : 0);
+                    other_call = &modem->calls[other_idx];
+                    amodem_free_call(modem, other_call, CALL_FAIL_NORMAL);
+
+                    // Notify the upper layer
+                    amodem_send_calls_update(modem);
+                    return 0;
+                }
+            case A_CALL_HELD:
+            case A_CALL_WAITING:
+                // NOTE: There is no notification launched here.
+                amodem_free_call(modem, target_call, CALL_FAIL_NORMAL);
+                return 0;
+        }
+    }
+
+    // Unkown status
+    return -1;
+}
 
 int
 amodem_accept_call( AModem modem, const char* number )
@@ -1759,14 +1836,14 @@ amodem_accept_call( AModem modem, const char* number )
 int
 amodem_disconnect_call( AModem  modem, const char*  number )
 {
+    if (amodem_is_cdma(modem)) {
+        return amodem_disconnect_call_cdma(modem, number);
+    }
+
     AVoiceCall  vcall = (AVoiceCall) amodem_find_call_by_number(modem, number);
 
     if (!vcall)
         return -1;
-
-    // TODO: We should redial the waiting call under a cdma call waiting
-    // situation after the calling parties disconnected. Please refer to
-    // Bug 1181009.
 
     amodem_free_call( modem, vcall, CALL_FAIL_NORMAL );
     amodem_unsol( modem, "NO CARRIER\r");
