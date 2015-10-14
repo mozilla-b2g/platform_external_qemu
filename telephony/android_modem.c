@@ -74,7 +74,7 @@
 
 #define  OPERATOR_HOME_INDEX 0
 #define  OPERATOR_HOME_MCC   310
-#define  OPERATOR_HOME_MNC   260
+#define  OPERATOR_HOME_MNC   410
 #define  OPERATOR_HOME_NAME  "Android"
 #define  OPERATOR_HOME_MCCMNC  STRINGIFY(OPERATOR_HOME_MCC) \
                                STRINGIFY(OPERATOR_HOME_MNC)
@@ -901,7 +901,7 @@ amodem_init_rmnets()
             ip = dns_addr[k];
             net->dns[k].in.s_addr = htonl(ip);
             memcpy(&net->dns[k].in6, &net->addr.in6, sizeof net->addr.in6);
-            memcpy(&net->gw.in6.s6_addr[12], &net->dns[k].in.s_addr, sizeof net->dns[k].in.s_addr);
+            memcpy(&net->dns[k].in6.s6_addr[12], &net->dns[k].in.s_addr, sizeof net->dns[k].in.s_addr);
         }
 
         /* Data connections are down by default. */
