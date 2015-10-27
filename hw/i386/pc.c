@@ -1040,6 +1040,8 @@ static void pc_init1(ram_addr_t ram_size,
 
     goldfish_battery_init(android_hw->hw_battery);
 
+    goldfish_rfkill_init();
+
 #ifdef CONFIG_NAND
     goldfish_add_device_no_io(&nand_device);
     nand_dev_init(nand_device.base);
@@ -1113,16 +1115,7 @@ static void pc_init1(ram_addr_t ram_size,
     }
 
     goldfish_tty_add(serial_hds[0], 0, 0, 0);
-    /* FIXME: This is just a work around before we have a permanent fix on
-     * increasing number of IRQs available for x86 sysimages. In order to free up
-     * some IRQs for a better use, we limit number of TTY devices by 2. Normally
-     * we don't need more than that, so always having 4 of them would waste two
-     * precious IRQs. */
-#if 0
     for(i = 1; i < MAX_SERIAL_PORTS; i++) {
-#else
-    for(i = 1; i < 2; i++) {
-#endif
         if(serial_hds[i]) {
             goldfish_tty_add(serial_hds[i], i, 0, 0);
         }

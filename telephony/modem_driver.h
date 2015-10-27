@@ -18,10 +18,7 @@
 /** in telephony/modem_driver.c */
 /* this is the internal character driver used to communicate with the
  * emulated GSM modem. see qemu_chr_open() in vl.c */
-extern CharDriverState*  android_modem_cs;
-
-/* the emulated GSM modem itself */
-extern AModem  android_modem;
+extern CharDriverState*  android_modem_cs[MAX_GSM_DEVICES];
 
 /* must be called before the VM runs if there is a modem to emulate */
 extern void   android_modem_init( int  base_port );

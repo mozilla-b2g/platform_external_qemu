@@ -2,4 +2,4 @@ images/emulator_icon32.o
 images/emulator_icon64.o
 objs/*
 *.*~
-
+*.swp

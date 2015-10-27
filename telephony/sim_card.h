@@ -13,10 +13,14 @@
 #define _android_sim_card_h
 
 #include "gsm.h"
+#include <stdbool.h>
+
+#define  A_SIM_PIN_RETRIES 3
+#define  A_SIM_PUK_RETRIES 6
 
 typedef struct ASimCardRec_*    ASimCard;
 
-extern ASimCard  asimcard_create( int from_port );
+extern ASimCard  asimcard_create( int base_port , int instance_id);
 extern void      asimcard_destroy( ASimCard  sim );
 
 typedef enum {
@@ -30,6 +34,7 @@ typedef enum {
 
 extern ASimStatus  asimcard_get_status( ASimCard  sim );
 extern void        asimcard_set_status( ASimCard  sim, ASimStatus  status );
+extern void        asimcard_set_sim_power( ASimCard  sim, bool  enabled );
 
 extern const char*  asimcard_get_pin( ASimCard  sim );
 extern const char*  asimcard_get_puk( ASimCard  sim );
@@ -38,6 +43,12 @@ extern void         asimcard_set_puk( ASimCard  sim, const char*  puk );
 
 extern int         asimcard_check_pin( ASimCard  sim, const char*  pin );
 extern int         asimcard_check_puk( ASimCard  sim, const char*  puk, const char*  pin );
+
+extern int         asimcard_get_pin_retries( ASimCard  sim );
+extern int         asimcard_get_puk_retries( ASimCard  sim );
+
+extern bool        asimcard_get_pin_enabled( ASimCard  sim );
+extern int         asimcard_set_pin_enabled( ASimCard  sim, bool  enabled, const char*  pin );
 
 /* Restricted SIM Access command, as defined by 8.18 of 3GPP 27.007 */
 typedef enum {
@@ -50,5 +61,13 @@ typedef enum {
 } ASimCommand;
 
 extern const char*  asimcard_io( ASimCard  sim, const char*  cmd );
+
+extern const char*  asimcard_stk_terminal_response( ASimCard  sim, const char*  cmd );
+
+extern const char*  asimcard_stk_envelope_command( ASimCard  sim, const char*  cmd );
+
+extern const char*  asimcard_get_last_stk_response( ASimCard  sim );
+
+extern const char*  asimcard_get_last_stk_envelope( ASimCard  sim );
 
 #endif /* _android_sim_card_h */

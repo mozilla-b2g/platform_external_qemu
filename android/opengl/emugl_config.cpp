@@ -179,6 +179,14 @@ void emuglConfig_setupEnv(const EmuglConfig* config) {
     String newDirs = StringFormat("%s/%s",
                                   System::get()->getProgramDirectory().c_str(),
                                   libSubDir);
+    // B2G ususally put EXEC_FILE under <bin> and put LIBRARY under <lib>.
+    // Prepend $EXEC_DIR/../<lib>/ to LD_LIBRARY_PATH to ensure that
+    // the EmuGL libraries are found on B2G.
+    newDirs += System::kPathSeparator;
+    newDirs += StringFormat("%s/../%s",
+                            System::get()->getProgramDirectory().c_str(),
+                            libSubDir);
+
     if (strcmp(config->backend, "host") != 0) {
         // If the backend is not 'host', we also need to add the
         // backend directory.

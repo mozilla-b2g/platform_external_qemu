@@ -30,6 +30,8 @@
 #include "qemu/timer.h"
 #include "sysemu/char.h"
 #include "block/block.h"
+#include "hw/usb.h"
+#include "hw/baum.h"
 #include "hw/msmouse.h"
 #include "qapi/qmp/types.h"
 
@@ -103,6 +105,7 @@
 #ifdef CONFIG_ANDROID
 #include "android/charpipe.h"
 #include "modem_driver.h"
+#include "hw/android/goldfish/bt.h"
 #include "android/gps.h"
 #include "android/hw-kmsg.h"
 #include "android/hw-qemud.h"
@@ -571,8 +574,13 @@ int send_all(int fd, const void *_buf, int len1)
 
 static CharDriverState *qemu_chr_open_android_modem(QemuOpts* opts)
 {
+    int  instance_id = qemu_opt_get_number(opts, "instance_id", -1);
+    if (instance_id < 0) {
+        return NULL;
+    }
+
     CharDriverState*  cs;
-    qemu_chr_open_charpipe( &cs, &android_modem_cs );
+    qemu_chr_open_charpipe( &cs, &android_modem_cs[instance_id] );
     return cs;
 }
 static CharDriverState *qemu_chr_open_android_gps(QemuOpts* opts)
@@ -592,6 +600,10 @@ static CharDriverState *qemu_chr_open_android_qemud(QemuOpts* opts)
     return android_qemud_get_cs();
 }
 
+static CharDriverState *qemu_chr_open_android_bt(QemuOpts* opts)
+{
+    return goldfish_bt_new_cs(qemu_next_hci());
+}
 
 #ifndef _WIN32
 
@@ -2535,12 +2547,28 @@ QemuOpts *qemu_chr_parse_compat(const char *label, const char *filename)
         qemu_opt_set(opts, "backend", "android-qemud");
         return opts;
     }
-    if (!strcmp(filename, "android-modem")) {
+    if (strstart(filename, "android-modem", &p)) {
+        int instance_id;
+        if (*p == '\0') {
+            qemu_opt_set(opts, "instance_id", "0");
+        } else if ((sscanf(p, "%d", &instance_id) == 1)
+                   && (instance_id >= 0)
+                   && (instance_id < amodem_num_devices)) {
+            char temp[8];
+            snprintf(temp, sizeof temp, "%d", instance_id);
+            qemu_opt_set(opts, "instance_id", p);
+        } else {
+            goto fail;
+        }
         qemu_opt_set(opts, "backend", "android-modem");
         return opts;
     }
     if (!strcmp(filename, "android-gps")) {
         qemu_opt_set(opts, "backend", "android-gps");
+        return opts;
+    }
+    if (strstart(filename, "android-bt", NULL)) {
+        qemu_opt_set(opts, "backend", "android-bt");
         return opts;
     }
 #endif /* CONFIG_ANDROID */
@@ -2578,6 +2606,7 @@ static const struct {
     { .name = "android-kmsg",  .open = qemu_chr_open_android_kmsg },
     { .name = "android-modem", .open = qemu_chr_open_android_modem },
     { .name = "android-gps",   .open = qemu_chr_open_android_gps },
+    { .name = "android-bt",   .open = qemu_chr_open_android_bt },
 #endif
 #ifdef CONFIG_BRLAPI
     { .name = "braille",   .open = chr_baum_init },

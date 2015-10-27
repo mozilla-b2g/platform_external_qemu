@@ -92,6 +92,8 @@ static void emulator_window_window_generic_event(int event_type,
 }
 
 static bool emulator_window_network_toggle(void) {
+    AModem android_modem = amodem_get_instance(0);
+
     qemu_net_disable = !qemu_net_disable;
     if (android_modem) {
         amodem_set_data_registration(
