@@ -55,6 +55,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <ctype.h>
 #include "android/hw-events.h"
 #include "user-events.h"
 #include "android/base64.h"
@@ -1817,6 +1818,35 @@ do_gsm_report( ControlClient  client, char*  args )
     return 0;
 }
 
+static int
+do_gsm_timezone( ControlClient  client, char  *args)
+{
+    if (args) {
+        if (!strcmp(args, "auto")) {
+            // reset timezone
+            amodem_reset_timezone(client->modem);
+        } else {
+            // check argument format
+            int i = (args[0] == '+' || args[0] == '-') ? 1 : 0;
+            int length = strlen(args);
+            while (i < length) {
+                if (!isdigit(args[i])) {
+                    control_write( client, "KO: tzdiff is neither a number nor 'auto'\r\n");
+                    return -1;
+                }
+                i++;
+            }
+
+            // update timezone
+            int tzdiff = atoi(args);
+            amodem_set_timezone(client->modem, tzdiff);
+        }
+    }
+
+    control_write( client, "%d\r\n", amodem_get_timezone(client->modem));
+    return 0;
+}
+
 #if 0
 static const CommandDefRec  gsm_in_commands[] =
 {
@@ -1921,6 +1951,12 @@ static const CommandDefRec  gsm_commands[] =
     "'gsm report'      report all known fields\r\n"
     "'gsm report creg' report CREG field\r\n",
     NULL, do_gsm_report, NULL},
+
+    { "timezone", "get or set NITZ timezone",
+    "'gsm timezone' get current NITZ timezone value.\r\n"
+    "'gsm timezone <+/-tzdiff>' change NITZ timezone to tzdiff.\r\n"
+    "tzdiff should be a number of quarter-hours from UTC, or 'auto' to use host timezone.\r\n",
+    NULL, do_gsm_timezone, NULL},
 
     { NULL, NULL, NULL, NULL, NULL, NULL }
 };

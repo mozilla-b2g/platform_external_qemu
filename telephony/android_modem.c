@@ -446,6 +446,12 @@ typedef struct AModemRec_
     uint32_t features;
 
     char last_dialed_tone;
+
+    // NITZ timezone cache
+    // timezone: number of quarter hours from UTC
+    // tzname: timezone name
+    int timezone;
+    char tzname[64];
 } AModemRec;
 
 static int
@@ -3290,7 +3296,7 @@ handleChangePassword( const char* cmd, AModem  modem )
 
 /* Add a(n unsolicited) time response.
  *
- * retrieve the current time and zone in a format suitable
+ * retrieve the cached time and zone in a format suitable
  * for %CTZV: unsolicited message
  *  "yy/mm/dd,hh:mm:ss(+/-)tz"
  *   mm is 0-based
@@ -3303,11 +3309,36 @@ handleChangePassword( const char* cmd, AModem  modem )
 static void
 amodem_addTimeUpdate( AModem  modem )
 {
+    time_t       utc_now = time(NULL);
+    time_t       local_now = utc_now + modem->timezone * 15 * 60;
+    struct tm    utc, local;
+
+    utc   = *gmtime( &utc_now );
+    local = *gmtime( &local_now );
+
+   /* as a special extension, we append the name of the host's time zone to the
+    * string returned with %CTZ. the system should contain special code to detect
+    * and deal with this case (since it normally relied on the operator's country code
+    * which is hard to simulate on a general-purpose computer
+    */
+    amodem_add_line( modem, "%%CTZV: %02d/%02d/%02d:%02d:%02d:%02d%c%d:%d:%s\r\n",
+             (utc.tm_year + 1900) % 100, utc.tm_mon + 1, utc.tm_mday,
+             utc.tm_hour, utc.tm_min, utc.tm_sec,
+             (modem->timezone >= 0) ? '+' : '-',
+             (modem->timezone >= 0) ? modem->timezone : -modem->timezone,
+             (local.tm_isdst > 0),
+             modem->tzname );
+}
+
+/**
+ * Retrieve host time and update timezone cache in modem.
+ */
+static void
+amodem_getHostTimezone( AModem modem )
+{
     time_t       now = time(NULL);
     struct tm    utc, local;
     long         e_local, e_utc;
-    long         tzdiff;
-    char         tzname[64];
 
     tzset();
 
@@ -3322,21 +3353,21 @@ amodem_addTimeUpdate( AModem  modem )
     else if ( utc.tm_year > local.tm_year )
         e_utc += 24*60;
 
-    tzdiff = e_local - e_utc;  /* timezone offset in minutes */
+    modem->timezone = (e_local - e_utc) / 15;  /* timezone offset in quarter hours */
 
    /* retrieve a zoneinfo-compatible name for the host timezone
     */
     {
-        char*  end = tzname + sizeof(tzname);
-        char*  p = bufprint_zoneinfo_timezone( tzname, end );
+        char*  end = modem->tzname + sizeof(modem->tzname);
+        char*  p = bufprint_zoneinfo_timezone( modem->tzname, end );
         if (p >= end)
-            strcpy(tzname, "Unknown/Unknown");
+            strcpy(modem->tzname, "Unknown/Unknown");
 
         /* now replace every / in the timezone name by a "!"
          * that's because the code that reads the CTZV line is
          * dumb and treats a / as a field separator...
          */
-        p = tzname;
+        p = modem->tzname;
         while (1) {
             p = strchr(p, '/');
             if (p == NULL)
@@ -3345,25 +3376,52 @@ amodem_addTimeUpdate( AModem  modem )
             p += 1;
         }
     }
+}
 
-   /* as a special extension, we append the name of the host's time zone to the
-    * string returned with %CTZ. the system should contain special code to detect
-    * and deal with this case (since it normally relied on the operator's country code
-    * which is hard to simulate on a general-purpose computer
-    */
-    amodem_add_line( modem, "%%CTZV: %02d/%02d/%02d:%02d:%02d:%02d%c%d:%d:%s\r\n",
-             (utc.tm_year + 1900) % 100, utc.tm_mon + 1, utc.tm_mday,
-             utc.tm_hour, utc.tm_min, utc.tm_sec,
-             (tzdiff >= 0) ? '+' : '-', (tzdiff >= 0 ? tzdiff : -tzdiff) / 15,
-             (local.tm_isdst > 0),
-             tzname );
+/**
+ * Reset the NITZ timezone to host timezone.
+ */
+void
+amodem_reset_timezone( AModem modem )
+{
+    amodem_getHostTimezone(modem);
+
+    // send unsolicited NITZ message
+    amodem_begin_line( modem );
+    amodem_addTimeUpdate(modem);
+    amodem_end_line_unsol( modem );
+}
+
+/**
+ * Update the NITZ timezone to tzdiff in number of quarter-hours from UTC.
+ */
+void
+amodem_set_timezone( AModem modem, int tzdiff )
+{
+    modem->timezone = tzdiff;
+
+    // Follows the logic of amodem_getHostTimezone(), / should be replaced
+    // as "!".
+    strcpy(modem->tzname, "Unknown!Unknown");
+
+    // send unsolicited NITZ message
+    amodem_begin_line( modem );
+    amodem_addTimeUpdate(modem);
+    amodem_end_line_unsol( modem );
+}
+
+int
+amodem_get_timezone( AModem modem )
+{
+    return modem->timezone;
 }
 
 static void
 handleEndOfInit( const char*  cmd, AModem  modem )
 {
     amodem_begin_line( modem );
-    amodem_addTimeUpdate( modem );
+    amodem_getHostTimezone(modem);
+    amodem_addTimeUpdate(modem);
     amodem_end_line_reply( modem );
 }
 
@@ -4367,7 +4425,7 @@ static const struct {
     { "+CSCS=\"HEX\"", NULL, NULL },
     { "+CUSD=1", NULL, NULL },
     { "+CGEREP=1,0", NULL, NULL },
-    { "+CMGF=0", NULL, handleEndOfInit },  /* now is a goof time to send the current tme and timezone */
+    { "+CMGF=0", NULL, handleEndOfInit },  /* now is a goof time to send the current time and timezone */
     { "%CPI=3", NULL, NULL },
     { "%CSTAT=1", NULL, NULL },
 
