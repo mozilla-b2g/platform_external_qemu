@@ -129,13 +129,13 @@ goldfish_handle_pending_cb(struct nfc_state* s)
 
     if (s->cb.type == NTFN_BUF) {
         maxlen = MIN(sizeof(s->ntfn), MAX_NCI_PAYLOAD_LENGTH);
-        res = s->cb.func(s->cb.data, (union nci_packet*)s->ntfn);
+        res = s->cb.func(&s->nfc, s->cb.data, (union nci_packet*)s->ntfn);
 
         goldfish_nfc_set_status(s, STATUS_NCI_NTFN, !!res);
 
     } else if (s->cb.type == DATA_BUF) {
         maxlen = MIN(sizeof(s->data), MAX_NCI_PAYLOAD_LENGTH);
-        res = s->cb.func(s->cb.data, (union nci_packet*)s->data);
+        res = s->cb.func(&s->nfc, s->cb.data, (union nci_packet*)s->data);
 
         goldfish_nfc_set_status(s, STATUS_NCI_DATA, !!res);
 

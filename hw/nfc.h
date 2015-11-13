@@ -56,9 +56,11 @@ struct nfc_device {
 
 /* supplied to process_{nci,hci}_message */
 struct nfc_delivery_cb {
+    struct nfc_device* nfc;
     enum nfc_buf_type type;
     void* data;
-    ssize_t (*func)(void* /*user_data*/, union nci_packet*);
+    ssize_t (*func)(struct nfc_device* nfc, void* /*user_data*/,
+                    union nci_packet*);
 };
 
 void
@@ -80,7 +82,9 @@ nfc_find_rf_by_protocol_and_mode(struct nfc_device* nfc,
                                  enum nci_rf_protocol proto, enum nci_rf_tech_mode mode);
 
 void
-nfc_delivery_cb_setup(struct nfc_delivery_cb* cb, enum nfc_buf_type type,
-                      void* data, ssize_t (*func)(void*, union nci_packet*));
+nfc_delivery_cb_setup(struct nfc_device* nfc, struct nfc_delivery_cb* cb,
+                      enum nfc_buf_type type, void* data,
+                      ssize_t (*func)(struct nfc_device* nfc, void*,
+                                      union nci_packet*));
 
 #endif

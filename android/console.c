@@ -4274,7 +4274,7 @@ nfc_rf_intf_deactivate_ntf_cb(void* data,
     assert(data);
     assert(nfc);
 
-    res = nfc_create_deactivate_ntf(param->dtype, param->dreason, ntf);
+    res = nfc_create_deactivate_ntf(nfc, param->dtype, param->dreason, ntf);
     if (res < 0) {
         control_write(param->client, "KO: rf_intf_deactivate_ntf failed\r\n");
         return -1;

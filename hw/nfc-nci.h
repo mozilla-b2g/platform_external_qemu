@@ -573,7 +573,8 @@ nfc_create_rf_intf_activated_ntf(struct nfc_re* re,
                                  union nci_packet* ntf);
 
 size_t
-nfc_create_deactivate_ntf(enum nci_rf_deactivation_type type,
+nfc_create_deactivate_ntf(struct nfc_device* nfc,
+                          enum nci_rf_deactivation_type type,
                           enum nci_rf_deactivation_reason reason,
                           union nci_packet* ntf);
 

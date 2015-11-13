@@ -124,11 +124,14 @@ nfc_find_rf_by_protocol_and_mode(struct nfc_device* nfc,
 }
 
 void
-nfc_delivery_cb_setup(struct nfc_delivery_cb* cb, enum nfc_buf_type type,
-                      void* data, ssize_t (*func)(void*, union nci_packet*))
+nfc_delivery_cb_setup(struct nfc_device* nfc, struct nfc_delivery_cb* cb,
+                      enum nfc_buf_type type, void* data,
+                      ssize_t (*func)(struct nfc_device* nfc, void*,
+                                      union nci_packet*))
 {
     assert(cb);
 
+    cb->nfc  = nfc;
     cb->type = type;
     cb->data = data;
     cb->func = func;
