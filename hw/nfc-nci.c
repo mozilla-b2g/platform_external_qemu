@@ -651,41 +651,19 @@ status_rejected:
 struct nfc_deactivate_ntf_param {
     uint8_t type;
     uint8_t reason;
+    struct nfc_device* nfc;
 };
 
-static ssize_t
-nfc_delivery_deactivate_cmd_cb(void* data, union nci_packet* pkt)
+static void
+nfc_rf_state_deactivate_transition(enum nci_rf_deactivation_type type,
+                                   struct nfc_device* nfc)
 {
-    struct nfc_deactivate_ntf_param* param;
-    ssize_t res;
-
-    assert(data);
-
-    param = (struct nfc_deactivate_ntf_param*)data;
-    res = nfc_create_deactivate_ntf(param->type, param->reason, pkt);
-
-    qemu_free(param);
-
-    return res;
-}
-
-static size_t
-init_process_oid_rf_deactivate_cmd(const union nci_packet* cmd,
-                                   struct nfc_device* nfc,
-                                   union nci_packet* rsp,
-                                   struct nfc_delivery_cb* cb)
-{
-    const struct nci_rf_deactivate_cmd *payload;
     unsigned long bits;
     enum nfc_rfst rfst;
-    size_t i;
-    int send_ntf = 1;
-
-    payload = (struct nci_rf_deactivate_cmd*)cmd->control.payload;
 
     /* RF state transition */
 
-    switch (payload->type) {
+    switch (type) {
         case NCI_RF_DEACT_IDLE_MODE:
             bits = NFC_RFST_DISCOVERY_BIT|NFC_RFST_W4_ALL_DISCOVERIES_BIT|
                    NFC_RFST_W4_HOST_SELECT_BIT|NFC_RFST_POLL_ACTIVE_BIT|
@@ -713,21 +691,39 @@ init_process_oid_rf_deactivate_cmd(const union nci_packet* cmd,
             rfst = NUMBER_OF_NFC_RFSTS;
     }
 
-    // According to NCI Spec Figure 10.
+    rfst = nfc_rf_state_transition(&nfc->rf_state, bits, rfst);
+    assert(rfst != NUMBER_OF_NFC_RFSTS);
+}
+
+static ssize_t
+nfc_delivery_deactivate_cmd_cb(void* data, union nci_packet* pkt)
+{
+    struct nfc_deactivate_ntf_param* param;
+    struct nfc_device* nfc;
+    ssize_t res = 0;
+    unsigned long bits;
+    enum nfc_rfst rfst;
+    size_t i;
+    bool send_ntf = true;
+
+    assert(data);
+
+    param = (struct nfc_deactivate_ntf_param*)data;
+    nfc = param->nfc;
+
+    /* According to NCI Spec Figure 10 */
+
     switch (nfc->rf_state) {
         case NFC_RFST_DISCOVERY:
         case NFC_RFST_W4_ALL_DISCOVERIES:
         case NFC_RFST_W4_HOST_SELECT:
         case NFC_RFST_LISTEN_SLEEP:
-            if (payload->type == NCI_RF_DEACT_IDLE_MODE)
+            if (param->type == NCI_RF_DEACT_IDLE_MODE)
                 send_ntf = false;
             break;
         default:
             break;
     }
-
-    rfst = nfc_rf_state_transition(&nfc->rf_state, bits, rfst);
-    assert(rfst != NUMBER_OF_NFC_RFSTS);
 
     /* reset state */
 
@@ -738,16 +734,34 @@ init_process_oid_rf_deactivate_cmd(const union nci_packet* cmd,
         nfc_res[i].id = 0;
     }
 
-    if (send_ntf) {
-        struct nfc_deactivate_ntf_param* data;
-
-        data = qemu_malloc(sizeof(*data));
-        data->type = payload->type;
-        data->reason = NCI_RF_DEACT_DH_REQUEST;
-
-        nfc_delivery_cb_setup(cb, NTFN_BUF, data,
-            nfc_delivery_deactivate_cmd_cb);
+    if (!send_ntf) {
+        nfc_rf_state_deactivate_transition(param->type, nfc);
+    } else {
+        res = nfc_create_deactivate_ntf(param->type, param->reason, nfc, pkt);
     }
+
+    qemu_free(param);
+
+    return res;
+}
+
+static size_t
+init_process_oid_rf_deactivate_cmd(const union nci_packet* cmd,
+                                   struct nfc_device* nfc,
+                                   union nci_packet* rsp,
+                                   struct nfc_delivery_cb* cb)
+{
+    const struct nci_rf_deactivate_cmd *payload;
+    struct nfc_deactivate_ntf_param* data;
+
+    payload = (struct nci_rf_deactivate_cmd*)cmd->control.payload;
+    data = qemu_malloc(sizeof(*data));
+    data->type = payload->type;
+    data->reason = NCI_RF_DEACT_DH_REQUEST;
+    data->nfc = nfc;
+
+    nfc_delivery_cb_setup(cb, NTFN_BUF, data,
+        nfc_delivery_deactivate_cmd_cb);
 
     return create_control_status_rsp(rsp, cmd->control.gid,
                                      cmd->control.oid, NCI_STATUS_OK);
@@ -1197,6 +1211,7 @@ nfc_create_rf_intf_activated_ntf(struct nfc_re* re,
 size_t
 nfc_create_deactivate_ntf(enum nci_rf_deactivation_type type,
                           enum nci_rf_deactivation_reason reason,
+                          struct nfc_device* nfc,
                           union nci_packet* ntf)
 {
     struct nci_rf_deactivate_ntf* payload;
@@ -1207,6 +1222,21 @@ nfc_create_deactivate_ntf(enum nci_rf_deactivation_type type,
 
     payload->type = type;
     payload->reason = reason;
+
+    /* According to NCI Spec Figure 10 */
+
+    switch (nfc->rf_state) {
+        case NFC_RFST_DISCOVERY:
+        case NFC_RFST_W4_ALL_DISCOVERIES:
+        case NFC_RFST_W4_HOST_SELECT:
+        case NFC_RFST_LISTEN_SLEEP:
+            assert(payload->type != NCI_RF_DEACT_IDLE_MODE);
+            break;
+        default:
+            break;
+    }
+
+    nfc_rf_state_deactivate_transition(payload->type, nfc);
 
     return nfc_create_nci_ntf(ntf, NCI_PBF_END, NCI_GID_RF,
                               NCI_OID_RF_DEACTIVATED_NTF,
