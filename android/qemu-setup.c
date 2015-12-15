@@ -371,6 +371,8 @@ void  android_emulation_setup( void )
             break;
         }
 
+        socket_set_xreuseaddr(s);
+
         sock_address_init_inet( &addr, SOCK_ADDRESS_INET_LOOPBACK, adb_host_port );
         if (socket_connect( s, &addr ) < 0) {
             D("can't connect to ADB server: %s", errno_str );
