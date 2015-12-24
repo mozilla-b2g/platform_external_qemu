@@ -24,55 +24,6 @@
 #include "net.h"
 #include "bt.h"
 
-struct bt_hci_s {
-    uint8_t *(*evt_packet)(void *opaque);
-    void (*evt_submit)(void *opaque, int len);
-    void *opaque;
-    uint8_t evt_buf[256];
-
-    uint8_t acl_buf[4096];
-    int acl_len;
-
-    uint16_t asb_handle;
-    uint16_t psb_handle;
-
-    int last_cmd;	/* Note: Always little-endian */
-
-    struct bt_device_s *conn_req_host;
-
-    struct {
-        int inquire;
-        int periodic;
-        int responses_left;
-        int responses;
-        QEMUTimer *inquiry_done;
-        QEMUTimer *inquiry_next;
-        int inquiry_length;
-        int inquiry_period;
-        int inquiry_mode;
-
-#define HCI_HANDLE_OFFSET	0x20
-#define HCI_HANDLES_MAX		0x10
-        struct bt_hci_master_link_s {
-            struct bt_link_s *link;
-            void (*lmp_acl_data)(struct bt_link_s *link,
-                            const uint8_t *data, int start, int len);
-            QEMUTimer *acl_mode_timer;
-        } handle[HCI_HANDLES_MAX];
-        uint32_t role_bmp;
-        int last_handle;
-        int connecting;
-        bdaddr_t awaiting_bdaddr[HCI_HANDLES_MAX];
-    } lm;
-
-    uint8_t event_mask[8];
-    uint16_t voice_setting;	/* Notw: Always little-endian */
-    uint16_t conn_accept_tout;
-    QEMUTimer *conn_accept_timer;
-
-    struct HCIInfo info;
-    struct bt_device_s device;
-};
 
 #define DEFAULT_RSSI_DBM	20
 
@@ -425,6 +376,8 @@ static void bt_submit_raw_acl(struct bt_piconet_s *net, int length, uint8_t *dat
 # define HNDL(raw)	(raw)
 #endif
 
+struct bt_hci_s *hci_global = NULL;
+
 static const uint8_t bt_event_reserved_mask[8] = {
     0xff, 0x9f, 0xfb, 0xff, 0x07, 0x18, 0x00, 0x00,
 };
@@ -580,9 +533,10 @@ static void bt_hci_mod_timer_1280ms(QEMUTimer *timer, int period)
                    muldiv64(period << 7, get_ticks_per_sec(), 100));
 }
 
-static void bt_hci_inquiry_start(struct bt_hci_s *hci, int length)
+void bt_hci_inquiry_start(struct bt_hci_s *hci, int length)
 {
     struct bt_device_s *slave;
+    hci_global = hci;
 
     hci->lm.inquiry_length = length;
     for (slave = hci->device.net->slave; slave; slave = slave->next)
