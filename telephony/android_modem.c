@@ -1416,6 +1416,16 @@ amodem_send_stk_unsol_proactive_command( AModem  modem, const char* stkCmdPdu )
                           stkCmdPdu); //string type in hexadecimal character format
 }
 
+void
+amodem_send_ussd_unsol_response( AModem  modem, int type, const char*  message )
+{
+    if (message) {
+        amodem_unsol( modem, "+MCUSD: %d,\"%s\"\r", type, message );
+    } else {
+        amodem_unsol( modem, "+MCUSD: %d\r", type);
+    }
+}
+
 static void
 amodem_send_calls_update( AModem  modem )
 {
