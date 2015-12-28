@@ -26,6 +26,8 @@
 #ifndef QEMU_BT_H
 #define QEMU_BT_H
 
+#include "net.h"
+
 /* BD Address */
 typedef struct {
     uint8_t b[6];
@@ -148,6 +150,56 @@ void bt_hci_request_user_confirmation(struct bt_hci_s *hci, const bdaddr_t *bdad
 void bt_hci_complete_simple_pairing(struct bt_hci_s *hci, const bdaddr_t *bdaddr);
 void bt_hci_notify_link_key(struct bt_hci_s *hci, const bdaddr_t *bdaddr);
 void bt_hci_request_delete_link_key(struct bt_hci_s *hci, const bdaddr_t *bdaddr);
+
+struct bt_hci_s {
+    uint8_t *(*evt_packet)(void *opaque);
+    void (*evt_submit)(void *opaque, int len);
+    void *opaque;
+    uint8_t evt_buf[256];
+
+    uint8_t acl_buf[4096];
+    int acl_len;
+
+    uint16_t asb_handle;
+    uint16_t psb_handle;
+
+    int last_cmd;	/* Note: Always little-endian */
+
+    struct bt_device_s *conn_req_host;
+
+    struct {
+        int inquire;
+        int periodic;
+        int responses_left;
+        int responses;
+        QEMUTimer *inquiry_done;
+        QEMUTimer *inquiry_next;
+        int inquiry_length;
+        int inquiry_period;
+        int inquiry_mode;
+
+#define HCI_HANDLE_OFFSET	0x20
+#define HCI_HANDLES_MAX		0x10
+        struct bt_hci_master_link_s {
+            struct bt_link_s *link;
+            void (*lmp_acl_data)(struct bt_link_s *link,
+                            const uint8_t *data, int start, int len);
+            QEMUTimer *acl_mode_timer;
+        } handle[HCI_HANDLES_MAX];
+        uint32_t role_bmp;
+        int last_handle;
+        int connecting;
+        bdaddr_t awaiting_bdaddr[HCI_HANDLES_MAX];
+    } lm;
+
+    uint8_t event_mask[8];
+    uint16_t voice_setting;	/* Notw: Always little-endian */
+    uint16_t conn_accept_tout;
+    QEMUTimer *conn_accept_timer;
+
+    struct HCIInfo info;
+    struct bt_device_s device;
+};
 
 /* bt-vhci.c */
 void bt_vhci_init(struct HCIInfo *info);

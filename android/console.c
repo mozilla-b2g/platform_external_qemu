@@ -26,6 +26,7 @@
 #include "sysemu.h"
 #include "android/android.h"
 #include "cpu.h"
+#include "hw/bt.h"
 #include "hw/llcp.h"
 #include "hw/goldfish_bt.h"
 #include "hw/goldfish_device.h"
@@ -153,6 +154,8 @@ ControlClient ui_core_ctl_client = NULL;
 /* UI control service client (Core-> UI). */
 ControlClient core_ui_ctl_client = NULL;
 #endif  // CONFIG_STANDALONE_CORE
+
+extern struct bt_hci_s *hci_global;
 
 static int
 control_global_add_redir( ControlGlobal  global,
@@ -4997,6 +5000,19 @@ do_bt_property( ControlClient client, char* args )
     return 0;
 }
 
+static int
+do_bt_notify( ControlClient client )
+{
+    if (hci_global) {
+        bt_hci_inquiry_start(hci_global,hci_global->lm.inquiry_length);
+    } else {
+        control_write(client, "KO: invalid HCI data.\r\n");
+        return -1;
+    }
+
+    return 0;
+}
+
 static const CommandDefRec bt_commands[] =
 {
     { "list", "list scatternet devices",
@@ -5016,6 +5032,10 @@ static const CommandDefRec bt_commands[] =
 
     { "remote", "manage Bluetooth virtual remote devices", NULL,
     NULL, NULL, bt_remote_commands },
+
+    { "notify", "notify bluetooth stack of inquiry result",
+    "Simply type 'bt notify' to notify bluetooth stack of inquiry result.\r\n",
+    NULL, do_bt_notify, NULL },
 
     { NULL, NULL, NULL, NULL, NULL, NULL }
 };
