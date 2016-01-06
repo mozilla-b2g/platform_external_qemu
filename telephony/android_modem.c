@@ -1786,22 +1786,19 @@ amodem_disconnect_call_cdma( AModem  modem, const char*  number )
     }
 
     // Is CDMA call waiting?
-    // NOTE: Not every condition will notify the upper layers.
     int second_idx = target_idx > other_idx ? target_idx : other_idx;
     AVoiceCall second_call = &modem->calls[second_idx];
     if (second_call->call.dir == A_CALL_INBOUND) {
         switch (target_call->call.state) {
             case A_CALL_ACTIVE:
+                // HangUp the target call and activate the other call.
                 if (other_call->call.state == A_CALL_HELD) {
                     other_call->call.state = A_CALL_ACTIVE;
                     amodem_free_call(modem, target_call, CALL_FAIL_NORMAL);
                     return 0;
                 }
-
-                // hangUp waiting
-                // TODO: Should automatically re-dial the waiting call after the
-                // active parties disconnected. Please refer to Bug 1181009.
-                else if (other_call->call.state == A_CALL_WAITING) {
+                // hangUp both calls.
+                if (other_call->call.state == A_CALL_WAITING) {
                     amodem_free_call(modem, target_call, CALL_FAIL_NORMAL);
                     // The removal of the target call might change the index of
                     // the other call
@@ -1811,6 +1808,10 @@ amodem_disconnect_call_cdma( AModem  modem, const char*  number )
 
                     // Notify the upper layer
                     amodem_send_calls_update(modem);
+
+                    // TODO: Before leaving, we should automatically re-dial the
+                    // waiting call after all parties disconnected. Please refer
+                    // to Bug 1181009.
                     return 0;
                 }
             case A_CALL_HELD:
@@ -1819,6 +1820,15 @@ amodem_disconnect_call_cdma( AModem  modem, const char*  number )
                 amodem_free_call(modem, target_call, CALL_FAIL_NORMAL);
                 return 0;
         }
+    }
+
+    // Is CDMA 3-way call?
+    if (second_call->call.dir == A_CALL_OUTBOUND) {
+        // The other call should fallback to a single call.
+        other_call->call.state = A_CALL_ACTIVE;
+        acall_unset_multi(other_call);
+        amodem_free_call(modem, target_call, CALL_FAIL_NORMAL);
+        return 0;
     }
 
     // Unkown status
