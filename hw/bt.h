@@ -1297,6 +1297,16 @@ typedef struct {
 } __attribute__ ((packed)) write_ext_inquiry_response_rp;
 #define WRITE_EXT_INQUIRY_RESPONSE_RP_SIZE 1
 
+#define OCF_WRITE_SIMPLE_PAIRING_MODE	0x0056
+typedef struct {
+    uint8_t	simple_pairing_mode;
+} __attribute__ ((packed)) write_simple_pairing_mode_cp;
+#define WRITE_SIMPLE_PAIRING_MODE_CP_SIZE 1
+typedef struct {
+    uint8_t	status;
+} __attribute__ ((packed)) write_simple_pairing_mode_rp;
+#define WRITE_SIMPLE_PAIRING_MODE_RP_SIZE 1
+
 /* Informational Parameters */
 #define OGF_INFO_PARAM		0x04
 
@@ -1781,6 +1791,13 @@ typedef struct {
     bdaddr_t    bdaddr;
 } __attribute__ ((packed)) evt_simple_pairing_complete;
 #define EVT_SIMPLE_PAIRING_COMPLETE_SIZE 7
+
+#define EVT_RMT_HOST_FEATURES_COMPLETE 0x3D
+typedef struct {
+    bdaddr_t    bdaddr;
+    uint8_t     features[8];
+} __attribute__ ((packed)) evt_rmt_host_features_complete;
+#define EVT_RMT_HOST_FEATURES_COMPLETE_SIZE 14
 
 #define EVT_TESTING			0xFE
 
