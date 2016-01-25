@@ -896,6 +896,7 @@ static void bt_hci_lmp_disconnect_slave(struct bt_link_s *btlink)
 static int bt_hci_name_req(struct bt_hci_s *hci, bdaddr_t *bdaddr)
 {
     struct bt_device_s *slave;
+    evt_rmt_host_features_complete rmt_host_feature_params;
     evt_remote_name_req_complete params;
     int len;
 
@@ -904,6 +905,21 @@ static int bt_hci_name_req(struct bt_hci_s *hci, bdaddr_t *bdaddr)
             break;
     if (!slave)
         return -ENODEV;
+
+    bacpy(&rmt_host_feature_params.bdaddr, &slave->bd_addr);
+    // assume the remote device supports full features
+    slave->lmp_caps = 0xFFFFFFFFFFFFFFFFll;
+    rmt_host_feature_params.features[0]	= (slave->lmp_caps >>  0) & 0xff;
+    rmt_host_feature_params.features[1]	= (slave->lmp_caps >>  8) & 0xff;
+    rmt_host_feature_params.features[2]	= (slave->lmp_caps >> 16) & 0xff;
+    rmt_host_feature_params.features[3]	= (slave->lmp_caps >> 24) & 0xff;
+    rmt_host_feature_params.features[4]	= (slave->lmp_caps >> 32) & 0xff;
+    rmt_host_feature_params.features[5]	= (slave->lmp_caps >> 40) & 0xff;
+    rmt_host_feature_params.features[6]	= (slave->lmp_caps >> 48) & 0xff;
+    rmt_host_feature_params.features[7]	= (slave->lmp_caps >> 56) & 0xff;
+
+    bt_hci_event(hci, EVT_RMT_HOST_FEATURES_COMPLETE,
+                    &rmt_host_feature_params, EVT_RMT_HOST_FEATURES_COMPLETE_SIZE);
 
     bt_hci_event_status(hci, HCI_SUCCESS);
 
@@ -1114,9 +1130,9 @@ static void bt_hci_read_local_version_rp(struct bt_hci_s *hci)
 {
     read_local_version_rp lv = {
         .status		= HCI_SUCCESS,
-        .hci_ver	= 0x03,
+        .hci_ver	= 0x04, // Bluetooth Core Specification 2.1 + EDR
         .hci_rev	= cpu_to_le16(0xa607),
-        .lmp_ver	= 0x03,
+        .lmp_ver	= 0x04, // Bluetooth Core Specification 2.1 + EDR
         .manufacturer	= cpu_to_le16(0xa000),
         .lmp_subver	= cpu_to_le16(0xa607),
     };
@@ -1172,7 +1188,7 @@ static void bt_hci_read_local_ext_features_rp(struct bt_hci_s *hci, int page)
         .max_page_num	= 0x00,
         .features	= {
             /* Keep updated! */
-            0x5f, 0x35, 0x85, 0x7e, 0x9b, 0x19, 0x00, 0x80,
+            0x5f, 0x35, 0x85, 0x7e, 0x9b, 0x19, 0x08, 0x80,
         },
     };
     if (page)
@@ -1927,6 +1943,11 @@ static void bt_submit_hci(struct HCIInfo *info,
 
         hci->lm.inquiry_mode = PARAM(write_inquiry_mode, mode);
         bt_hci_event_complete_status(hci, HCI_SUCCESS);
+        break;
+
+    case cmd_opcode_pack(OGF_HOST_CTL, OCF_WRITE_SIMPLE_PAIRING_MODE):
+        bt_hci_event_complete(hci, &PARAM(write_simple_pairing_mode, simple_pairing_mode),
+            WRITE_SIMPLE_PAIRING_MODE_CP_SIZE);
         break;
 
     case cmd_opcode_pack(OGF_INFO_PARAM, OCF_READ_LOCAL_VERSION):
