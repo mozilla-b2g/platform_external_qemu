@@ -1297,6 +1297,12 @@ amodem_alloc_call( AModem   modem )
     AVoiceCall  call  = NULL;
     int         count = modem->call_count;
 
+    // There can be at most two voice calls on a CDMA network.
+    if (amodem_is_cdma(modem) &&
+        amodem_get_voice_call_count(modem) >= 2) {
+        return NULL;
+    }
+
     if (count < MAX_CALLS) {
         int  id;
 
@@ -1573,8 +1579,11 @@ _amodem_add_outbound_call( AModem  modem, const char* cmd )
     if (call == NULL)
         return NULL;
 
+    // If the call is a second call on a CDMA network, it should be born active.
+    call->state = amodem_is_cdma(modem) &&
+                  amodem_get_voice_call_count(modem) ? A_CALL_ACTIVE
+                                                     : A_CALL_DIALING;
     call->dir   = A_CALL_OUTBOUND;
-    call->state = A_CALL_DIALING;
     call->mode  = A_CALL_VOICE;
     call->multi = 0;
 
@@ -1608,8 +1617,6 @@ _amodem_add_outbound_call( AModem  modem, const char* cmd )
 
     call->numberPresentation = 0;
 
-    amodem_send_calls_update( modem );
-
     vcall->is_remote = (remote_number_string_to_port(call->number, modem, NULL, NULL) > 0);
 
     vcall->timer = sys_timer_create();
@@ -1626,6 +1633,8 @@ amodem_add_outbound_call( AModem  modem, const char*  number )
     if (call == NULL)
         return -1;
 
+    // Notify call state changed
+    amodem_send_calls_update( modem );
     return 0;
 }
 
@@ -1783,22 +1792,19 @@ amodem_disconnect_call_cdma( AModem  modem, const char*  number )
     }
 
     // Is CDMA call waiting?
-    // NOTE: Not every condition will notify the upper layers.
     int second_idx = target_idx > other_idx ? target_idx : other_idx;
     AVoiceCall second_call = &modem->calls[second_idx];
     if (second_call->call.dir == A_CALL_INBOUND) {
         switch (target_call->call.state) {
             case A_CALL_ACTIVE:
+                // HangUp the target call and activate the other call.
                 if (other_call->call.state == A_CALL_HELD) {
                     other_call->call.state = A_CALL_ACTIVE;
                     amodem_free_call(modem, target_call, CALL_FAIL_NORMAL);
                     return 0;
                 }
-
-                // hangUp waiting
-                // TODO: Should automatically re-dial the waiting call after the
-                // active parties disconnected. Please refer to Bug 1181009.
-                else if (other_call->call.state == A_CALL_WAITING) {
+                // hangUp both calls.
+                if (other_call->call.state == A_CALL_WAITING) {
                     amodem_free_call(modem, target_call, CALL_FAIL_NORMAL);
                     // The removal of the target call might change the index of
                     // the other call
@@ -1808,6 +1814,10 @@ amodem_disconnect_call_cdma( AModem  modem, const char*  number )
 
                     // Notify the upper layer
                     amodem_send_calls_update(modem);
+
+                    // TODO: Before leaving, we should automatically re-dial the
+                    // waiting call after all parties disconnected. Please refer
+                    // to Bug 1181009.
                     return 0;
                 }
             case A_CALL_HELD:
@@ -1816,6 +1826,15 @@ amodem_disconnect_call_cdma( AModem  modem, const char*  number )
                 amodem_free_call(modem, target_call, CALL_FAIL_NORMAL);
                 return 0;
         }
+    }
+
+    // Is CDMA 3-way call?
+    if (second_call->call.dir == A_CALL_OUTBOUND) {
+        // The other call should fallback to a single call.
+        other_call->call.state = A_CALL_ACTIVE;
+        acall_unset_multi(other_call);
+        amodem_free_call(modem, target_call, CALL_FAIL_NORMAL);
+        return 0;
     }
 
     // Unkown status
@@ -3925,8 +3944,7 @@ voice_call_event( void*  _vcall )
             // A CDMA call goes to connected state directly when the operator
             // find its callee, which makes the "connected" state in CDMA calls
             // behaves like the "alerting" state in GSM calls.
-            call->state = amodem_is_cdma(vcall->modem) ? A_CALL_ACTIVE
-                                                       : A_CALL_ALERTING;
+            call->state = amodem_is_cdma(vcall->modem) ? A_CALL_ACTIVE : A_CALL_ALERTING;
 
             if (vcall->is_remote) {
                 if ( remote_call_dial( call->number, vcall->modem,
@@ -3938,6 +3956,13 @@ voice_call_event( void*  _vcall )
                     /* it seems the Android code simply waits for changes in the list   */
                     amodem_free_call( vcall->modem, vcall, CALL_FAIL_NORMAL );
                 }
+            }
+
+            // When dialing out a second call on a CDMA network, there won't be
+            // any response to the dialing request induced by a flash command.
+            if (amodem_is_cdma(vcall->modem) &&
+                amodem_get_voice_call_count(vcall->modem) == 2) {
+                return;
             }
             break;
 
@@ -3981,8 +4006,9 @@ handleDial( const char*  cmd, AModem  modem )
 {
     assert( cmd[0] == 'D' );
 
-    ACall call = _amodem_add_outbound_call(modem, cmd+1);
-    if (call == NULL) {
+    ACall call = NULL;
+    if ((amodem_is_cdma(modem) && amodem_get_voice_call_count(modem) >= 1) ||
+        (call = amodem_add_outbound_call(modem, cmd+1) == NULL)) {
         amodem_reply( modem, "ERROR: TOO MANY CALLS" );
         return;
     }
@@ -3994,7 +4020,6 @@ handleDial( const char*  cmd, AModem  modem )
     }
     amodem_end_line_reply( modem );
 }
-
 
 static void
 handleAnswer( const char*  cmd, AModem  modem )
@@ -4086,87 +4111,25 @@ handleHangup_cdma( const char*  cmd, AModem  modem )
         return;
     }
 
+    // In CDMA mode, we cannot hangUp a specific call. In fact, when we try to
+    // hangUp a call, every call on the network will be hung up together.
     int nn;
-    cmd += 6;
-    switch (cmd[0]) {
-        // Release an incoming call or a held call.
-        case '0':
-            for (nn = 0; nn < modem->call_count; nn++) {
-                AVoiceCall  vcall = modem->calls + nn;
-                ACall       call  = &vcall->call;
-                if (call->mode != A_CALL_VOICE) {
-                    continue;
-                }
-
-                // Different from GSM, we cannot hangUp a CDMA waiting call by
-                // this AT command, since we can only ignore a CDMA waiting call
-                // rather than hung it up.
-                if (call->state == A_CALL_HELD ||
-                    call->state == A_CALL_INCOMING) {
-                    amodem_free_call(modem, vcall, CALL_FAIL_NORMAL);
-                    nn--;
-                }
-            }
-            // Send response
-            amodem_send_calls_update( modem );
-            amodem_reply( modem, "OK" );
-            return;
-
-        // Release a specific call.
-        case '1': {
-            int vcall_cnt = 0;
-            int vcall_idx[2] = {-1, -1};
-
-            int nn;
-            for (nn = 0; nn < modem->call_count && vcall_cnt <= 2; nn++) {
-                AVoiceCall  vcall = modem->calls + nn;
-                ACall       call  = &vcall->call;
-                if (call->mode != A_CALL_VOICE){
-                    continue;
-                }
-
-                vcall_idx[vcall_cnt++] = nn;
-            }
-
-            // Target is the only call.
-            if (vcall_cnt == 1) {
-                // We don't care about the number here.
-                amodem_free_call( modem,
-                                  &modem->calls[vcall_idx[0]],
-                                  CALL_FAIL_NORMAL );
-
-                // Send response
-                amodem_send_calls_update( modem );
-                amodem_reply( modem, "OK" );
-                return;
-            }
-
-            // CDMA call waiting.
-            // There are two calls, and the second call is an incoming call.
-            if (vcall_cnt == 2 &&
-                modem->calls[vcall_idx[1]].call.dir == A_CALL_INBOUND) {
-                // Both of the two calls will be hung up, and then the waiting
-                // or held call will be re-dialed as a normal incoming call.
-                // This behavior is not supported. Please refer to Bug 1181009.
-                amodem_free_call(modem, &modem->calls[vcall_idx[1]], CALL_FAIL_NORMAL);
-                amodem_free_call(modem, &modem->calls[vcall_idx[0]], CALL_FAIL_NORMAL);
-
-                // Send response
-                amodem_send_calls_update( modem );
-                amodem_reply( modem, "OK" );
-                return;
-            }
-
-            // TODO: CDMA 3-way call
-            // There are two calls, and the second call is an outgoing call.
-
-            // Unknown modem state
-            break;
+    for (nn = modem->call_count - 1; nn >= 0; nn--) {
+        AVoiceCall  vcall = modem->calls + nn;
+        ACall       call  = &vcall->call;
+        if (call->mode != A_CALL_VOICE) {
+            continue;
         }
+
+        amodem_free_call(modem, vcall, CALL_FAIL_NORMAL);
     }
 
-    // Unknown CDMA status
-    amodem_reply( modem, "+CME ERROR: 3" ); // operation not allowed
+    // Send a response for this request.
+    amodem_reply(modem, "OK");
+
+    // Since there is no call, a call-state-change has to be launched.
+    amodem_send_calls_update(modem);
+    return;
 }
 
 static void
@@ -4469,52 +4432,71 @@ handleCdmaFlash( const char*  cmd, AModem  modem )
 
     // Get CDMA calls
     int nn, vcall_cnt = 0;
-    ACall calls[2] = {NULL, NULL};
+    AVoiceCall vcalls[2] = {NULL, NULL};
 
     for (nn = 0; nn < modem->call_count && vcall_cnt < 2; nn++) {
-        AVoiceCall  vcall = modem->calls + nn;
-        ACall       call  = &vcall->call;
-        if (call->mode == A_CALL_VOICE) {
-            calls[vcall_cnt++] = call;
+        AVoiceCall vcall = modem->calls + nn;
+        if (vcall->call.mode == A_CALL_VOICE) {
+            vcalls[vcall_cnt++] = vcall;
         }
     }
 
-    // holding/resuming a single call
-    if (vcall_cnt == 1) {
-        switch (calls[0]->state) {
+    // Check whether there is a number carried by the incoming flash command.
+    char *number = cmd + 6;
+
+    // holding/resuming a single call.
+    // NOTE: A call can only be held and resumed when there it's the only call
+    // and the comming flash command doesn't carry any number with it.
+    if (vcall_cnt == 1 && *number == '\0') {
+        switch (vcalls[0]->call.state) {
             case A_CALL_ACTIVE:
-                calls[0]->state = A_CALL_HELD;
+                acall_set_state(vcalls[0], A_CALL_HELD);
                 break;
             case A_CALL_HELD:
-                calls[0]->state = A_CALL_ACTIVE;
+                acall_set_state(vcalls[0], A_CALL_ACTIVE);
                 break;
             default:
-                amodem_reply( modem, "+CME ERROR: 3" ); // operation not allowed
+                amodem_reply(modem, "+CME ERROR: 3"); // operation not allowed
                 return;
         }
+    }
 
-        // NOTE: A CDMA modem doesn't send CALL_STATE_CHANGED here.
-        amodem_reply( modem, "OK" );
-        return;
+    // CMDA 3-way call: Dialing the second call on a CDMA network.
+    else if (vcall_cnt == 1 && *number != '\0') {
+        // No matter what state the existing call is, it should become held.
+        acall_set_state(vcalls[0], A_CALL_HELD);
+        // Creating a new outgoing call without notifying CALL_STATE_CHANGED.
+        _amodem_add_outbound_call(modem, number);
+    }
+
+    // CMDA 3-way call: Merging the two active calls to a conference call.
+    else if (vcall_cnt == 2 && vcalls[1]->call.dir == A_CALL_OUTBOUND) {
+        acall_set_state(vcalls[0], A_CALL_ACTIVE);
+        acall_set_state(vcalls[1], A_CALL_ACTIVE);
+
+        acall_set_multi(vcalls[0]);
+        acall_set_multi(vcalls[1]);
     }
 
     // CDMA Call Waiting (CW)
-    if (vcall_cnt == 2 &&
-        calls[1]->dir == A_CALL_INBOUND) {
-        calls[0]->state = calls[0]->state != A_CALL_ACTIVE ? A_CALL_ACTIVE
-                                                           : A_CALL_HELD;
-        calls[1]->state = calls[1]->state != A_CALL_ACTIVE ? A_CALL_ACTIVE
-                                                           : A_CALL_HELD;
+    else if (vcall_cnt == 2 && vcalls[1]->call.dir == A_CALL_INBOUND) {
+        acall_set_state(vcalls[0],
+                        vcalls[0]->call.state != A_CALL_ACTIVE ? A_CALL_ACTIVE
+                                                               : A_CALL_HELD);
+        acall_set_state(vcalls[1],
+                        vcalls[1]->call.state != A_CALL_ACTIVE ? A_CALL_ACTIVE
+                                                               : A_CALL_HELD);
+    }
 
-        // NOTE: A CDMA modem doesn't send CALL_STATE_CHANGED here.
-        amodem_reply( modem, "OK" );
+    // Unknown condition
+    else {
+        amodem_reply(modem, "+CME ERROR: 3"); // operation not allowed
         return;
     }
 
-    // TODO: handle cdma 3-way call
-
-    // Unknown CDMA status
-    amodem_reply( modem, "+CME ERROR: 3" ); // operation not allowed
+    // NOTE: No matter what have been done to serve the CDMA-Flash command,
+    // there is no call-state-changed launched.
+    amodem_reply(modem, "OK");
 }
 
 /* a function used to deal with a non-trivial request */
@@ -4662,7 +4644,7 @@ static const struct {
     { "!+CUSATE=", NULL, handleStkEnvelopeCommand },
 
     /* see requestCdmaFlash() */
-    { "!+WFSH", NULL, handleCdmaFlash },
+    { "!+WFSH=", NULL, handleCdmaFlash },
 
     /* end of list */
     {NULL, NULL, NULL}
